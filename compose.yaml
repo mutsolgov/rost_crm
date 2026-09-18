@@ -1,0 +1,115 @@
+name: rtk-crm
+
+# Local development / review stack. Real OIDC is the default authentication.
+# Credentials must come from an untracked .env; see .env.example.
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: rtk_bootstrap
+      POSTGRES_DB: postgres
+      POSTGRES_PASSWORD: ${POSTGRES_ADMIN_PASSWORD:?Copy .env.example to .env and set development passwords}
+      CRM_DB_PASSWORD: ${CRM_DB_PASSWORD:?Set CRM_DB_PASSWORD in .env}
+      KEYCLOAK_DB_PASSWORD: ${KEYCLOAK_DB_PASSWORD:?Set KEYCLOAK_DB_PASSWORD in .env}
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+      - ./deploy/postgres/01-create-databases.sh:/docker-entrypoint-initdb.d/01-create-databases.sh:ro
+    healthcheck:
+      test: [CMD-SHELL, "pg_isready -h 127.0.0.1 -U rtk_bootstrap -d postgres"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+      start_period: 10s
+    restart: unless-stopped
+
+  keycloak:
+    image: quay.io/keycloak/keycloak:26.7.4
+    command: [start-dev, --import-realm]
+    environment:
+      KC_DB: postgres
+      KC_DB_URL: jdbc:postgresql://postgres:5432/keycloak
+      KC_DB_USERNAME: keycloak
+      KC_DB_PASSWORD: ${KEYCLOAK_DB_PASSWORD:?Set KEYCLOAK_DB_PASSWORD in .env}
+      KC_HOSTNAME: ${KEYCLOAK_PUBLIC_URL:-http://localhost:8080}
+      KC_HEALTH_ENABLED: "true"
+      KC_METRICS_ENABLED: "true"
+      KC_BOOTSTRAP_ADMIN_USERNAME: ${KEYCLOAK_ADMIN_USER:-local-admin}
+      KC_BOOTSTRAP_ADMIN_PASSWORD: ${KEYCLOAK_ADMIN_PASSWORD:?Set KEYCLOAK_ADMIN_PASSWORD in .env}
+      DEMO_MANAGER_A_PASSWORD: ${DEMO_MANAGER_A_PASSWORD:?Set DEMO_MANAGER_A_PASSWORD in .env}
+      DEMO_MANAGER_B_PASSWORD: ${DEMO_MANAGER_B_PASSWORD:?Set DEMO_MANAGER_B_PASSWORD in .env}
+      DEMO_SUPERVISOR_PASSWORD: ${DEMO_SUPERVISOR_PASSWORD:?Set DEMO_SUPERVISOR_PASSWORD in .env}
+      DEMO_ADMINISTRATOR_PASSWORD: ${DEMO_ADMINISTRATOR_PASSWORD:?Set DEMO_ADMINISTRATOR_PASSWORD in .env}
+    volumes:
+      - ./deploy/keycloak/rtk-crm-realm.json:/opt/keycloak/data/import/rtk-crm-realm.json:ro
+    ports:
+      - "127.0.0.1:8080:8080"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test:
+        - CMD
+        - /bin/bash
+        - -ec
+        - >-
+          exec 3<>/dev/tcp/127.0.0.1/9000;
+          printf 'GET /health/ready HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n' >&3;
+          grep -q '"status"[[:space:]]*:[[:space:]]*"UP"' <&3
+      interval: 10s
+      timeout: 5s
+      retries: 30
+      start_period: 60s
+    mem_limit: 1g
+    restart: unless-stopped
+
+  api:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    environment:
+      # This compose is a local synthetic-data development environment.
+      APP_ENV: development
+      AUTH_MODE: oidc
+      DATABASE_URL: postgresql+psycopg://rtk_crm:${CRM_DB_PASSWORD:?Set CRM_DB_PASSWORD in .env}@postgres:5432/rtk_crm
+      OIDC_ISSUER: ${KEYCLOAK_PUBLIC_URL:-http://localhost:8080}/realms/rtk-crm
+      OIDC_AUDIENCE: rtk-crm-api
+      OIDC_JWKS_URL: http://keycloak:8080/realms/rtk-crm/protocol/openid-connect/certs
+      OIDC_URL: ${KEYCLOAK_PUBLIC_URL:-http://localhost:8080}
+      OIDC_REALM: rtk-crm
+      OIDC_CLIENT_ID: rtk-crm-web
+    # Only schema creation is automatic. Synthetic records require --seed-demo.
+    command:
+      - /bin/sh
+      - -ec
+      - python -m app.seed --init-db && exec uvicorn app.main:app --host 0.0.0.0 --port 8000
+    depends_on:
+      postgres:
+        condition: service_healthy
+      keycloak:
+        condition: service_healthy
+    healthcheck:
+      test: [CMD, python, -c, "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health/ready', timeout=3)"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 15s
+    restart: unless-stopped
+
+  frontend:
+    build:
+      context: .
+      dockerfile: frontend/Dockerfile
+    ports:
+      - "127.0.0.1:3000:8080"
+    depends_on:
+      api:
+        condition: service_healthy
+    healthcheck:
+      test: [CMD, wget, -q, -O, /dev/null, "http://127.0.0.1:8080/_frontend_health"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+    restart: unless-stopped
+
+volumes:
+  postgres-data:
