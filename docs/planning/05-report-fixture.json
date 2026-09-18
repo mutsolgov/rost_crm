@@ -1,0 +1,986 @@
+{
+  "schema_version": "0.1-proposal",
+  "implementation_mapping": {
+    "initial_state": "Загруженное исходное состояние аналитической истории, не команда перехода",
+    "transition": "state_changed",
+    "assignment": "owner_changed",
+    "cycle_id": "cycle_label",
+    "note": "Это компактная аналитическая история для тестирования отчётов, а не последовательность разрешённых команд полного базового workflow. Роли manager, supervisor, administrator совпадают с основной спецификацией."
+  },
+  "title": "Синтетический эталон отчётов CRM ИТ Школы",
+  "synthetic_data": true,
+  "notice": "Все названия, пользователи, идентификаторы и события вымышлены. Структура, набор сценариев и правила — проектные предложения для согласования, а не предоставленный заказчиком API-контракт. Числа в expected_results — точные итоги только этого набора.",
+  "generated_for_date": "2026-09-17",
+  "semantics": {
+    "timezone": "UTC; все временные метки с суффиксом Z",
+    "interaction_identity": "Собственный interaction_id; organization_id + nullable program_id + nullable product_id + cycle_id описывают цикл. Эти поля не заменяют собственный ID и сами по себе не задают запрещающий повторы уникальный ключ.",
+    "event_deduplication": "event_id уникален глобально. events содержит канонические события; event_deliveries может содержать повторы одного события. received_at — время первого успешного приёма в канонический журнал, повторная доставка его не меняет. При одинаковом event_id и другом содержимом требуется конфликт, не новая запись.",
+    "snapshot": "Сначала ограничить interactions текущим scope_now пользователя. Для каждого взаимодействия взять события effective_at <= as_of и received_at <= knowledge_cutoff. Состояние определяется последним initial_state/transition, владелец — последним assignment в порядке (effective_at, sequence). Не включать взаимодействие без известного initial_state. Затем применить historical_owner_id и остальные фильтры.",
+    "activity": "Сначала ограничить interactions текущим scope_now пользователя. Считать уникальные canonical transition event_id с from <= effective_at < to и received_at <= knowledge_cutoff. initial_state и assignment не считаются переходами. historical_owner_id фильтрует владельца на effective_at перехода, восстановленного из assignment с effective_at <= времени перехода и received_at <= knowledge_cutoff. При равных effective_at учитывать sequence до рассматриваемого события. Это предлагаемая семантика для согласования.",
+    "current_access": "scope_now — явно заданная текущая область доступа на 2026-09-15T12:00:00Z; исторический владелец не добавляет прав. Техническая роль administrator сама по себе в этом предложении не даёт предметного доступа.",
+    "snapshot_knowledge_cutoff": "Изменение knowledge_cutoff при неизменном as_of может изменить восстановленную картину из-за позднего события; в отчёте должны быть показаны обе отметки времени.",
+    "ordering": "Для сравнения результата ID и строки сортируются лексикографически; все события взаимодействия упорядочены по (effective_at, sequence).",
+    "zero_buckets": "counts_by_state и counts_by_to_state включают все четыре stage_code с нулями; прочие группировки включают только непустые группы.",
+    "boundary_note": "FX-A01 исключает I1-T1 на 2026-08-31T23:59:59Z, включает I1-T2 на from, исключает I1-T3 ровно на to. FX-S03 включает I1-T3 ровно на as_of.",
+    "specification_mapping": {
+      "initial_state": "Загруженное исходное состояние истории; при обычном создании карточки — created с начальным состоянием.",
+      "transition": "state_changed",
+      "assignment": "owner_changed",
+      "cycle_id": "cycle_label",
+      "scope_now_role_codes": "manager, supervisor, administrator"
+    },
+    "fixture_scope": "Это компактная историческая проекция для проверки отчётов. Она не является последовательностью команд базового шаблона: промежуточные рабочие этапы могут быть опущены. Для тестирования разрешённости переходов использовать 04-base-workflow.json и отдельные AC07-AC09.",
+    "snapshot_boundary_mode": "Во всех expected_results используется as_of_inclusive=true по умолчанию; календарная exclusive-граница проверяется отдельно в AC11."
+  },
+  "scope_now": {
+    "as_at": "2026-09-15T12:00:00Z",
+    "users": [
+      {
+        "user_id": "U_MANAGER_A",
+        "role": "manager",
+        "manager_id": "M1",
+        "accessible_interaction_ids": [
+          "I2",
+          "I5"
+        ]
+      },
+      {
+        "user_id": "U_MANAGER_B",
+        "role": "manager",
+        "manager_id": "M2",
+        "accessible_interaction_ids": [
+          "I1",
+          "I3",
+          "I6"
+        ]
+      },
+      {
+        "user_id": "U_MANAGER_C",
+        "role": "manager",
+        "manager_id": "M3",
+        "accessible_interaction_ids": [
+          "I4"
+        ]
+      },
+      {
+        "user_id": "U_LEAD",
+        "role": "supervisor",
+        "manager_id": null,
+        "accessible_interaction_ids": [
+          "I1",
+          "I2",
+          "I3",
+          "I5",
+          "I6"
+        ]
+      },
+      {
+        "user_id": "U_TECH_ADMIN",
+        "role": "administrator",
+        "manager_id": null,
+        "accessible_interaction_ids": []
+      }
+    ]
+  },
+  "managers": [
+    {
+      "manager_id": "M1",
+      "display_name": "Вымышленный менеджер А"
+    },
+    {
+      "manager_id": "M2",
+      "display_name": "Вымышленный менеджер Б"
+    },
+    {
+      "manager_id": "M3",
+      "display_name": "Вымышленный менеджер В"
+    }
+  ],
+  "organizations": [
+    {
+      "organization_id": "O1",
+      "name": "Учебный институт «Северный пример»",
+      "synthetic": true
+    },
+    {
+      "organization_id": "O2",
+      "name": "Университет «Синтетический контур»",
+      "synthetic": true
+    },
+    {
+      "organization_id": "O3",
+      "name": "Институт «Закрытый пример»",
+      "synthetic": true
+    }
+  ],
+  "directions": [
+    {
+      "direction_id": "D1",
+      "name": "QA"
+    },
+    {
+      "direction_id": "D2",
+      "name": "DevOps"
+    }
+  ],
+  "programs": [
+    {
+      "program_id": "P1",
+      "direction_id": "D1",
+      "name": "Вымышленная программа проверки ПО"
+    },
+    {
+      "program_id": "P2",
+      "direction_id": "D2",
+      "name": "Вымышленная программа автоматизации поставки"
+    }
+  ],
+  "products": [
+    {
+      "product_id": "S1",
+      "name": "Учебный продукт «Альфа»"
+    },
+    {
+      "product_id": "S2",
+      "name": "Учебный продукт «Бета»"
+    }
+  ],
+  "stage_codes": [
+    "document_exchange",
+    "document_signing",
+    "materials_transfer",
+    "classes"
+  ],
+  "workflow_version_note": "В эталоне использован сокращённый аналитический набор стадий существующей загруженной истории; он не заменяет полный базовый workflow из 14 пунктов ТЗ. initial_state может соответствовать любому известному состоянию импортированной истории.",
+  "interactions": [
+    {
+      "interaction_id": "I1",
+      "organization_id": "O1",
+      "program_id": "P1",
+      "product_id": "S1",
+      "cycle_id": "2026-autumn",
+      "workflow_version_id": "WF-SYNTH-v1"
+    },
+    {
+      "interaction_id": "I2",
+      "organization_id": "O1",
+      "program_id": "P2",
+      "product_id": "S2",
+      "cycle_id": "2026-autumn",
+      "workflow_version_id": "WF-SYNTH-v1"
+    },
+    {
+      "interaction_id": "I3",
+      "organization_id": "O2",
+      "program_id": "P1",
+      "product_id": "S1",
+      "cycle_id": "2026-autumn",
+      "workflow_version_id": "WF-SYNTH-v1"
+    },
+    {
+      "interaction_id": "I4",
+      "organization_id": "O3",
+      "program_id": "P2",
+      "product_id": "S2",
+      "cycle_id": "2026-autumn",
+      "workflow_version_id": "WF-SYNTH-v1"
+    },
+    {
+      "interaction_id": "I5",
+      "organization_id": "O2",
+      "program_id": null,
+      "product_id": null,
+      "cycle_id": "2026-discovery",
+      "workflow_version_id": "WF-SYNTH-v1"
+    },
+    {
+      "interaction_id": "I6",
+      "organization_id": "O1",
+      "program_id": "P1",
+      "product_id": "S1",
+      "cycle_id": "2026-summer",
+      "workflow_version_id": "WF-SYNTH-v1"
+    }
+  ],
+  "events": [
+    {
+      "event_id": "I1-INIT",
+      "interaction_id": "I1",
+      "type": "initial_state",
+      "sequence": 1,
+      "effective_at": "2026-08-05T09:00:00Z",
+      "received_at": "2026-08-05T09:00:00Z",
+      "state": "document_exchange",
+      "source": "synthetic_history"
+    },
+    {
+      "event_id": "I1-A1",
+      "interaction_id": "I1",
+      "type": "assignment",
+      "sequence": 2,
+      "effective_at": "2026-08-05T09:00:00Z",
+      "received_at": "2026-08-05T09:00:00Z",
+      "owner_id": "M1",
+      "source": "synthetic_crm"
+    },
+    {
+      "event_id": "I1-T1",
+      "interaction_id": "I1",
+      "type": "transition",
+      "sequence": 3,
+      "effective_at": "2026-08-31T23:59:59Z",
+      "received_at": "2026-08-31T23:59:59Z",
+      "from_state": "document_exchange",
+      "to_state": "document_signing",
+      "source": "synthetic_crm"
+    },
+    {
+      "event_id": "I1-T2",
+      "interaction_id": "I1",
+      "type": "transition",
+      "sequence": 4,
+      "effective_at": "2026-09-01T00:00:00Z",
+      "received_at": "2026-09-01T00:00:05Z",
+      "from_state": "document_signing",
+      "to_state": "materials_transfer",
+      "source": "synthetic_crm"
+    },
+    {
+      "event_id": "I1-A2",
+      "interaction_id": "I1",
+      "type": "assignment",
+      "sequence": 5,
+      "effective_at": "2026-09-06T12:00:00Z",
+      "received_at": "2026-09-06T12:00:02Z",
+      "owner_id": "M2",
+      "source": "synthetic_crm"
+    },
+    {
+      "event_id": "I1-T3",
+      "interaction_id": "I1",
+      "type": "transition",
+      "sequence": 6,
+      "effective_at": "2026-09-10T00:00:00Z",
+      "received_at": "2026-09-10T00:00:03Z",
+      "from_state": "materials_transfer",
+      "to_state": "classes",
+      "source": "synthetic_crm"
+    },
+    {
+      "event_id": "I2-INIT",
+      "interaction_id": "I2",
+      "type": "initial_state",
+      "sequence": 1,
+      "effective_at": "2026-08-10T09:00:00Z",
+      "received_at": "2026-08-10T09:00:00Z",
+      "state": "document_exchange",
+      "source": "synthetic_history"
+    },
+    {
+      "event_id": "I2-A1",
+      "interaction_id": "I2",
+      "type": "assignment",
+      "sequence": 2,
+      "effective_at": "2026-08-10T09:00:00Z",
+      "received_at": "2026-08-10T09:00:00Z",
+      "owner_id": "M1",
+      "source": "synthetic_crm"
+    },
+    {
+      "event_id": "I2-T1",
+      "interaction_id": "I2",
+      "type": "transition",
+      "sequence": 3,
+      "effective_at": "2026-09-02T10:00:00Z",
+      "received_at": "2026-09-02T10:00:05Z",
+      "from_state": "document_exchange",
+      "to_state": "document_signing",
+      "source": "synthetic_crm"
+    },
+    {
+      "event_id": "I2-T2",
+      "interaction_id": "I2",
+      "type": "transition",
+      "sequence": 4,
+      "effective_at": "2026-09-03T09:00:00Z",
+      "received_at": "2026-09-07T09:00:00Z",
+      "from_state": "document_signing",
+      "to_state": "materials_transfer",
+      "source": "synthetic_crm"
+    },
+    {
+      "event_id": "I2-T3",
+      "interaction_id": "I2",
+      "type": "transition",
+      "sequence": 5,
+      "effective_at": "2026-09-09T10:00:00Z",
+      "received_at": "2026-09-09T10:00:02Z",
+      "from_state": "materials_transfer",
+      "to_state": "classes",
+      "source": "synthetic_crm"
+    },
+    {
+      "event_id": "I3-INIT",
+      "interaction_id": "I3",
+      "type": "initial_state",
+      "sequence": 1,
+      "effective_at": "2026-08-15T09:00:00Z",
+      "received_at": "2026-08-15T09:00:00Z",
+      "state": "document_signing",
+      "source": "synthetic_history"
+    },
+    {
+      "event_id": "I3-A1",
+      "interaction_id": "I3",
+      "type": "assignment",
+      "sequence": 2,
+      "effective_at": "2026-08-15T09:00:00Z",
+      "received_at": "2026-08-15T09:00:00Z",
+      "owner_id": "M2",
+      "source": "synthetic_crm"
+    },
+    {
+      "event_id": "I3-T1",
+      "interaction_id": "I3",
+      "type": "transition",
+      "sequence": 3,
+      "effective_at": "2026-09-04T10:00:00Z",
+      "received_at": "2026-09-04T10:00:03Z",
+      "from_state": "document_signing",
+      "to_state": "materials_transfer",
+      "source": "synthetic_crm"
+    },
+    {
+      "event_id": "I3-T2",
+      "interaction_id": "I3",
+      "type": "transition",
+      "sequence": 4,
+      "effective_at": "2026-09-08T10:00:00Z",
+      "received_at": "2026-09-08T10:00:03Z",
+      "from_state": "materials_transfer",
+      "to_state": "classes",
+      "source": "synthetic_crm"
+    },
+    {
+      "event_id": "I4-INIT",
+      "interaction_id": "I4",
+      "type": "initial_state",
+      "sequence": 1,
+      "effective_at": "2026-08-20T09:00:00Z",
+      "received_at": "2026-08-20T09:00:00Z",
+      "state": "document_exchange",
+      "source": "synthetic_history"
+    },
+    {
+      "event_id": "I4-A1",
+      "interaction_id": "I4",
+      "type": "assignment",
+      "sequence": 2,
+      "effective_at": "2026-08-20T09:00:00Z",
+      "received_at": "2026-08-20T09:00:00Z",
+      "owner_id": "M3",
+      "source": "synthetic_crm"
+    },
+    {
+      "event_id": "I4-T1",
+      "interaction_id": "I4",
+      "type": "transition",
+      "sequence": 3,
+      "effective_at": "2026-09-03T12:00:00Z",
+      "received_at": "2026-09-03T12:00:01Z",
+      "from_state": "document_exchange",
+      "to_state": "document_signing",
+      "source": "synthetic_crm"
+    },
+    {
+      "event_id": "I4-T2",
+      "interaction_id": "I4",
+      "type": "transition",
+      "sequence": 4,
+      "effective_at": "2026-09-07T12:00:00Z",
+      "received_at": "2026-09-07T12:00:01Z",
+      "from_state": "document_signing",
+      "to_state": "materials_transfer",
+      "source": "synthetic_crm"
+    },
+    {
+      "event_id": "I5-INIT",
+      "interaction_id": "I5",
+      "type": "initial_state",
+      "sequence": 1,
+      "effective_at": "2026-08-25T09:00:00Z",
+      "received_at": "2026-08-25T09:00:00Z",
+      "state": "document_exchange",
+      "source": "synthetic_history"
+    },
+    {
+      "event_id": "I5-A1",
+      "interaction_id": "I5",
+      "type": "assignment",
+      "sequence": 2,
+      "effective_at": "2026-08-25T09:00:00Z",
+      "received_at": "2026-08-25T09:00:00Z",
+      "owner_id": "M1",
+      "source": "synthetic_crm"
+    },
+    {
+      "event_id": "I6-INIT",
+      "interaction_id": "I6",
+      "type": "initial_state",
+      "sequence": 1,
+      "effective_at": "2026-08-01T09:00:00Z",
+      "received_at": "2026-08-01T09:00:00Z",
+      "state": "classes",
+      "source": "synthetic_history"
+    },
+    {
+      "event_id": "I6-A1",
+      "interaction_id": "I6",
+      "type": "assignment",
+      "sequence": 2,
+      "effective_at": "2026-08-01T09:00:00Z",
+      "received_at": "2026-08-01T09:00:00Z",
+      "owner_id": "M2",
+      "source": "synthetic_crm"
+    }
+  ],
+  "event_deliveries": [
+    {
+      "delivery_id": "DEL-I2-T1-01",
+      "event_id": "I2-T1",
+      "delivered_at": "2026-09-02T10:00:05Z",
+      "payload_reference": "events[event_id=I2-T1]",
+      "result": "created"
+    },
+    {
+      "delivery_id": "DEL-I2-T1-02",
+      "event_id": "I2-T1",
+      "delivered_at": "2026-09-02T10:01:00Z",
+      "payload_reference": "events[event_id=I2-T1]",
+      "result": "duplicate_ignored"
+    },
+    {
+      "delivery_id": "DEL-I2-T2-01",
+      "event_id": "I2-T2",
+      "delivered_at": "2026-09-07T09:00:00Z",
+      "payload_reference": "events[event_id=I2-T2]",
+      "result": "created_late"
+    }
+  ],
+  "fixture_landmarks": [
+    "I1 и I2 — два независимых процесса одного вуза; I6 — другой цикл той же комбинации организации, программы и продукта, что I1.",
+    "I1-A2 меняет M1 на M2; текущее право U_MANAGER_A на I1 отозвано даже для прошлого периода.",
+    "I2-T1 доставлен дважды с одним event_id; переход считается один раз.",
+    "I2-T2 действует с 2026-09-03, но получен только 2026-09-07.",
+    "I4 существует, но не входит в scope_now U_LEAD, U_MANAGER_A и U_MANAGER_B.",
+    "I5 имеет nullable программу и продукт и учитывается как взаимодействие."
+  ],
+  "expected_results": [
+    {
+      "case_id": "FX-S01",
+      "report_type": "snapshot",
+      "query": {
+        "user_id": "U_LEAD",
+        "scope_at": "scope_now",
+        "as_of": "2026-09-05T23:59:59Z",
+        "knowledge_cutoff": "2026-09-05T23:59:59Z"
+      },
+      "expected": {
+        "interaction_ids": [
+          "I1",
+          "I2",
+          "I3",
+          "I5",
+          "I6"
+        ],
+        "rows": [
+          {
+            "interaction_id": "I1",
+            "state": "materials_transfer",
+            "historical_owner_id": "M1"
+          },
+          {
+            "interaction_id": "I2",
+            "state": "document_signing",
+            "historical_owner_id": "M1"
+          },
+          {
+            "interaction_id": "I3",
+            "state": "materials_transfer",
+            "historical_owner_id": "M2"
+          },
+          {
+            "interaction_id": "I5",
+            "state": "document_exchange",
+            "historical_owner_id": "M1"
+          },
+          {
+            "interaction_id": "I6",
+            "state": "classes",
+            "historical_owner_id": "M2"
+          }
+        ],
+        "total_interactions": 5,
+        "counts_by_state": {
+          "document_exchange": 1,
+          "document_signing": 1,
+          "materials_transfer": 2,
+          "classes": 1
+        },
+        "counts_by_historical_owner": {
+          "M1": 3,
+          "M2": 2
+        }
+      }
+    },
+    {
+      "case_id": "FX-S02",
+      "report_type": "snapshot",
+      "query": {
+        "user_id": "U_LEAD",
+        "scope_at": "scope_now",
+        "as_of": "2026-09-05T23:59:59Z",
+        "knowledge_cutoff": "2026-09-08T00:00:00Z"
+      },
+      "expected": {
+        "interaction_ids": [
+          "I1",
+          "I2",
+          "I3",
+          "I5",
+          "I6"
+        ],
+        "rows": [
+          {
+            "interaction_id": "I1",
+            "state": "materials_transfer",
+            "historical_owner_id": "M1"
+          },
+          {
+            "interaction_id": "I2",
+            "state": "materials_transfer",
+            "historical_owner_id": "M1"
+          },
+          {
+            "interaction_id": "I3",
+            "state": "materials_transfer",
+            "historical_owner_id": "M2"
+          },
+          {
+            "interaction_id": "I5",
+            "state": "document_exchange",
+            "historical_owner_id": "M1"
+          },
+          {
+            "interaction_id": "I6",
+            "state": "classes",
+            "historical_owner_id": "M2"
+          }
+        ],
+        "total_interactions": 5,
+        "counts_by_state": {
+          "document_exchange": 1,
+          "document_signing": 0,
+          "materials_transfer": 3,
+          "classes": 1
+        },
+        "counts_by_historical_owner": {
+          "M1": 3,
+          "M2": 2
+        }
+      }
+    },
+    {
+      "case_id": "FX-S03",
+      "report_type": "snapshot",
+      "query": {
+        "user_id": "U_LEAD",
+        "scope_at": "scope_now",
+        "as_of": "2026-09-10T00:00:00Z",
+        "knowledge_cutoff": "2026-09-15T12:00:00Z"
+      },
+      "expected": {
+        "interaction_ids": [
+          "I1",
+          "I2",
+          "I3",
+          "I5",
+          "I6"
+        ],
+        "rows": [
+          {
+            "interaction_id": "I1",
+            "state": "classes",
+            "historical_owner_id": "M2"
+          },
+          {
+            "interaction_id": "I2",
+            "state": "classes",
+            "historical_owner_id": "M1"
+          },
+          {
+            "interaction_id": "I3",
+            "state": "classes",
+            "historical_owner_id": "M2"
+          },
+          {
+            "interaction_id": "I5",
+            "state": "document_exchange",
+            "historical_owner_id": "M1"
+          },
+          {
+            "interaction_id": "I6",
+            "state": "classes",
+            "historical_owner_id": "M2"
+          }
+        ],
+        "total_interactions": 5,
+        "counts_by_state": {
+          "document_exchange": 1,
+          "document_signing": 0,
+          "materials_transfer": 0,
+          "classes": 4
+        },
+        "counts_by_historical_owner": {
+          "M1": 2,
+          "M2": 3
+        }
+      }
+    },
+    {
+      "case_id": "FX-S04",
+      "report_type": "snapshot",
+      "query": {
+        "user_id": "U_LEAD",
+        "scope_at": "scope_now",
+        "as_of": "2026-09-05T23:59:59Z",
+        "knowledge_cutoff": "2026-09-15T12:00:00Z",
+        "historical_owner_id": "M1"
+      },
+      "expected": {
+        "interaction_ids": [
+          "I1",
+          "I2",
+          "I5"
+        ],
+        "rows": [
+          {
+            "interaction_id": "I1",
+            "state": "materials_transfer",
+            "historical_owner_id": "M1"
+          },
+          {
+            "interaction_id": "I2",
+            "state": "materials_transfer",
+            "historical_owner_id": "M1"
+          },
+          {
+            "interaction_id": "I5",
+            "state": "document_exchange",
+            "historical_owner_id": "M1"
+          }
+        ],
+        "total_interactions": 3,
+        "counts_by_state": {
+          "document_exchange": 1,
+          "document_signing": 0,
+          "materials_transfer": 2,
+          "classes": 0
+        },
+        "counts_by_historical_owner": {
+          "M1": 3
+        }
+      }
+    },
+    {
+      "case_id": "FX-S05",
+      "report_type": "snapshot",
+      "query": {
+        "user_id": "U_MANAGER_A",
+        "scope_at": "scope_now",
+        "as_of": "2026-09-05T23:59:59Z",
+        "knowledge_cutoff": "2026-09-15T12:00:00Z",
+        "historical_owner_id": "M1"
+      },
+      "expected": {
+        "interaction_ids": [
+          "I2",
+          "I5"
+        ],
+        "rows": [
+          {
+            "interaction_id": "I2",
+            "state": "materials_transfer",
+            "historical_owner_id": "M1"
+          },
+          {
+            "interaction_id": "I5",
+            "state": "document_exchange",
+            "historical_owner_id": "M1"
+          }
+        ],
+        "total_interactions": 2,
+        "counts_by_state": {
+          "document_exchange": 1,
+          "document_signing": 0,
+          "materials_transfer": 1,
+          "classes": 0
+        },
+        "counts_by_historical_owner": {
+          "M1": 2
+        }
+      }
+    },
+    {
+      "case_id": "FX-S06",
+      "report_type": "snapshot",
+      "query": {
+        "user_id": "U_MANAGER_B",
+        "scope_at": "scope_now",
+        "as_of": "2026-09-05T23:59:59Z",
+        "knowledge_cutoff": "2026-09-15T12:00:00Z",
+        "historical_owner_id": "M1"
+      },
+      "expected": {
+        "interaction_ids": [
+          "I1"
+        ],
+        "rows": [
+          {
+            "interaction_id": "I1",
+            "state": "materials_transfer",
+            "historical_owner_id": "M1"
+          }
+        ],
+        "total_interactions": 1,
+        "counts_by_state": {
+          "document_exchange": 0,
+          "document_signing": 0,
+          "materials_transfer": 1,
+          "classes": 0
+        },
+        "counts_by_historical_owner": {
+          "M1": 1
+        }
+      }
+    },
+    {
+      "case_id": "FX-S07",
+      "report_type": "snapshot",
+      "query": {
+        "user_id": "U_TECH_ADMIN",
+        "scope_at": "scope_now",
+        "as_of": "2026-09-10T00:00:00Z",
+        "knowledge_cutoff": "2026-09-15T12:00:00Z"
+      },
+      "expected": {
+        "interaction_ids": [],
+        "rows": [],
+        "total_interactions": 0,
+        "counts_by_state": {
+          "document_exchange": 0,
+          "document_signing": 0,
+          "materials_transfer": 0,
+          "classes": 0
+        },
+        "counts_by_historical_owner": {}
+      }
+    },
+    {
+      "case_id": "FX-A01",
+      "report_type": "activity",
+      "query": {
+        "user_id": "U_LEAD",
+        "scope_at": "scope_now",
+        "from": "2026-09-01T00:00:00Z",
+        "to": "2026-09-10T00:00:00Z",
+        "knowledge_cutoff": "2026-09-15T12:00:00Z"
+      },
+      "expected": {
+        "event_ids": [
+          "I1-T2",
+          "I2-T1",
+          "I2-T2",
+          "I2-T3",
+          "I3-T1",
+          "I3-T2"
+        ],
+        "interaction_ids": [
+          "I1",
+          "I2",
+          "I3"
+        ],
+        "total_transitions": 6,
+        "total_interactions": 3,
+        "counts_by_interaction": {
+          "I1": 1,
+          "I2": 3,
+          "I3": 2
+        },
+        "counts_by_to_state": {
+          "document_exchange": 0,
+          "document_signing": 1,
+          "materials_transfer": 3,
+          "classes": 2
+        },
+        "counts_by_historical_owner": {
+          "M1": 4,
+          "M2": 2
+        }
+      }
+    },
+    {
+      "case_id": "FX-A02",
+      "report_type": "activity",
+      "query": {
+        "user_id": "U_LEAD",
+        "scope_at": "scope_now",
+        "from": "2026-09-01T00:00:00Z",
+        "to": "2026-09-10T00:00:00Z",
+        "knowledge_cutoff": "2026-09-05T23:59:59Z"
+      },
+      "expected": {
+        "event_ids": [
+          "I1-T2",
+          "I2-T1",
+          "I3-T1"
+        ],
+        "interaction_ids": [
+          "I1",
+          "I2",
+          "I3"
+        ],
+        "total_transitions": 3,
+        "total_interactions": 3,
+        "counts_by_interaction": {
+          "I1": 1,
+          "I2": 1,
+          "I3": 1
+        },
+        "counts_by_to_state": {
+          "document_exchange": 0,
+          "document_signing": 1,
+          "materials_transfer": 2,
+          "classes": 0
+        },
+        "counts_by_historical_owner": {
+          "M1": 2,
+          "M2": 1
+        }
+      }
+    },
+    {
+      "case_id": "FX-A03",
+      "report_type": "activity",
+      "query": {
+        "user_id": "U_LEAD",
+        "scope_at": "scope_now",
+        "from": "2026-09-01T00:00:00Z",
+        "to": "2026-09-10T00:00:00Z",
+        "knowledge_cutoff": "2026-09-15T12:00:00Z",
+        "historical_owner_id": "M1"
+      },
+      "expected": {
+        "event_ids": [
+          "I1-T2",
+          "I2-T1",
+          "I2-T2",
+          "I2-T3"
+        ],
+        "interaction_ids": [
+          "I1",
+          "I2"
+        ],
+        "total_transitions": 4,
+        "total_interactions": 2,
+        "counts_by_interaction": {
+          "I1": 1,
+          "I2": 3
+        },
+        "counts_by_to_state": {
+          "document_exchange": 0,
+          "document_signing": 1,
+          "materials_transfer": 2,
+          "classes": 1
+        },
+        "counts_by_historical_owner": {
+          "M1": 4
+        }
+      }
+    },
+    {
+      "case_id": "FX-A04",
+      "report_type": "activity",
+      "query": {
+        "user_id": "U_LEAD",
+        "scope_at": "scope_now",
+        "from": "2026-09-01T00:00:00Z",
+        "to": "2026-09-11T00:00:00Z",
+        "knowledge_cutoff": "2026-09-15T12:00:00Z",
+        "historical_owner_id": "M2"
+      },
+      "expected": {
+        "event_ids": [
+          "I1-T3",
+          "I3-T1",
+          "I3-T2"
+        ],
+        "interaction_ids": [
+          "I1",
+          "I3"
+        ],
+        "total_transitions": 3,
+        "total_interactions": 2,
+        "counts_by_interaction": {
+          "I1": 1,
+          "I3": 2
+        },
+        "counts_by_to_state": {
+          "document_exchange": 0,
+          "document_signing": 0,
+          "materials_transfer": 1,
+          "classes": 2
+        },
+        "counts_by_historical_owner": {
+          "M2": 3
+        }
+      }
+    },
+    {
+      "case_id": "FX-A05",
+      "report_type": "activity",
+      "query": {
+        "user_id": "U_MANAGER_A",
+        "scope_at": "scope_now",
+        "from": "2026-09-01T00:00:00Z",
+        "to": "2026-09-11T00:00:00Z",
+        "knowledge_cutoff": "2026-09-15T12:00:00Z",
+        "historical_owner_id": "M1"
+      },
+      "expected": {
+        "event_ids": [
+          "I2-T1",
+          "I2-T2",
+          "I2-T3"
+        ],
+        "interaction_ids": [
+          "I2"
+        ],
+        "total_transitions": 3,
+        "total_interactions": 1,
+        "counts_by_interaction": {
+          "I2": 3
+        },
+        "counts_by_to_state": {
+          "document_exchange": 0,
+          "document_signing": 1,
+          "materials_transfer": 1,
+          "classes": 1
+        },
+        "counts_by_historical_owner": {
+          "M1": 3
+        }
+      }
+    }
+  ]
+}

@@ -1,0 +1,312 @@
+{
+  "schema_version": "1.0",
+  "template_code": "rtk_university_cooperation",
+  "version": 1,
+  "approval_status": "proposal",
+  "name": "Взаимодействие с вузом по ИТ-программе и ИТ-продукту",
+  "description": "Предлагаемый декларативный шаблон. Основан на пунктах 1–13 исходного workflow; контроль исполнения из пункта 14 вынесен в сквозную функцию. Решения не согласованы с заказчиком.",
+  "source_document": "6. ИТ Школа Ростелекома.pdf",
+  "initial_state": "contact_search",
+  "proposal_notes": [
+    "Названия и коды состояний, граф переходов, финальные состояния и правила переходов являются проектными предложениями.",
+    "Корректировка документов допускает пропуск; повторное обучение допускает возврат к проведению занятий.",
+    "Обратный переход, повторный цикл и отмена требуют непустой комментарий; обычные переходы не требуют комментария.",
+    "Перед передачей материалов предлагается заполнить программу и продукт взаимодействия.",
+    "Шаблон не требует обязательного вложения файла или наличия электронной подписи. Такие проверки возможны только после отдельного согласования.",
+    "Все условия декларативны. Выполнение пользовательского кода шаблоном не предусматривается."
+  ],
+  "condition_definitions": [
+    {
+      "code": "program_and_product_identified",
+      "description": "Перед передачей материалов во взаимодействии должны быть указаны ИТ-программа и ИТ-продукт.",
+      "approval_status": "proposal",
+      "requirement_origin": "design_proposal",
+      "operator": "all",
+      "rules": [
+        { "field": "interaction.program_id", "operator": "is_not_null" },
+        { "field": "interaction.product_id", "operator": "is_not_null" }
+      ]
+    }
+  ],
+  "states": [
+    {
+      "code": "contact_search",
+      "name": "Поиск контактов",
+      "kind": "working",
+      "source_step": 1,
+      "source_description": "Поиск контактов ответственного в вузе."
+    },
+    {
+      "code": "needs_clarification",
+      "name": "Уточнение потребности",
+      "kind": "working",
+      "source_step": 2,
+      "source_description": "Коммуникация с ответственным и уточнение актуальности программ по ИТ-направлениям."
+    },
+    {
+      "code": "meeting",
+      "name": "Встреча с вузом",
+      "kind": "working",
+      "source_step": 3,
+      "source_description": "Организация встречи с представителями вуза."
+    },
+    {
+      "code": "document_exchange",
+      "name": "Обмен документами",
+      "kind": "working",
+      "source_step": 4,
+      "source_description": "Обмен необходимым пакетом документов для подписания."
+    },
+    {
+      "code": "document_revision",
+      "name": "Корректировка документов",
+      "kind": "working",
+      "source_step": 5,
+      "source_description": "Опциональная корректировка документов перед подписанием."
+    },
+    {
+      "code": "document_signing",
+      "name": "Подписание документов",
+      "kind": "working",
+      "source_step": 6,
+      "source_description": "Подписание документов."
+    },
+    {
+      "code": "materials_transfer",
+      "name": "Передача материалов и лицензии",
+      "kind": "working",
+      "source_step": 7,
+      "source_description": "Передача обучающих материалов по ИТ-направлению, лицензии ИТ-продукта и его документации в вуз."
+    },
+    {
+      "code": "deployment",
+      "name": "Сопровождение внедрения",
+      "kind": "working",
+      "source_step": 8,
+      "source_description": "Сопровождение внедрения ИТ-продуктов в вузе."
+    },
+    {
+      "code": "teacher_training",
+      "name": "Обучение преподавателей",
+      "kind": "working",
+      "source_step": 9,
+      "source_description": "Обучение преподавателей."
+    },
+    {
+      "code": "curriculum_update",
+      "name": "Актуализация учебной программы",
+      "kind": "working",
+      "source_step": 10,
+      "source_description": "Актуализация учебной программы по ИТ-направлению с учётом обучения преподавателя и добавления ИТ-продукта."
+    },
+    {
+      "code": "classes",
+      "name": "Ведение занятий",
+      "kind": "working",
+      "source_step": 11,
+      "source_description": "Ведение занятий."
+    },
+    {
+      "code": "materials_update",
+      "name": "Актуализация материалов",
+      "kind": "working",
+      "source_step": 12,
+      "source_description": "Актуализация документации по продукту и обучающим материалам."
+    },
+    {
+      "code": "teacher_upskilling",
+      "name": "Повышение квалификации преподавателей",
+      "kind": "working",
+      "source_step": 13,
+      "source_description": "Повышение квалификации преподавателей."
+    },
+    {
+      "code": "completed",
+      "name": "Взаимодействие завершено",
+      "kind": "terminal",
+      "outcome": "completed",
+      "requirement_origin": "design_proposal"
+    },
+    {
+      "code": "cancelled",
+      "name": "Взаимодействие отменено",
+      "kind": "terminal",
+      "outcome": "cancelled",
+      "requirement_origin": "design_proposal"
+    }
+  ],
+  "transitions": [
+    {
+      "code": "contact_search_to_needs_clarification",
+      "from": "contact_search", "to": "needs_clarification",
+      "kind": "forward", "comment_required": false, "condition_refs": []
+    },
+    {
+      "code": "needs_clarification_to_meeting",
+      "from": "needs_clarification", "to": "meeting",
+      "kind": "forward", "comment_required": false, "condition_refs": []
+    },
+    {
+      "code": "meeting_to_document_exchange",
+      "from": "meeting", "to": "document_exchange",
+      "kind": "forward", "comment_required": false, "condition_refs": []
+    },
+    {
+      "code": "document_exchange_to_document_revision",
+      "from": "document_exchange", "to": "document_revision",
+      "kind": "forward", "comment_required": false, "condition_refs": []
+    },
+    {
+      "code": "document_revision_to_document_signing",
+      "from": "document_revision", "to": "document_signing",
+      "kind": "forward", "comment_required": false, "condition_refs": []
+    },
+    {
+      "code": "document_signing_to_materials_transfer",
+      "from": "document_signing", "to": "materials_transfer",
+      "kind": "forward", "comment_required": false,
+      "condition_refs": ["program_and_product_identified"]
+    },
+    {
+      "code": "materials_transfer_to_deployment",
+      "from": "materials_transfer", "to": "deployment",
+      "kind": "forward", "comment_required": false, "condition_refs": []
+    },
+    {
+      "code": "deployment_to_teacher_training",
+      "from": "deployment", "to": "teacher_training",
+      "kind": "forward", "comment_required": false, "condition_refs": []
+    },
+    {
+      "code": "teacher_training_to_curriculum_update",
+      "from": "teacher_training", "to": "curriculum_update",
+      "kind": "forward", "comment_required": false, "condition_refs": []
+    },
+    {
+      "code": "curriculum_update_to_classes",
+      "from": "curriculum_update", "to": "classes",
+      "kind": "forward", "comment_required": false, "condition_refs": []
+    },
+    {
+      "code": "classes_to_materials_update",
+      "from": "classes", "to": "materials_update",
+      "kind": "forward", "comment_required": false, "condition_refs": []
+    },
+    {
+      "code": "materials_update_to_teacher_upskilling",
+      "from": "materials_update", "to": "teacher_upskilling",
+      "kind": "forward", "comment_required": false, "condition_refs": []
+    },
+    {
+      "code": "teacher_upskilling_to_completed",
+      "from": "teacher_upskilling", "to": "completed",
+      "kind": "forward", "comment_required": false, "condition_refs": []
+    },
+    {
+      "code": "document_exchange_to_document_signing",
+      "from": "document_exchange", "to": "document_signing",
+      "kind": "skip_optional", "comment_required": false, "condition_refs": []
+    },
+    {
+      "code": "document_signing_to_document_revision",
+      "from": "document_signing", "to": "document_revision",
+      "kind": "rework", "comment_required": true, "condition_refs": []
+    },
+    {
+      "code": "teacher_upskilling_to_classes",
+      "from": "teacher_upskilling", "to": "classes",
+      "kind": "cycle", "comment_required": true, "condition_refs": []
+    },
+    {
+      "code": "contact_search_to_cancelled",
+      "from": "contact_search", "to": "cancelled",
+      "kind": "cancellation", "comment_required": true, "condition_refs": []
+    },
+    {
+      "code": "needs_clarification_to_cancelled",
+      "from": "needs_clarification", "to": "cancelled",
+      "kind": "cancellation", "comment_required": true, "condition_refs": []
+    },
+    {
+      "code": "meeting_to_cancelled",
+      "from": "meeting", "to": "cancelled",
+      "kind": "cancellation", "comment_required": true, "condition_refs": []
+    },
+    {
+      "code": "document_exchange_to_cancelled",
+      "from": "document_exchange", "to": "cancelled",
+      "kind": "cancellation", "comment_required": true, "condition_refs": []
+    },
+    {
+      "code": "document_revision_to_cancelled",
+      "from": "document_revision", "to": "cancelled",
+      "kind": "cancellation", "comment_required": true, "condition_refs": []
+    },
+    {
+      "code": "document_signing_to_cancelled",
+      "from": "document_signing", "to": "cancelled",
+      "kind": "cancellation", "comment_required": true, "condition_refs": []
+    },
+    {
+      "code": "materials_transfer_to_cancelled",
+      "from": "materials_transfer", "to": "cancelled",
+      "kind": "cancellation", "comment_required": true, "condition_refs": []
+    },
+    {
+      "code": "deployment_to_cancelled",
+      "from": "deployment", "to": "cancelled",
+      "kind": "cancellation", "comment_required": true, "condition_refs": []
+    },
+    {
+      "code": "teacher_training_to_cancelled",
+      "from": "teacher_training", "to": "cancelled",
+      "kind": "cancellation", "comment_required": true, "condition_refs": []
+    },
+    {
+      "code": "curriculum_update_to_cancelled",
+      "from": "curriculum_update", "to": "cancelled",
+      "kind": "cancellation", "comment_required": true, "condition_refs": []
+    },
+    {
+      "code": "classes_to_cancelled",
+      "from": "classes", "to": "cancelled",
+      "kind": "cancellation", "comment_required": true, "condition_refs": []
+    },
+    {
+      "code": "materials_update_to_cancelled",
+      "from": "materials_update", "to": "cancelled",
+      "kind": "cancellation", "comment_required": true, "condition_refs": []
+    },
+    {
+      "code": "teacher_upskilling_to_cancelled",
+      "from": "teacher_upskilling", "to": "cancelled",
+      "kind": "cancellation", "comment_required": true, "condition_refs": []
+    }
+  ],
+  "cross_cutting_controls": [
+    {
+      "code": "stage_execution_control",
+      "source_step": 14,
+      "source_description": "Контроль за исполнением каждого этапа.",
+      "modeling_decision": "Предлагается реализовать как сквозную функцию для всех рабочих этапов, без отдельного состояния процесса.",
+      "applies_to": "all_working_states",
+      "approval_status": "proposal",
+      "proposed_capabilities": [
+        "Отображение текущего этапа, ответственного и времени нахождения на этапе.",
+        "История переходов с инициатором, временем и комментарием при его наличии.",
+        "Доступ к комментариям и вложениям конкретного посещения этапа."
+      ]
+    }
+  ],
+  "semantics": {
+    "state_meaning": "Состояние обозначает текущий этап работы, а не автоматическое доказательство завершения всех действий из его названия.",
+    "comment_required": "Если true, после удаления начальных и конечных пробелов комментарий должен содержать хотя бы один символ.",
+    "condition_refs": "Все перечисленные условия должны выполняться перед фиксацией перехода. Пустой список не добавляет проверок полноты бизнес-данных.",
+    "is_not_null": "Указанное поле содержит непустой идентификатор. Проверка существования связанного объекта и прав доступа выполняется приложением независимо от этого шаблона.",
+    "authorization": "Проверка роли и доступа к конкретному взаимодействию обязательна на стороне приложения для любого перехода и не заменяется данным шаблоном.",
+    "history": "Каждый фактический переход создаёт новое событие и новое посещение состояния; повторный заход не перезаписывает прежнюю историю.",
+    "terminal_states": "Из completed и cancelled нет переходов. Возобновление закрытого взаимодействия данным предложением не определено.",
+    "versioning": "Экземпляр взаимодействия закрепляется за опубликованной версией шаблона. Изменение опубликованной версии и автоматическая миграция существующих экземпляров не предусматриваются.",
+    "completion": "completed означает завершение конкретного взаимодействия/цикла, а не прекращение всех отношений с вузом."
+  }
+}
