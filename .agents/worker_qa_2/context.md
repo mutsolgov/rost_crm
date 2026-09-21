@@ -1,0 +1,24 @@
+# Context for QA & Forensic Test Engineer (Milestone M3)
+
+- Working Directory: /home/muhammad/Dev/HACKATHON/LCT/rost_crm/.agents/worker_qa_2
+- Scope: Verification and expansion of test suites in backend/tests/
+  - backend/tests/test_attachments.py
+  - backend/tests/test_reports_multiformat.py
+  - backend/tests/test_import_wizard.py
+  - backend/tests/test_working_slice.py
+  - backend/tests/test_interaction_patch.py
+- Key Reference Documents:
+  - /home/muhammad/Dev/HACKATHON/LCT/rost_crm/ORIGINAL_REQUEST.md (header 2026-09-19T18:49:03Z)
+  - /home/muhammad/Dev/HACKATHON/LCT/rost_crm/.agents/orchestrator_2/PROJECT.md
+  - /home/muhammad/Dev/HACKATHON/LCT/rost_crm/.agents/worker_backend_2/handoff.md
+  - /home/muhammad/Dev/HACKATHON/LCT/rost_crm/.agents/worker_frontend_3/handoff.md
+  - docs/planning/05-report-fixture.json
+  - docs/planning/04-base-workflow.json
+  - AGENTS.md
+- Goals:
+  - Verify all 10 formats in test_attachments.py, magic bytes, 25MB limit (413), 152-FZ scope (404), SHA-256.
+  - Verify multi-format reports in test_reports_multiformat.py (XLSX PK\x03\x04, PDF %PDF-1.4, JSON, activity owner_at_event, created).
+  - Verify import wizard in test_import_wizard.py (dry-run preview, commit with Idempotency-Key).
+  - Ensure total tests > 40 with 100% PASS rate.
+  - Ensure verify_workflow.py, verify_reports.py, verify_plan.py pass.
+- Output: handoff.md in /home/muhammad/Dev/HACKATHON/LCT/rost_crm/.agents/worker_qa_2/handoff.md

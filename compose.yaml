@@ -82,6 +82,8 @@ services:
       - /bin/sh
       - -ec
       - python -m app.seed --init-db && exec uvicorn app.main:app --host 0.0.0.0 --port 8000
+    volumes:
+      - storage-data:/app/storage
     depends_on:
       postgres:
         condition: service_healthy
@@ -113,3 +115,4 @@ services:
 
 volumes:
   postgres-data:
+  storage-data:

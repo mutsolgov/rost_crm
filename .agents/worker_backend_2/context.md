@@ -1,0 +1,24 @@
+# Context for Backend Lead Architect (Milestone M1)
+
+- Working Directory: /home/muhammad/Dev/HACKATHON/LCT/rost_crm/.agents/worker_backend_2
+- Scope: Implementation of R1 (Secure Files), R2 (Reports & Analytics Engine), R3 (Two-Phase Importer)
+- Files exclusively owned:
+  - backend/app/files.py
+  - backend/app/reports_export.py
+  - backend/app/importer.py
+  - backend/app/schemas.py
+  - backend/app/services.py
+  - backend/app/main.py
+  - backend/app/config.py
+- Key Reference Documents:
+  - /home/muhammad/Dev/HACKATHON/LCT/rost_crm/ORIGINAL_REQUEST.md (header 2026-09-19T18:49:03Z)
+  - /home/muhammad/Dev/HACKATHON/LCT/rost_crm/.agents/orchestrator_2/PROJECT.md
+  - /home/muhammad/Dev/HACKATHON/LCT/rost_crm/.agents/spec_miner_survey_2/handoff.md
+  - /home/muhammad/Dev/HACKATHON/LCT/rost_crm/.agents/explorer_backend_survey_2/handoff.md
+  - docs/planning/05-report-fixture.json
+  - AGENTS.md
+- Constraints:
+  - DO NOT CHEAT. All implementations must be genuine. DO NOT hardcode test results, create dummy/facade implementations, or circumvent the intended task.
+  - Ponytail Ladder: Use Python standard library (zipfile, xml, email, hashlib, csv, io, pathlib). ZERO added pip dependencies in requirements.txt.
+  - Security Invariants: 152-FZ scope isolation (scoped_interaction, 404 on out-of-scope), in-memory JWT, CAS expected_revision, Idempotency-Key.
+- Output: handoff.md in /home/muhammad/Dev/HACKATHON/LCT/rost_crm/.agents/worker_backend_2/handoff.md

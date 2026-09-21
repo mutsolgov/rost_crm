@@ -7,15 +7,9 @@ import { Overview, Interactions } from './views/WorkspaceViews';
 import { InteractionPage } from './views/InteractionPage';
 import { Reports } from './views/Reports';
 import { CatalogPage, HelpPage } from './views/ReferenceViews';
+import { IntegrationsView } from './views/IntegrationsView';
 import type { Catalogs, Workflow } from './types';
 
-const navigation = [
-  { code: 'overview', name: 'Обзор', icon: 'grid' },
-  { code: 'interactions', name: 'Взаимодействия', icon: 'layers' },
-  { code: 'reports', name: 'Отчёты', icon: 'chart' },
-  { code: 'catalogs', name: 'Справочники', icon: 'book' },
-  { code: 'help', name: 'Помощь', icon: 'help' },
-];
 
 function LoginScreen() {
   const { config, loading, error, login, selectDemoUser, retry } = useAuth();
@@ -59,6 +53,15 @@ function Workspace() {
   const [createOpen, setCreateOpen] = useState(false);
   const catalogs = useResource<Catalogs>(() => api.get('/catalogs'), [api, revision]);
   const workflow = useResource<Workflow>(() => api.get('/workflow'), [api]);
+  const isPrivileged = me.role === 'supervisor' || me.role === 'administrator' || me.role === 'admin';
+  const navigation = [
+    { code: 'overview', name: 'Обзор', icon: 'grid' },
+    { code: 'interactions', name: 'Взаимодействия', icon: 'layers' },
+    { code: 'reports', name: 'Отчёты', icon: 'chart' },
+    ...(isPrivileged ? [{ code: 'integrations', name: 'Интеграции', icon: 'refresh' }] : []),
+    { code: 'catalogs', name: 'Справочники', icon: 'book' },
+    { code: 'help', name: 'Помощь', icon: 'help' },
+  ];
   const activeNav = route.path.split('/')[0] || 'overview';
   const selectedName = navigation.find(item => item.code === activeNav)?.name || 'Рабочее пространство';
   const navigate = (target: string) => { setMobileOpen(false); route.navigate(target); };
@@ -100,7 +103,16 @@ function Workspace() {
             ? <InteractionPage key={interactionId} id={interactionId} api={api} catalogs={catalogs.data} workflow={workflow.data} me={me} revision={revision} onChanged={changed} onBack={() => navigate('interactions')}/>
             : <Interactions api={api} catalogs={catalogs.data} workflow={workflow.data} revision={revision} initialState={route.query.get('state') || ''} onCreate={() => setCreateOpen(true)} canCreate={canCreate} openInteraction={openInteraction}/>)}
           {activeNav === 'reports' && <Reports api={api} catalogs={catalogs.data} workflow={workflow.data}/>}
-          {activeNav === 'catalogs' && <CatalogPage catalogs={catalogs.data}/>}
+          {activeNav === 'integrations' && (isPrivileged
+            ? <IntegrationsView api={api} catalogs={catalogs.data} me={me} navigate={navigate} openInteraction={openInteraction}/>
+            : <div className="panel" style={{ padding: '32px', textAlign: 'center' }}>
+                <h2>Доступ ограничен</h2>
+                <p style={{ color: 'var(--rtk-color-muted)', maxWidth: '440px', margin: '8px auto 20px' }}>
+                  Управление интеграциями и очередью сверки доступно только для руководителей и администраторов.
+                </p>
+                <Button onClick={() => navigate('overview')}>Вернуться к обзору</Button>
+              </div>)}
+          {activeNav === 'catalogs' && <CatalogPage catalogs={catalogs.data} api={api} onChanged={changed}/>}
           {activeNav === 'help' && <HelpPage/>}
           {!navigation.some(item => item.code === activeNav) && <div className="panel"><h2>Страница не найдена</h2><Button onClick={() => navigate('overview')}>Перейти к обзору</Button></div>}
         </>}

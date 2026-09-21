@@ -7,7 +7,6 @@ from jwt.exceptions import PyJWKClientConnectionError
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from .config import get_settings
 from .db import get_db, runtime_settings
 from .errors import APIError
 from .models import User

@@ -1,0 +1,27 @@
+# Context for Frontend & UX Lead (Milestone M2)
+
+- Working Directory: /home/muhammad/Dev/HACKATHON/LCT/rost_crm/.agents/worker_frontend_3
+- Scope: Implementation of R4 (UI components in Rostelecom Gen2 Light Theme)
+- Files exclusively owned:
+  - frontend/src/api.ts
+  - frontend/src/types.ts
+  - frontend/src/styles.css
+  - frontend/src/App.tsx
+  - frontend/src/views/InteractionPage.tsx
+  - frontend/src/views/Reports.tsx
+  - frontend/src/views/ReferenceViews.tsx
+  - frontend/src/views/WorkflowGraphView.tsx
+- Key Reference Documents:
+  - /home/muhammad/Dev/HACKATHON/LCT/rost_crm/ORIGINAL_REQUEST.md (header 2026-09-19T18:49:03Z)
+  - /home/muhammad/Dev/HACKATHON/LCT/rost_crm/.agents/orchestrator_2/PROJECT.md
+  - /home/muhammad/Dev/HACKATHON/LCT/rost_crm/.agents/spec_miner_survey_2/handoff.md
+  - /home/muhammad/Dev/HACKATHON/LCT/rost_crm/.agents/explorer_frontend_survey_2/handoff.md
+  - docs/planning/04-base-workflow.json
+  - docs/planning/adr/001-ui-design-system-and-full-scope.md
+  - AGENTS.md
+- Constraints:
+  - DO NOT CHEAT. All implementations must be genuine. DO NOT hardcode test results, create dummy/facade implementations, or circumvent the intended task.
+  - Ponytail Ladder: Zero external npm packages (no recharts, no react-dropzone). Use native HTML5 Drag & Drop, native SVG/Canvas diagrams.
+  - Design Tokens: Rostelecom Gen2 Light Theme (--rtk-color-primary: #7700FF, --rtk-color-accent: #FF4F12, --rtk-color-background: #F4F5F8, --rtk-color-text: #101828). SPA responsiveness without full page reload.
+  - In-memory JWT only (no localStorage/sessionStorage).
+- Output: handoff.md in /home/muhammad/Dev/HACKATHON/LCT/rost_crm/.agents/worker_frontend_3/handoff.md

@@ -2,7 +2,7 @@ from functools import lru_cache
 
 from fastapi import Request
 from sqlalchemy import create_engine, event
-from sqlalchemy.orm import DeclarativeBase, Session
+from sqlalchemy.orm import DeclarativeBase
 from sqlalchemy.pool import StaticPool
 
 from .config import get_settings

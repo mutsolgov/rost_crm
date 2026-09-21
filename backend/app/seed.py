@@ -3,16 +3,18 @@ from __future__ import annotations
 import argparse
 from datetime import timedelta
 
-from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from .db import Base, get_engine
 from .models import (
+    Contract,
     Direction,
     Interaction,
     InteractionEvent,
+    License,
     Organization,
     OrganizationAccess,
+    OrganizationContact,
     Product,
     Program,
     ProgramProduct,
@@ -80,8 +82,8 @@ def seed_database(db: Session) -> None:
     db.flush()
 
     grants = {
-        ("manager-a", "org-1"): (True, True),
-        ("manager-b", "org-2"): (True, True),
+        ("manager-a", "org-1"): (True, False),
+        ("manager-b", "org-2"): (True, False),
         ("supervisor", "org-1"): (True, True),
         ("supervisor", "org-2"): (True, True),
         ("supervisor", "org-3"): (True, True),
@@ -94,16 +96,47 @@ def seed_database(db: Session) -> None:
             grant.can_create, grant.read_all = can_create, read_all
     db.flush()
 
-    seeded = [
-        ("ix-1", "Облачная лаборатория для первокурсников", "org-1", "program-devops", "product-cloud", "Весна 2026", "manager-a", "needs_clarification"),
-        ("ix-2", "Курс автоматизации тестирования", "org-1", "program-qa", "product-test", "Осень 2026", "manager-a", "meeting"),
-        ("ix-3", "Обновление программы DevOps", "org-1", "program-devops", "product-cloud", "2026/27", "manager-a", "document_exchange"),
-        ("ix-4", "Пилот облачной среды", "org-2", "program-devops", "product-cloud", "Весна 2026", "manager-b", "materials_transfer"),
-        ("ix-5", "Лаборатории контроля качества", "org-2", "program-qa", "product-test", "Осень 2026", "manager-b", "teacher_training"),
-        ("ix-6", "Программа цифровой практики", "org-3", "program-qa", "product-test", "2026/27", "manager-b", "classes"),
+    contacts = [
+        ("contact-1", "org-1", "Иван Петров", "Декан факультета ИТ", "petrov@org1.ru", "+7-495-100-01", True),
+        ("contact-2", "org-1", "Ольга Сидорова", "Зав. кафедрой ПО", "sidorova@org1.ru", "+7-495-100-02", True),
+        ("contact-3", "org-2", "Сергей Кузнецов", "Проректор по цифровизации", "kuznetsov@org2.ru", "+7-812-200-01", True),
+        ("contact-4", "org-3", "Дмитрий Морозов", "Руководитель ИТ-отделения", "morozov@org3.ru", "+7-495-300-01", True),
     ]
+    for ident, org_id, full_name, pos, email, phone, active in contacts:
+        _get_or_add(db, OrganizationContact, ident, organization_id=org_id, full_name=full_name,
+                    position=pos, email=email, phone=phone, active=active)
+
     now = utcnow()
-    for index, (ident, title, organization_id, program_id, product_id, cycle, owner_id, state) in enumerate(seeded):
+    contracts = [
+        ("contract-1", "org-1", "ДОГ-2026/01", now - timedelta(days=60), "active", now - timedelta(days=60)),
+        ("contract-2", "org-2", "ДОГ-2026/02", now - timedelta(days=45), "active", now - timedelta(days=45)),
+        ("contract-3", "org-3", "ДОГ-2026/03", now - timedelta(days=30), "active", now - timedelta(days=30)),
+    ]
+    for ident, org_id, num, signed, status, created in contracts:
+        _get_or_add(db, Contract, ident, organization_id=org_id, number=num, signed_on=signed,
+                    status=status, created_at=created)
+
+    licenses = [
+        ("license-1", "org-1", "product-cloud", "contract-1", now - timedelta(days=50), 1, "transferred", now - timedelta(days=50)),
+        ("license-2", "org-1", "product-test", "contract-1", now - timedelta(days=40), 2, "pending", now - timedelta(days=40)),
+        ("license-3", "org-2", "product-cloud", "contract-2", now - timedelta(days=35), 1, "transferred", now - timedelta(days=35)),
+        ("license-4", "org-2", "product-test", "contract-2", now - timedelta(days=20), 1, "pending", now - timedelta(days=20)),
+    ]
+    for ident, org_id, prod_id, cont_id, signed, term, transfer_status, created in licenses:
+        _get_or_add(db, License, ident, organization_id=org_id, product_id=prod_id,
+                    contract_id=cont_id, signed_on=signed, term_years=term,
+                    transfer_status=transfer_status, created_at=created)
+    db.flush()
+
+    seeded = [
+        ("ix-1", "Облачная лаборатория для первокурсников", "org-1", "program-devops", "product-cloud", "Весна 2026", "manager-a", "needs_clarification", "contact-1", None, None),
+        ("ix-2", "Курс автоматизации тестирования", "org-1", "program-qa", "product-test", "Осень 2026", "manager-a", "meeting", "contact-2", None, None),
+        ("ix-3", "Обновление программы DevOps", "org-1", "program-devops", "product-cloud", "2026/27", "manager-a", "document_exchange", "contact-1", "contract-1", None),
+        ("ix-4", "Пилот облачной среды", "org-2", "program-devops", "product-cloud", "Весна 2026", "manager-b", "materials_transfer", "contact-3", "contract-2", "license-3"),
+        ("ix-5", "Лаборатории контроля качества", "org-2", "program-qa", "product-test", "Осень 2026", "manager-b", "teacher_training", "contact-3", "contract-2", "license-4"),
+        ("ix-6", "Программа цифровой практики", "org-3", "program-qa", "product-test", "2026/27", "manager-b", "classes", "contact-4", "contract-3", None),
+    ]
+    for index, (ident, title, organization_id, program_id, product_id, cycle, owner_id, state, contact_id, contract_id, license_id) in enumerate(seeded):
         if db.get(Interaction, ident) is not None:
             continue
         owner = db.get(User, owner_id)
@@ -114,6 +147,9 @@ def seed_database(db: Session) -> None:
             organization_id=organization_id,
             program_id=program_id,
             product_id=product_id,
+            contact_id=contact_id,
+            contract_id=contract_id,
+            license_id=license_id,
             cycle_label=cycle,
             owner_id=owner_id,
             team_id=owner.team_id,

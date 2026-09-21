@@ -15,6 +15,20 @@ class InteractionCreate(Body):
     product_id: str | None = None
     cycle_label: str = Field(min_length=1, max_length=100)
     owner_id: str = Field(min_length=1, max_length=64)
+    contact_id: str | None = None
+    contract_id: str | None = None
+    license_id: str | None = None
+
+
+class InteractionUpdate(Body):
+    expected_revision: int = Field(ge=1)
+    title: str | None = Field(default=None, min_length=1, max_length=250)
+    program_id: str | None = None
+    product_id: str | None = None
+    cycle_label: str | None = Field(default=None, min_length=1, max_length=100)
+    contact_id: str | None = None
+    contract_id: str | None = None
+    license_id: str | None = None
 
 
 class TransitionCommand(Body):
@@ -43,6 +57,7 @@ class SnapshotRequest(Body):
     as_of: datetime
     knowledge_cutoff: datetime | None = None
     as_of_inclusive: bool = True
+    historical_owner_id: str | None = None
     organization_ids: list[str] = Field(default_factory=list, max_length=500)
     program_ids: list[str] = Field(default_factory=list, max_length=500)
     product_ids: list[str] = Field(default_factory=list, max_length=500)
@@ -54,3 +69,67 @@ class SnapshotRequest(Body):
         if value is not None and (value.tzinfo is None or value.utcoffset() is None):
             raise ValueError("Дата должна включать часовой пояс")
         return value
+
+
+class ActivityRequest(Body):
+    from_date: datetime = Field(alias="from")
+    to_date: datetime = Field(alias="to")
+    knowledge_cutoff: datetime | None = None
+    historical_owner_id: str | None = None
+    organization_ids: list[str] = Field(default_factory=list, max_length=500)
+    program_ids: list[str] = Field(default_factory=list, max_length=500)
+    product_ids: list[str] = Field(default_factory=list, max_length=500)
+    owner_ids: list[str] = Field(default_factory=list, max_length=500)
+
+    model_config = ConfigDict(extra="forbid", str_strip_whitespace=True, populate_by_name=True)
+
+    @field_validator("from_date", "to_date", "knowledge_cutoff")
+    @classmethod
+    def timezone_required(cls, value):
+        if value is not None and (value.tzinfo is None or value.utcoffset() is None):
+            raise ValueError("Дата должна включать часовой пояс")
+        return value
+
+
+class CreatedReportRequest(Body):
+    from_date: datetime = Field(alias="from")
+    to_date: datetime = Field(alias="to")
+    knowledge_cutoff: datetime | None = None
+    organization_ids: list[str] = Field(default_factory=list, max_length=500)
+    owner_ids: list[str] = Field(default_factory=list, max_length=500)
+    program_ids: list[str] = Field(default_factory=list, max_length=500)
+    product_ids: list[str] = Field(default_factory=list, max_length=500)
+
+    model_config = ConfigDict(extra="forbid", str_strip_whitespace=True, populate_by_name=True)
+
+    @field_validator("from_date", "to_date", "knowledge_cutoff")
+    @classmethod
+    def timezone_required(cls, value):
+        if value is not None and (value.tzinfo is None or value.utcoffset() is None):
+            raise ValueError("Дата должна включать часовой пояс")
+        return value
+
+
+class AttachmentRead(BaseModel):
+    id: str
+    interaction_id: str
+    visit_id: str
+    file_name: str
+    file_size: int
+    content_type: str
+    checksum: str
+    uploaded_by: str
+    created_at: str
+
+
+class ImportCommitRequest(Body):
+    import_id: str | None = None
+    rows: list[dict] = Field(default_factory=list)
+
+
+class WorkflowMigrateRequest(Body):
+    from_version: int = Field(ge=1, description="Исходная версия workflow")
+    to_version: int = Field(ge=1, description="Целевая версия workflow")
+    status_mapping: dict[str, str] = Field(min_length=1, description="Матрица сопоставления статусов {старый: новый}")
+
+
