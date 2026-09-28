@@ -25,6 +25,25 @@ function isoDaysAgo(days: number) {
   return d.toISOString().slice(0, 16);
 }
 
+function safeIso(val?: string, fallbackDaysAgo = 0): string {
+  if (!val) {
+    const d = new Date();
+    if (fallbackDaysAgo > 0) d.setDate(d.getDate() - fallbackDaysAgo);
+    return d.toISOString();
+  }
+  try {
+    const d = new Date(val);
+    if (isNaN(d.getTime())) {
+      const fallback = new Date();
+      if (fallbackDaysAgo > 0) fallback.setDate(fallback.getDate() - fallbackDaysAgo);
+      return fallback.toISOString();
+    }
+    return d.toISOString();
+  } catch {
+    return new Date().toISOString();
+  }
+}
+
 type ReportMode = 'snapshot' | 'activity' | 'created';
 
 export function StageFunnelDiagram({
@@ -153,6 +172,104 @@ export function StageFunnelDiagram({
 }
 
 
+export interface ReportColumnDef {
+  key: string;
+  label: string;
+}
+
+export const SNAPSHOT_COLUMNS: ReportColumnDef[] = [
+  { key: 'title', label: 'Взаимодействие' },
+  { key: 'organization_name', label: 'Организация' },
+  { key: 'program_name', label: 'Программа' },
+  { key: 'product_name', label: 'Продукт' },
+  { key: 'state_name', label: 'Этап' },
+  { key: 'owner_name', label: 'Ответственный' },
+  { key: 'cycle_label', label: 'Метка цикла' },
+];
+
+export const ACTIVITY_COLUMNS: ReportColumnDef[] = [
+  { key: 'effective_at', label: 'Время события' },
+  { key: 'title', label: 'Взаимодействие' },
+  { key: 'organization_name', label: 'Организация' },
+  { key: 'from_state_name', label: 'Исходный этап' },
+  { key: 'to_state_name', label: 'Целевой этап' },
+  { key: 'owner_at_event_name', label: 'Ответственный на момент перехода' },
+  { key: 'actor_name', label: 'Инициатор' },
+];
+
+export const CREATED_COLUMNS: ReportColumnDef[] = [
+  { key: 'created_at', label: 'Дата создания' },
+  { key: 'title', label: 'Взаимодействие' },
+  { key: 'organization_name', label: 'Организация' },
+  { key: 'program_name', label: 'Программа' },
+  { key: 'product_name', label: 'Продукт' },
+  { key: 'owner_name', label: 'Ответственный' },
+];
+
+function ColumnSelector({
+  columns,
+  selected,
+  onToggle,
+  onSelectAll,
+}: {
+  columns: ReportColumnDef[];
+  selected: string[];
+  onToggle: (key: string) => void;
+  onSelectAll: () => void;
+}) {
+  return (
+    <div style={{ marginTop: '16px', paddingTop: '14px', borderTop: '1px solid var(--rtk-color-border)' }}>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '8px', flexWrap: 'wrap', gap: '8px' }}>
+        <span style={{ fontSize: '13px', fontWeight: 600, color: 'var(--rtk-color-text)' }}>
+          Отображаемые колонки ({selected.length} из {columns.length}):
+        </span>
+        <button
+          type="button"
+          onClick={onSelectAll}
+          style={{ fontSize: '12px', color: 'var(--rtk-color-primary)', background: 'none', border: 'none', cursor: 'pointer', padding: 0, fontWeight: 500 }}
+        >
+          Выбрать все
+        </button>
+      </div>
+      <div style={{ display: 'flex', flexWrap: 'wrap', gap: '10px 16px' }}>
+        {columns.map(col => (
+          <label key={col.key} style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', fontSize: '12px', cursor: 'pointer', userSelect: 'none' }}>
+            <input
+              type="checkbox"
+              checked={selected.includes(col.key)}
+              onChange={() => onToggle(col.key)}
+            />
+            <span>{col.label}</span>
+          </label>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+interface SnapshotFilters {
+  asOf: string;
+  organizationId: string;
+  ownerId: string;
+  selectedColumns: string[];
+}
+
+interface ActivityFilters {
+  fromDate: string;
+  toDate: string;
+  organizationId: string;
+  historicalOwnerId: string;
+  selectedColumns: string[];
+}
+
+interface CreatedFilters {
+  fromDate: string;
+  toDate: string;
+  organizationId: string;
+  ownerId: string;
+  selectedColumns: string[];
+}
+
 export function Reports({
   api,
   catalogs,
@@ -164,12 +281,28 @@ export function Reports({
 }) {
   const [mode, setMode] = useState<ReportMode>('snapshot');
 
-  const [asOf, setAsOf] = useState(isoNow());
-  const [fromDate, setFromDate] = useState(isoDaysAgo(30));
-  const [toDate, setToDate] = useState(isoNow());
-  const [organizationId, setOrganizationId] = useState('');
-  const [ownerId, setOwnerId] = useState('');
-  const [historicalOwnerId, setHistoricalOwnerId] = useState('');
+  const [snapshotFilters, setSnapshotFilters] = useState<SnapshotFilters>({
+    asOf: isoNow(),
+    organizationId: '',
+    ownerId: '',
+    selectedColumns: SNAPSHOT_COLUMNS.map(c => c.key),
+  });
+
+  const [activityFilters, setActivityFilters] = useState<ActivityFilters>({
+    fromDate: isoDaysAgo(30),
+    toDate: isoNow(),
+    organizationId: '',
+    historicalOwnerId: '',
+    selectedColumns: ACTIVITY_COLUMNS.map(c => c.key),
+  });
+
+  const [createdFilters, setCreatedFilters] = useState<CreatedFilters>({
+    fromDate: isoDaysAgo(30),
+    toDate: isoNow(),
+    organizationId: '',
+    ownerId: '',
+    selectedColumns: CREATED_COLUMNS.map(c => c.key),
+  });
 
   const [snapshotResult, setSnapshotResult] = useState<Snapshot | null>(null);
   const [activityResult, setActivityResult] = useState<ActivityResult | null>(null);
@@ -180,35 +313,38 @@ export function Reports({
   const [error, setError] = useState<unknown>(null);
   const [notice, setNotice] = useState('');
 
-  const getSnapshotQuery = (): SnapshotQuery => ({
-    as_of: new Date(asOf).toISOString(),
+  const getSnapshotPayload = (): SnapshotQuery => ({
+    as_of: safeIso(snapshotFilters.asOf),
     knowledge_cutoff: new Date().toISOString(),
     as_of_inclusive: true,
-    organization_ids: organizationId ? [organizationId] : [],
+    organization_ids: snapshotFilters.organizationId ? [snapshotFilters.organizationId] : [],
     program_ids: [],
     product_ids: [],
-    owner_ids: ownerId ? [ownerId] : [],
+    owner_ids: snapshotFilters.ownerId ? [snapshotFilters.ownerId] : [],
+    selected_columns: snapshotFilters.selectedColumns,
   });
 
-  const getActivityQuery = (): ActivityQuery => ({
-    from_date: new Date(fromDate).toISOString(),
-    to_date: new Date(toDate).toISOString(),
+  const getActivityPayload = (): ActivityQuery => ({
+    from_date: safeIso(activityFilters.fromDate, 30),
+    to_date: safeIso(activityFilters.toDate),
     knowledge_cutoff: new Date().toISOString(),
-    organization_ids: organizationId ? [organizationId] : [],
-    historical_owner_id: historicalOwnerId || undefined,
+    organization_ids: activityFilters.organizationId ? [activityFilters.organizationId] : [],
+    historical_owner_id: activityFilters.historicalOwnerId || undefined,
     program_ids: [],
     product_ids: [],
     owner_ids: [],
+    selected_columns: activityFilters.selectedColumns,
   });
 
-  const getCreatedQuery = (): CreatedQuery => ({
-    from_date: new Date(fromDate).toISOString(),
-    to_date: new Date(toDate).toISOString(),
+  const getCreatedPayload = (): CreatedQuery => ({
+    from_date: safeIso(createdFilters.fromDate, 30),
+    to_date: safeIso(createdFilters.toDate),
     knowledge_cutoff: new Date().toISOString(),
-    organization_ids: organizationId ? [organizationId] : [],
-    owner_ids: ownerId ? [ownerId] : [],
+    organization_ids: createdFilters.organizationId ? [createdFilters.organizationId] : [],
+    owner_ids: createdFilters.ownerId ? [createdFilters.ownerId] : [],
     program_ids: [],
     product_ids: [],
+    selected_columns: createdFilters.selectedColumns,
   });
 
   async function buildReport() {
@@ -218,13 +354,16 @@ export function Reports({
 
     try {
       if (mode === 'snapshot') {
-        const data = await api.post<Snapshot>('/reports/snapshot', getSnapshotQuery());
+        const q = getSnapshotPayload();
+        const data = await api.post<Snapshot>('/reports/snapshot', q);
         setSnapshotResult(data);
       } else if (mode === 'activity') {
-        const data = await api.post<ActivityResult>('/reports/activity', getActivityQuery());
+        const q = getActivityPayload();
+        const data = await api.post<ActivityResult>('/reports/activity', q);
         setActivityResult(data);
       } else if (mode === 'created') {
-        const data = await api.post<CreatedResult>('/reports/created', getCreatedQuery());
+        const q = getCreatedPayload();
+        const data = await api.post<CreatedResult>('/reports/created', q);
         setCreatedResult(data);
       }
     } catch (problem) {
@@ -239,11 +378,14 @@ export function Reports({
     setError(null);
     try {
       if (mode === 'snapshot') {
-        await api.download('/reports/snapshot/export', getSnapshotQuery(), format, `snapshot-report.${format}`);
+        const payload = getSnapshotPayload();
+        await api.download('/reports/snapshot/export', payload, format, `snapshot-report.${format}`);
       } else if (mode === 'activity') {
-        await api.download('/reports/activity/export', getActivityQuery(), format, `activity-report.${format}`);
+        const payload = getActivityPayload();
+        await api.download('/reports/activity/export', payload, format, `activity-report.${format}`);
       } else if (mode === 'created') {
-        await api.download('/reports/created/export', getCreatedQuery(), format, `created-report.${format}`);
+        const payload = getCreatedPayload();
+        await api.download('/reports/created/export', payload, format, `created-report.${format}`);
       }
       setNotice(`Отчёт (${format.toUpperCase()}) успешно сформирован и загружен`);
     } catch (problem) {
@@ -253,17 +395,53 @@ export function Reports({
     }
   }
 
+  function toggleColumn(reportMode: ReportMode, key: string) {
+    if (reportMode === 'snapshot') {
+      setSnapshotFilters(prev => {
+        const exists = prev.selectedColumns.includes(key);
+        const next = exists ? prev.selectedColumns.filter(k => k !== key) : [...prev.selectedColumns, key];
+        return { ...prev, selectedColumns: next.length > 0 ? next : [key] };
+      });
+    } else if (reportMode === 'activity') {
+      setActivityFilters(prev => {
+        const exists = prev.selectedColumns.includes(key);
+        const next = exists ? prev.selectedColumns.filter(k => k !== key) : [...prev.selectedColumns, key];
+        return { ...prev, selectedColumns: next.length > 0 ? next : [key] };
+      });
+    } else if (reportMode === 'created') {
+      setCreatedFilters(prev => {
+        const exists = prev.selectedColumns.includes(key);
+        const next = exists ? prev.selectedColumns.filter(k => k !== key) : [...prev.selectedColumns, key];
+        return { ...prev, selectedColumns: next.length > 0 ? next : [key] };
+      });
+    }
+  }
+
+  function selectAllColumns(reportMode: ReportMode) {
+    if (reportMode === 'snapshot') {
+      setSnapshotFilters(prev => ({ ...prev, selectedColumns: SNAPSHOT_COLUMNS.map(c => c.key) }));
+    } else if (reportMode === 'activity') {
+      setActivityFilters(prev => ({ ...prev, selectedColumns: ACTIVITY_COLUMNS.map(c => c.key) }));
+    } else if (reportMode === 'created') {
+      setCreatedFilters(prev => ({ ...prev, selectedColumns: CREATED_COLUMNS.map(c => c.key) }));
+    }
+  }
+
   const countsByState: Record<string, number> =
     mode === 'snapshot'
       ? snapshotResult?.totals.counts_by_state || {}
       : mode === 'activity'
       ? activityResult?.totals.counts_by_to_state || {}
-      : createdResult?.totals.counts_by_state || {};
+      : createdResult?.totals?.counts_by_state || {};
 
   const hasResult =
     (mode === 'snapshot' && !!snapshotResult) ||
     (mode === 'activity' && !!activityResult) ||
     (mode === 'created' && !!createdResult);
+
+  const isSnapCol = (key: string) => snapshotFilters.selectedColumns.includes(key);
+  const isActCol = (key: string) => activityFilters.selectedColumns.includes(key);
+  const isCreatedCol = (key: string) => createdFilters.selectedColumns.includes(key);
 
   return (
     <>
@@ -306,97 +484,157 @@ export function Reports({
 
         <div style={{ padding: '20px 24px' }}>
           {mode === 'snapshot' && (
-            <div className="filter-grid">
-              <label className="field">
-                <span>Состояние на дату и время</span>
-                <input
-                  type="datetime-local"
-                  value={asOf}
-                  onChange={e => setAsOf(e.target.value)}
-                />
-              </label>
-              <label className="field">
-                <span>Организация</span>
-                <select value={organizationId} onChange={e => setOrganizationId(e.target.value)}>
-                  <option value="">Все доступные организации</option>
-                  {catalogs.organizations.map(item => (
-                    <option key={item.id} value={item.id}>{item.name}</option>
-                  ))}
-                </select>
-              </label>
-              <label className="field">
-                <span>Ответственный</span>
-                <select value={ownerId} onChange={e => setOwnerId(e.target.value)}>
-                  <option value="">Все ответственные</option>
-                  {catalogs.owners.map(item => (
-                    <option key={item.id} value={item.id}>{item.name}</option>
-                  ))}
-                </select>
-              </label>
-            </div>
+            <>
+              <div className="filter-grid">
+                <label className="field">
+                  <span>Состояние на дату и время</span>
+                  <input
+                    type="datetime-local"
+                    value={snapshotFilters.asOf}
+                    onChange={e => setSnapshotFilters(prev => ({ ...prev, asOf: e.target.value }))}
+                  />
+                </label>
+                <label className="field">
+                  <span>Организация</span>
+                  <select
+                    value={snapshotFilters.organizationId}
+                    onChange={e => setSnapshotFilters(prev => ({ ...prev, organizationId: e.target.value }))}
+                  >
+                    <option value="">Все доступные организации</option>
+                    {catalogs.organizations.map(item => (
+                      <option key={item.id} value={item.id}>{item.name}</option>
+                    ))}
+                  </select>
+                </label>
+                <label className="field">
+                  <span>Ответственный</span>
+                  <select
+                    value={snapshotFilters.ownerId}
+                    onChange={e => setSnapshotFilters(prev => ({ ...prev, ownerId: e.target.value }))}
+                  >
+                    <option value="">Все ответственные</option>
+                    {catalogs.owners.map(item => (
+                      <option key={item.id} value={item.id}>{item.name}</option>
+                    ))}
+                  </select>
+                </label>
+              </div>
+              <ColumnSelector
+                columns={SNAPSHOT_COLUMNS}
+                selected={snapshotFilters.selectedColumns}
+                onToggle={(key) => toggleColumn('snapshot', key)}
+                onSelectAll={() => selectAllColumns('snapshot')}
+              />
+            </>
           )}
 
           {mode === 'activity' && (
-            <div className="filter-grid">
-              <label className="field">
-                <span>Интервал «С даты»</span>
-                <input
-                  type="datetime-local"
-                  value={fromDate}
-                  onChange={e => setFromDate(e.target.value)}
-                />
-              </label>
-              <label className="field">
-                <span>Интервал «По дату»</span>
-                <input
-                  type="datetime-local"
-                  value={toDate}
-                  onChange={e => setToDate(e.target.value)}
-                />
-              </label>
-              <label className="field">
-                <span>Исторический ответственный</span>
-                <select value={historicalOwnerId} onChange={e => setHistoricalOwnerId(e.target.value)}>
-                  <option value="">Все ответственные на момент перехода</option>
-                  {catalogs.owners.map(item => (
-                    <option key={item.id} value={item.id}>{item.name}</option>
-                  ))}
-                </select>
-              </label>
-            </div>
+            <>
+              <div className="filter-grid">
+                <label className="field">
+                  <span>Интервал «С даты»</span>
+                  <input
+                    type="datetime-local"
+                    value={activityFilters.fromDate}
+                    onChange={e => setActivityFilters(prev => ({ ...prev, fromDate: e.target.value }))}
+                  />
+                </label>
+                <label className="field">
+                  <span>Интервал «По дату»</span>
+                  <input
+                    type="datetime-local"
+                    value={activityFilters.toDate}
+                    onChange={e => setActivityFilters(prev => ({ ...prev, toDate: e.target.value }))}
+                  />
+                </label>
+                <label className="field">
+                  <span>Организация</span>
+                  <select
+                    value={activityFilters.organizationId}
+                    onChange={e => setActivityFilters(prev => ({ ...prev, organizationId: e.target.value }))}
+                  >
+                    <option value="">Все доступные организации</option>
+                    {catalogs.organizations.map(item => (
+                      <option key={item.id} value={item.id}>{item.name}</option>
+                    ))}
+                  </select>
+                </label>
+                <label className="field">
+                  <span>Исторический ответственный</span>
+                  <select
+                    value={activityFilters.historicalOwnerId}
+                    onChange={e => setActivityFilters(prev => ({ ...prev, historicalOwnerId: e.target.value }))}
+                  >
+                    <option value="">Все ответственные на момент перехода</option>
+                    {catalogs.owners.map(item => (
+                      <option key={item.id} value={item.id}>{item.name}</option>
+                    ))}
+                  </select>
+                </label>
+              </div>
+              <ColumnSelector
+                columns={ACTIVITY_COLUMNS}
+                selected={activityFilters.selectedColumns}
+                onToggle={(key) => toggleColumn('activity', key)}
+                onSelectAll={() => selectAllColumns('activity')}
+              />
+            </>
           )}
 
           {mode === 'created' && (
-            <div className="filter-grid">
-              <label className="field">
-                <span>Создано «С даты»</span>
-                <input
-                  type="datetime-local"
-                  value={fromDate}
-                  onChange={e => setFromDate(e.target.value)}
-                />
-              </label>
-              <label className="field">
-                <span>Создано «По дату»</span>
-                <input
-                  type="datetime-local"
-                  value={toDate}
-                  onChange={e => setToDate(e.target.value)}
-                />
-              </label>
-              <label className="field">
-                <span>Ответственный</span>
-                <select value={ownerId} onChange={e => setOwnerId(e.target.value)}>
-                  <option value="">Все ответственные</option>
-                  {catalogs.owners.map(item => (
-                    <option key={item.id} value={item.id}>{item.name}</option>
-                  ))}
-                </select>
-              </label>
-            </div>
+            <>
+              <div className="filter-grid">
+                <label className="field">
+                  <span>Создано «С даты»</span>
+                  <input
+                    type="datetime-local"
+                    value={createdFilters.fromDate}
+                    onChange={e => setCreatedFilters(prev => ({ ...prev, fromDate: e.target.value }))}
+                  />
+                </label>
+                <label className="field">
+                  <span>Создано «По дату»</span>
+                  <input
+                    type="datetime-local"
+                    value={createdFilters.toDate}
+                    onChange={e => setCreatedFilters(prev => ({ ...prev, toDate: e.target.value }))}
+                  />
+                </label>
+                <label className="field">
+                  <span>Организация</span>
+                  <select
+                    value={createdFilters.organizationId}
+                    onChange={e => setCreatedFilters(prev => ({ ...prev, organizationId: e.target.value }))}
+                  >
+                    <option value="">Все доступные организации</option>
+                    {catalogs.organizations.map(item => (
+                      <option key={item.id} value={item.id}>{item.name}</option>
+                    ))}
+                  </select>
+                </label>
+                <label className="field">
+                  <span>Ответственный</span>
+                  <select
+                    value={createdFilters.ownerId}
+                    onChange={e => setCreatedFilters(prev => ({ ...prev, ownerId: e.target.value }))}
+                  >
+                    <option value="">Все ответственные</option>
+                    {catalogs.owners.map(item => (
+                      <option key={item.id} value={item.id}>{item.name}</option>
+                    ))}
+                  </select>
+                </label>
+              </div>
+              <ColumnSelector
+                columns={CREATED_COLUMNS}
+                selected={createdFilters.selectedColumns}
+                onToggle={(key) => toggleColumn('created', key)}
+                onSelectAll={() => selectAllColumns('created')}
+              />
+            </>
           )}
 
-          <p className="form-hint">
+          <p className="form-hint" style={{ marginTop: '12px' }}>
             {mode === 'snapshot' && 'Срез фиксирует состояние карточек и ответственных строго на выбранный момент времени.'}
             {mode === 'activity' && 'Динамика фиксирует все переходы и циклы за интервал с привязкой к историческому владельцу.'}
             {mode === 'created' && 'Отчёт фиксирует все новые карточки взаимодействий, зарегистрированные в выбранный период.'}
@@ -457,21 +695,21 @@ export function Reports({
               <>
                 <div><strong>{snapshotResult.totals.interactions}</strong><span>взаимодействий</span></div>
                 <div><strong>{snapshotResult.totals.organizations}</strong><span>организаций</span></div>
-                <div><strong>{Object.keys(snapshotResult.totals.counts_by_state).length}</strong><span>активных этапов</span></div>
+                <div><strong>{Object.values(snapshotResult.totals.counts_by_state || {}).filter(c => c > 0).length}</strong><span>активных этапов</span></div>
               </>
             )}
             {mode === 'activity' && activityResult && (
               <>
                 <div><strong>{activityResult.totals.transitions}</strong><span>совершённых переходов</span></div>
                 <div><strong>{activityResult.rows.length}</strong><span>записей аудита</span></div>
-                <div><strong>{Object.keys(activityResult.totals.counts_by_to_state).length}</strong><span>задействованных этапов</span></div>
+                <div><strong>{Object.values(activityResult.totals.counts_by_to_state || {}).filter(c => c > 0).length}</strong><span>задействованных этапов</span></div>
               </>
             )}
             {mode === 'created' && createdResult && (
               <>
-                <div><strong>{createdResult.totals.interactions}</strong><span>созданных карточек</span></div>
-                <div><strong>{createdResult.totals.organizations}</strong><span>организаций</span></div>
-                <div><strong>{Object.keys(createdResult.totals.counts_by_state).length}</strong><span>этапов</span></div>
+                <div><strong>{createdResult?.totals?.interactions ?? createdResult?.rows?.length ?? 0}</strong><span>созданных карточек</span></div>
+                <div><strong>{createdResult?.totals?.organizations ?? 0}</strong><span>организаций</span></div>
+                <div><strong>{Object.values(createdResult?.totals?.counts_by_state || {}).filter(c => c > 0).length}</strong><span>этапов</span></div>
               </>
             )}
           </div>
@@ -494,27 +732,25 @@ export function Reports({
                 <table className="data-table">
                   <thead>
                     <tr>
-                      <th>Взаимодействие</th>
-                      <th>Организация</th>
-                      <th>Программа / Продукт</th>
-                      <th>Текущий этап</th>
-                      <th>Ответственный</th>
+                      {isSnapCol('title') && <th>Взаимодействие</th>}
+                      {isSnapCol('organization_name') && <th>Организация</th>}
+                      {isSnapCol('program_name') && <th>Программа</th>}
+                      {isSnapCol('product_name') && <th>Продукт</th>}
+                      {isSnapCol('state_name') && <th>Текущий этап</th>}
+                      {isSnapCol('owner_name') && <th>Ответственный</th>}
+                      {isSnapCol('cycle_label') && <th>Метка цикла</th>}
                     </tr>
                   </thead>
                   <tbody>
                     {snapshotResult.rows.map(row => (
                       <tr key={row.interaction_id}>
-                        <td><strong>{row.title}</strong></td>
-                        <td>{row.organization_name}</td>
-                        <td>
-                          {row.program_name || row.product_name ? (
-                            <span>{row.program_name || '—'} / {row.product_name || '—'}</span>
-                          ) : (
-                            <span style={{ color: 'var(--rtk-color-caption)' }}>Не определены</span>
-                          )}
-                        </td>
-                        <td><StageBadge code={row.state} name={row.state_name} /></td>
-                        <td>{row.owner_name}</td>
+                        {isSnapCol('title') && <td><strong>{row.title}</strong></td>}
+                        {isSnapCol('organization_name') && <td>{row.organization_name}</td>}
+                        {isSnapCol('program_name') && <td>{row.program_name || '—'}</td>}
+                        {isSnapCol('product_name') && <td>{row.product_name || '—'}</td>}
+                        {isSnapCol('state_name') && <td><StageBadge code={row.state} name={row.state_name} /></td>}
+                        {isSnapCol('owner_name') && <td>{row.owner_name}</td>}
+                        {isSnapCol('cycle_label') && <td>{row.cycle_label || '—'}</td>}
                       </tr>
                     ))}
                   </tbody>
@@ -533,29 +769,33 @@ export function Reports({
                 <table className="data-table">
                   <thead>
                     <tr>
-                      <th>Время события</th>
-                      <th>Взаимодействие</th>
-                      <th>Организация</th>
-                      <th>Переход этапа</th>
-                      <th>Исторический ответственный</th>
-                      <th>Инициатор</th>
+                      {isActCol('effective_at') && <th>Время события</th>}
+                      {isActCol('title') && <th>Взаимодействие</th>}
+                      {isActCol('organization_name') && <th>Организация</th>}
+                      {isActCol('from_state_name') && <th>Исходный этап</th>}
+                      {isActCol('to_state_name') && <th>Целевой этап</th>}
+                      {isActCol('owner_at_event_name') && <th>Ответственный на момент перехода</th>}
+                      {isActCol('actor_name') && <th>Инициатор</th>}
                     </tr>
                   </thead>
                   <tbody>
                     {activityResult.rows.map(row => (
                       <tr key={row.event_id}>
-                        <td>{formatDate(row.effective_at)}</td>
-                        <td><strong>{row.title}</strong></td>
-                        <td>{row.organization_name}</td>
-                        <td>
-                          <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                            <StageBadge code={row.from_state} name={row.from_state} />
-                            <Icon name="arrow" size={14} />
-                            <StageBadge code={row.to_state} name={row.to_state} />
-                          </div>
-                        </td>
-                        <td><strong>{row.owner_at_event_name || row.owner_at_event}</strong></td>
-                        <td>{row.actor_name}</td>
+                        {isActCol('effective_at') && <td>{formatDate(row.effective_at)}</td>}
+                        {isActCol('title') && <td><strong>{row.title || '—'}</strong></td>}
+                        {isActCol('organization_name') && <td>{row.organization_name || '—'}</td>}
+                        {isActCol('from_state_name') && (
+                          <td>
+                            <StageBadge code={row.from_state} name={row.from_state_name || row.from_state} />
+                          </td>
+                        )}
+                        {isActCol('to_state_name') && (
+                          <td>
+                            <StageBadge code={row.to_state} name={row.to_state_name || row.to_state} />
+                          </td>
+                        )}
+                        {isActCol('owner_at_event_name') && <td><strong>{row.owner_at_event_name || row.owner_at_event || '—'}</strong></td>}
+                        {isActCol('actor_name') && <td>{row.actor_name || '—'}</td>}
                       </tr>
                     ))}
                   </tbody>
@@ -574,29 +814,23 @@ export function Reports({
                 <table className="data-table">
                   <thead>
                     <tr>
-                      <th>Дата создания</th>
-                      <th>Взаимодействие</th>
-                      <th>Организация</th>
-                      <th>Программа / Продукт</th>
-                      <th>Этап</th>
-                      <th>Ответственный</th>
+                      {isCreatedCol('created_at') && <th>Дата создания</th>}
+                      {isCreatedCol('title') && <th>Взаимодействие</th>}
+                      {isCreatedCol('organization_name') && <th>Организация</th>}
+                      {isCreatedCol('program_name') && <th>Программа</th>}
+                      {isCreatedCol('product_name') && <th>Продукт</th>}
+                      {isCreatedCol('owner_name') && <th>Ответственный</th>}
                     </tr>
                   </thead>
                   <tbody>
                     {createdResult.rows.map(row => (
                       <tr key={row.interaction_id}>
-                        <td>{formatDate(row.created_at)}</td>
-                        <td><strong>{row.title}</strong></td>
-                        <td>{row.organization_name}</td>
-                        <td>
-                          {row.program_name || row.product_name ? (
-                            <span>{row.program_name || '—'} / {row.product_name || '—'}</span>
-                          ) : (
-                            <span style={{ color: 'var(--rtk-color-caption)' }}>Не определены</span>
-                          )}
-                        </td>
-                        <td><StageBadge code={row.state} name={row.state_name} /></td>
-                        <td>{row.owner_name}</td>
+                        {isCreatedCol('created_at') && <td>{formatDate(row.created_at)}</td>}
+                        {isCreatedCol('title') && <td><strong>{row.title}</strong></td>}
+                        {isCreatedCol('organization_name') && <td>{row.organization_name}</td>}
+                        {isCreatedCol('program_name') && <td>{row.program_name || '—'}</td>}
+                        {isCreatedCol('product_name') && <td>{row.product_name || '—'}</td>}
+                        {isCreatedCol('owner_name') && <td>{row.owner_name}</td>}
                       </tr>
                     ))}
                   </tbody>
@@ -623,3 +857,4 @@ export function Reports({
     </>
   );
 }
+

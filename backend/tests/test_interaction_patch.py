@@ -568,3 +568,89 @@ def test_patch_disallows_modifying_closed_interaction(client):
     assert patch_closed.status_code == 422, patch_closed.text
     assert patch_closed.json()["error"]["code"] == "VALIDATION_ERROR"
     assert "Завершённое взаимодействие не подлежит изменению" in patch_closed.json()["error"]["message"]
+
+
+def test_catalogs_excludes_archived_contacts_and_serializes_normalized_fields(client):
+    """Verify catalogs exclude archived contacts and serialize notes, revision, audit timestamps."""
+    from app.models import OrganizationContact, utcnow
+
+    with client.app.state.session_factory() as session:
+        c1 = session.get(OrganizationContact, "contact-1")
+        c1.notes = "Важное контактное лицо"
+        c1.revision = 3
+
+        archived_contact = OrganizationContact(
+            id="contact-archived-test",
+            organization_id="org-1",
+            full_name="Архивный Контакт",
+            position="Бывший декан",
+            email="archived@org1.ru",
+            active=True,
+            archived_at=utcnow(),
+        )
+        session.add(archived_contact)
+        session.commit()
+
+    res = client.get("/api/v1/catalogs", headers=headers("manager-a"))
+    assert res.status_code == 200, res.text
+    data = res.json()
+    contact_ids = {c["id"] for c in data["contacts"]}
+    assert "contact-1" in contact_ids
+    assert "contact-archived-test" not in contact_ids
+
+    c1_data = next(c for c in data["contacts"] if c["id"] == "contact-1")
+    assert c1_data["notes"] == "Важное контактное лицо"
+    assert c1_data["revision"] == 3
+    assert c1_data["created_at"] is not None
+    assert c1_data["updated_at"] is not None
+    assert c1_data["archived_at"] is None
+
+
+def test_interaction_create_and_patch_rejects_archived_contact(client):
+    """Verify creating or patching interaction with archived contact returns 422 VALIDATION_ERROR."""
+    from app.models import OrganizationContact, utcnow
+
+    with client.app.state.session_factory() as session:
+        archived = OrganizationContact(
+            id="contact-archived-for-patch",
+            organization_id="org-1",
+            full_name="Архивный Сотрудник",
+            position="Методист",
+            email="methodist@org1.ru",
+            active=True,
+            archived_at=utcnow(),
+        )
+        session.add(archived)
+        session.commit()
+
+    # 1. Create with archived contact should be rejected
+    create_res = client.post(
+        "/api/v1/interactions",
+        json={
+            "title": "Тест с архивным контактом",
+            "organization_id": "org-1",
+            "program_id": "program-devops",
+            "product_id": "product-cloud",
+            "contact_id": "contact-archived-for-patch",
+            "cycle_label": "2026/27",
+            "owner_id": "manager-a",
+        },
+        headers=headers(key=str(uuid4())),
+    )
+    assert create_res.status_code == 422, create_res.text
+    assert create_res.json()["error"]["code"] == "VALIDATION_ERROR"
+    assert "Нельзя привязать архивный контакт" in create_res.json()["error"]["message"]
+
+    # 2. Patch with archived contact should be rejected
+    card = create_interaction(client, user="manager-a")
+    patch_res = client.patch(
+        f"/api/v1/interactions/{card['id']}",
+        json={
+            "expected_revision": card["revision"],
+            "contact_id": "contact-archived-for-patch",
+        },
+        headers=headers(key=str(uuid4())),
+    )
+    assert patch_res.status_code == 422, patch_res.text
+    assert patch_res.json()["error"]["code"] == "VALIDATION_ERROR"
+    assert "Нельзя привязать архивный контакт" in patch_res.json()["error"]["message"]

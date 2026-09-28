@@ -67,7 +67,7 @@ function Workspace() {
   const navigate = (target: string) => { setMobileOpen(false); route.navigate(target); };
   const changed = () => setRevision(value => value + 1);
   const openInteraction = (id: string) => navigate('interactions/' + encodeURIComponent(id));
-  const canCreate = !!catalogs.data?.organizations.length && !!catalogs.data?.owners.length;
+  const canCreate = (me.role === 'manager' || me.role === 'supervisor') && !!catalogs.data?.organizations.length && !!catalogs.data?.owners.length;
   let interactionId = '';
   if (route.path.startsWith('interactions/')) {
     try { interactionId = decodeURIComponent(route.path.slice('interactions/'.length)); }
@@ -114,7 +114,7 @@ function Workspace() {
               </div>)}
           {activeNav === 'catalogs' && <CatalogPage catalogs={catalogs.data} api={api} onChanged={changed}/>}
           {activeNav === 'help' && <HelpPage/>}
-          {!navigation.some(item => item.code === activeNav) && <div className="panel"><h2>Страница не найдена</h2><Button onClick={() => navigate('overview')}>Перейти к обзору</Button></div>}
+          {!navigation.some(item => item.code === activeNav) && activeNav !== 'integrations' && <div className="panel"><h2>Страница не найдена</h2><Button onClick={() => navigate('overview')}>Перейти к обзору</Button></div>}
         </>}
       </main>
       <footer className="page-footer"><span>ИТ Школа · Партнёры</span><span>Первый рабочий срез · v0.1</span></footer>

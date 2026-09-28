@@ -15,15 +15,68 @@ def utcnow():
     return datetime.now(timezone.utc)
 
 
+class Team(Base):
+    __tablename__ = "teams"
+    id: Mapped[str] = mapped_column(String(64), primary_key=True, default=new_id)
+    name: Mapped[str] = mapped_column(String(200), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+
 class User(Base):
     __tablename__ = "users"
     id: Mapped[str] = mapped_column(String(64), primary_key=True)
     keycloak_subject: Mapped[str] = mapped_column(String(255), unique=True)
     name: Mapped[str] = mapped_column(String(200))
     role: Mapped[str] = mapped_column(String(32))
-    team_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    team_id: Mapped[str | None] = mapped_column(String(64), ForeignKey("teams.id", ondelete="SET NULL"), nullable=True)
     permissions: Mapped[list] = mapped_column(JSON, default=list)
     active: Mapped[bool] = mapped_column(Boolean, default=True)
+
+    @property
+    def email(self) -> str | None:
+        if self.keycloak_subject and "@" in self.keycloak_subject:
+            return self.keycloak_subject
+        return getattr(self, "_email", None)
+
+    @email.setter
+    def email(self, val: str | None) -> None:
+        self._email = val
+        if val and "@" in val:
+            if not getattr(self, "keycloak_subject", None) or "@" in (self.keycloak_subject or ""):
+                self.keycloak_subject = val
+
+    @property
+    def phone(self) -> str | None:
+        if hasattr(self, "_phone") and self._phone:
+            return self._phone
+        if isinstance(self.permissions, list):
+            for item in self.permissions:
+                if isinstance(item, str) and item.startswith("phone:"):
+                    return item.split(":", 1)[1]
+                if isinstance(item, dict) and "phone" in item:
+                    return item["phone"]
+        return getattr(self, "_phone", None)
+
+    @phone.setter
+    def phone(self, val: str | None) -> None:
+        self._phone = val
+        if val:
+            perms = list(self.permissions or [])
+            new_perms = [
+                p for p in perms
+                if not (isinstance(p, str) and p.startswith("phone:"))
+                and not (isinstance(p, dict) and "phone" in p)
+            ]
+            new_perms.append(f"phone:{val}")
+            self.permissions = new_perms
+        else:
+            if self.permissions:
+                self.permissions = [
+                    p for p in self.permissions
+                    if not (isinstance(p, str) and p.startswith("phone:"))
+                    and not (isinstance(p, dict) and "phone" in p)
+                ]
+
 
 
 class Organization(Base):
@@ -31,6 +84,7 @@ class Organization(Base):
     id: Mapped[str] = mapped_column(String(64), primary_key=True, default=new_id)
     name: Mapped[str] = mapped_column(String(250))
     type: Mapped[str] = mapped_column(String(32), default="university")
+    owner_id: Mapped[str | None] = mapped_column(ForeignKey("users.id"), index=True, nullable=True, default=None)
 
 
 class OrganizationAccess(Base):
@@ -69,13 +123,21 @@ class ProgramProduct(Base):
 
 class OrganizationContact(Base):
     __tablename__ = "organization_contacts"
+    __table_args__ = (
+        Index("ix_org_contacts_active", "organization_id", "archived_at"),
+    )
     id: Mapped[str] = mapped_column(String(64), primary_key=True, default=new_id)
     organization_id: Mapped[str] = mapped_column(ForeignKey("organizations.id"), index=True)
     full_name: Mapped[str] = mapped_column(String(250))
     position: Mapped[str] = mapped_column(String(200))
-    email: Mapped[str | None] = mapped_column(String(200), nullable=True)
+    email: Mapped[str | None] = mapped_column(String(320), nullable=True)
     phone: Mapped[str | None] = mapped_column(String(100), nullable=True)
     active: Mapped[bool] = mapped_column(Boolean, default=True)
+    notes: Mapped[str | None] = mapped_column(Text, nullable=True)
+    revision: Mapped[int] = mapped_column(Integer, default=1)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    archived_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
 
 class Contract(Base):
@@ -112,7 +174,7 @@ class Interaction(Base):
     contract_id: Mapped[str | None] = mapped_column(ForeignKey("contracts.id"), index=True, nullable=True)
     license_id: Mapped[str | None] = mapped_column(ForeignKey("licenses.id"), index=True, nullable=True)
     contact_id: Mapped[str | None] = mapped_column(ForeignKey("organization_contacts.id"), index=True, nullable=True)
-    team_id: Mapped[str | None] = mapped_column(String(64), index=True, nullable=True)
+    team_id: Mapped[str | None] = mapped_column(String(64), ForeignKey("teams.id", ondelete="SET NULL"), index=True, nullable=True)
     state: Mapped[str] = mapped_column(String(80))
     workflow_version: Mapped[int] = mapped_column(Integer, default=1)
     revision: Mapped[int] = mapped_column(Integer, default=1)
@@ -216,6 +278,7 @@ class LearningMetric(Base):
     as_of: Mapped[datetime] = mapped_column(DateTime(timezone=True))
     source: Mapped[str] = mapped_column(String(32), default="lms")
     external_id: Mapped[str] = mapped_column(String(128))
+    last_applied_revision: Mapped[str | None] = mapped_column(String(64), nullable=True, default=None)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
 
 
@@ -247,3 +310,95 @@ class DeliveryItem(Base):
     license_id: Mapped[str | None] = mapped_column(ForeignKey("licenses.id"), nullable=True)
     material_version: Mapped[str | None] = mapped_column(String(120), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+
+class WorkflowVersion(Base):
+    __tablename__ = "workflow_versions"
+
+    id: Mapped[str] = mapped_column(String(64), primary_key=True, default=new_id)
+    version: Mapped[int] = mapped_column(Integer, unique=True)
+    name: Mapped[str] = mapped_column(String(200))
+    description: Mapped[str | None] = mapped_column(Text, nullable=True)
+    definition: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    is_published: Mapped[bool] = mapped_column(Boolean, default=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+
+class WorkflowMigrationDryRun(Base):
+    __tablename__ = "workflow_migration_dry_runs"
+
+    id: Mapped[str] = mapped_column(String(64), primary_key=True, default=new_id)
+    from_version: Mapped[int] = mapped_column(Integer)
+    to_version: Mapped[int] = mapped_column(Integer)
+    status: Mapped[str] = mapped_column(String(32))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+
+class AccessPolicyState(Base):
+    __tablename__ = "access_policy_state"
+
+    singleton_id: Mapped[int] = mapped_column(Integer, primary_key=True, default=1)
+    epoch: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+
+class StateVisit(Base):
+    __tablename__ = "state_visits"
+
+    id: Mapped[str] = mapped_column(String(64), primary_key=True, default=new_id)
+    interaction_id: Mapped[str] = mapped_column(ForeignKey("interactions.id", ondelete="CASCADE"), index=True)
+    state: Mapped[str] = mapped_column(String(80), nullable=False, index=True)
+    entered_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, nullable=False)
+    exited_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    duration_seconds: Mapped[float | None] = mapped_column(Float, nullable=True)
+
+
+class ReportRun(Base):
+    __tablename__ = "report_runs"
+
+    id: Mapped[str] = mapped_column(String(64), primary_key=True, default=new_id)
+    requested_by: Mapped[str] = mapped_column(ForeignKey("users.id"), index=True)
+    report_type: Mapped[str] = mapped_column(String(50), nullable=False)
+    parameters: Mapped[dict] = mapped_column(JSON, default=dict)
+    parameters_hash: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    knowledge_cutoff: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    row_count: Mapped[int] = mapped_column(Integer, default=0)
+    dataset_checksum: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+
+class ReportRow(Base):
+    __tablename__ = "report_rows"
+
+    id: Mapped[str] = mapped_column(String(64), primary_key=True, default=new_id)
+    report_run_id: Mapped[str] = mapped_column(ForeignKey("report_runs.id", ondelete="CASCADE"), index=True)
+    ordinal: Mapped[int] = mapped_column(Integer, nullable=False)
+    row_data: Mapped[dict] = mapped_column(JSON, default=dict)
+
+
+class BackgroundJob(Base):
+    __tablename__ = "background_jobs"
+
+    id: Mapped[str] = mapped_column(String(64), primary_key=True, default=new_id)
+    kind: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    status: Mapped[str] = mapped_column(String(32), default="queued", nullable=False, index=True)
+    progress: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    requester_id: Mapped[str] = mapped_column(ForeignKey("users.id"), nullable=False, index=True)
+    authz_epoch: Mapped[int] = mapped_column(Integer, nullable=False)
+    parameters: Mapped[dict] = mapped_column(JSON, default=dict)
+    result_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    error_message: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+
+class TransactionalOutbox(Base):
+    __tablename__ = "transactional_outbox"
+
+    id: Mapped[str] = mapped_column(String(64), primary_key=True, default=new_id)
+    event_type: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    payload: Mapped[dict] = mapped_column(JSON, default=dict)
+    status: Mapped[str] = mapped_column(String(32), default="pending", nullable=False, index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    processed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+

@@ -101,6 +101,7 @@ def allowed_transitions(state: str, version: int = 1) -> list[dict]:
             "code": edge["code"],
             "to": edge["to"],
             "name": states[edge["to"]]["name"],
+            "kind": edge.get("kind", "forward"),
             "comment_required": edge["comment_required"],
             "condition_refs": edge["condition_refs"],
         }
@@ -118,3 +119,17 @@ SUBJECT_REQUIRED_STATES = {
     "materials_transfer", "deployment", "teacher_training", "curriculum_update", "classes",
     "materials_update", "teacher_upskilling", "completed",
 }
+
+
+def load_workflow_versions(db) -> None:
+    try:
+        from sqlalchemy import select
+        from .models import WorkflowVersion
+        published_versions = list(db.scalars(
+            select(WorkflowVersion).where(WorkflowVersion.is_published.is_(True))
+        ))
+        for pv in published_versions:
+            if pv.definition and isinstance(pv.definition, dict):
+                WORKFLOW_REGISTRY[pv.version] = pv.definition
+    except Exception:
+        pass

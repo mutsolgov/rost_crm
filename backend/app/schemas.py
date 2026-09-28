@@ -18,6 +18,7 @@ class InteractionCreate(Body):
     contact_id: str | None = None
     contract_id: str | None = None
     license_id: str | None = None
+    comment: str | None = Field(default=None, max_length=5000)
 
 
 class InteractionUpdate(Body):
@@ -29,6 +30,13 @@ class InteractionUpdate(Body):
     contact_id: str | None = None
     contract_id: str | None = None
     license_id: str | None = None
+
+    @field_validator("title", "cycle_label")
+    @classmethod
+    def forbid_none(cls, v: str | None) -> str | None:
+        if v is None:
+            raise ValueError("Поле не может быть null.")
+        return v
 
 
 class TransitionCommand(Body):
@@ -62,6 +70,7 @@ class SnapshotRequest(Body):
     program_ids: list[str] = Field(default_factory=list, max_length=500)
     product_ids: list[str] = Field(default_factory=list, max_length=500)
     owner_ids: list[str] = Field(default_factory=list, max_length=500)
+    selected_columns: list[str] | None = None
 
     @field_validator("as_of", "knowledge_cutoff")
     @classmethod
@@ -69,6 +78,11 @@ class SnapshotRequest(Body):
         if value is not None and (value.tzinfo is None or value.utcoffset() is None):
             raise ValueError("Дата должна включать часовой пояс")
         return value
+
+
+class JobSnapshotRequest(SnapshotRequest):
+    as_of: datetime | None = None
+
 
 
 class ActivityRequest(Body):
@@ -80,6 +94,7 @@ class ActivityRequest(Body):
     program_ids: list[str] = Field(default_factory=list, max_length=500)
     product_ids: list[str] = Field(default_factory=list, max_length=500)
     owner_ids: list[str] = Field(default_factory=list, max_length=500)
+    selected_columns: list[str] | None = None
 
     model_config = ConfigDict(extra="forbid", str_strip_whitespace=True, populate_by_name=True)
 
@@ -99,6 +114,7 @@ class CreatedReportRequest(Body):
     owner_ids: list[str] = Field(default_factory=list, max_length=500)
     program_ids: list[str] = Field(default_factory=list, max_length=500)
     product_ids: list[str] = Field(default_factory=list, max_length=500)
+    selected_columns: list[str] | None = None
 
     model_config = ConfigDict(extra="forbid", str_strip_whitespace=True, populate_by_name=True)
 
@@ -131,5 +147,17 @@ class WorkflowMigrateRequest(Body):
     from_version: int = Field(ge=1, description="Исходная версия workflow")
     to_version: int = Field(ge=1, description="Целевая версия workflow")
     status_mapping: dict[str, str] = Field(min_length=1, description="Матрица сопоставления статусов {старый: новый}")
+    expected_card_revisions: dict[str, int] | None = Field(default=None, description="Ожидаемые ревизии карточек для CAS-проверки")
+
+
+class OrganizationPatch(Body):
+    owner_id: str | None = None
+
+
+class WorkflowVersionCreate(Body):
+    version: int = Field(ge=1)
+    name: str = Field(min_length=1, max_length=255)
+    description: str | None = None
+    definition: dict = Field(default_factory=dict)
 
 

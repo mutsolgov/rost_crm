@@ -17,15 +17,25 @@ def get_engine(url=None):
     url = url or get_settings().database_url
     options = {"pool_pre_ping": True}
     if url.startswith("sqlite"):
-        options["connect_args"] = {"check_same_thread": False, "timeout": 20}
+        options["connect_args"] = {"check_same_thread": False, "timeout": 30}
         if ":memory:" in url:
             options["poolclass"] = StaticPool
+        else:
+            options["pool_size"] = 30
+            options["max_overflow"] = 90
+            options["pool_timeout"] = 30
+    else:
+        options["pool_size"] = 30
+        options["max_overflow"] = 90
+        options["pool_timeout"] = 30
     engine = create_engine(url, **options)
     if url.startswith("sqlite"):
         @event.listens_for(engine, "connect")
         def sqlite_options(connection, _):
             connection.execute("PRAGMA foreign_keys=ON")
-            connection.execute("PRAGMA busy_timeout=20000")
+            connection.execute("PRAGMA busy_timeout=30000")
+            connection.execute("PRAGMA journal_mode=WAL")
+            connection.execute("PRAGMA synchronous=NORMAL")
     return engine
 
 

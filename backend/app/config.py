@@ -19,6 +19,14 @@ class Settings:
     website_integration_mode: str = "mock"
     lms_base_url: str = "https://rtkb.zion-lms.ru"
     website_base_url: str = "https://it-school.rt.ru"
+    lms_api_token: str | None = None
+    website_api_token: str | None = None
+    clamav_host: str = "clamav"
+    clamav_port: int = 3310
+    clamav_enabled: bool = False
+    clamav_timeout: float = 10.0
+    redis_url: str = "redis://redis:6379/0"
+    background_worker_enabled: bool = False
 
     def validate(self):
         if self.auth_mode not in {"demo", "oidc"}:
@@ -52,6 +60,22 @@ def get_settings() -> Settings:
     website_integration_mode = os.getenv("WEBSITE_INTEGRATION_MODE", "mock")
     lms_base_url = os.getenv("LMS_BASE_URL", "https://rtkb.zion-lms.ru")
     website_base_url = os.getenv("WEBSITE_BASE_URL", "https://it-school.rt.ru")
+    clamav_host = os.getenv("CLAMAV_HOST") or "clamav"
+    try:
+        clamav_port = int(os.getenv("CLAMAV_PORT", "3310"))
+        if not (1 <= clamav_port <= 65535):
+            clamav_port = 3310
+    except ValueError:
+        clamav_port = 3310
+    clamav_enabled = os.getenv("CLAMAV_ENABLED", "false").lower() in {"1", "true", "yes", "on"}
+    try:
+        clamav_timeout = float(os.getenv("CLAMAV_TIMEOUT", "10.0"))
+        if clamav_timeout <= 0:
+            clamav_timeout = 10.0
+    except ValueError:
+        clamav_timeout = 10.0
+    redis_url = os.getenv("REDIS_URL", "redis://redis:6379/0")
+    background_worker_enabled = os.getenv("BACKGROUND_WORKER_ENABLED", "false").lower() in {"1", "true", "yes", "on"}
     return Settings(
         database_url=url,
         app_env=env,
@@ -67,4 +91,12 @@ def get_settings() -> Settings:
         website_integration_mode=website_integration_mode,
         lms_base_url=lms_base_url,
         website_base_url=website_base_url,
+        lms_api_token=os.getenv("LMS_API_TOKEN"),
+        website_api_token=os.getenv("WEBSITE_API_TOKEN"),
+        clamav_host=clamav_host,
+        clamav_port=clamav_port,
+        clamav_enabled=clamav_enabled,
+        clamav_timeout=clamav_timeout,
+        redis_url=redis_url,
+        background_worker_enabled=background_worker_enabled,
     )

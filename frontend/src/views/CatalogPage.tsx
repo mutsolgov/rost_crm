@@ -1,10 +1,11 @@
-import { useState, useRef } from 'react';
+import { useState, useRef, useEffect } from 'react';
 import type { ApiClient } from '../api';
 import { makeMutationKey } from '../api';
 import { useAuth } from '../auth';
 import { Button, ErrorAlert, Icon, Modal } from '../ui';
 import type {
   Catalogs,
+  Organization,
   ImportPreviewResponse,
   ImportCommitResponse,
   WorkflowMigrationPreview,
@@ -83,6 +84,7 @@ export function ImportWizardModal({
   onCompleted: () => void;
 }) {
   const [step, setStep] = useState<1 | 2 | 3>(1);
+  const [importType, setImportType] = useState<string>('auto');
   const [file, setFile] = useState<File | null>(null);
   const [isDragging, setIsDragging] = useState(false);
   const [loading, setLoading] = useState(false);
@@ -90,6 +92,7 @@ export function ImportWizardModal({
   const [previewData, setPreviewData] = useState<ImportPreviewResponse | null>(null);
   const [commitData, setCommitData] = useState<ImportCommitResponse | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const [detectedTypeHint, setDetectedTypeHint] = useState<string | null>(null);
 
   const allowedExts = ['xlsx', 'xls', 'csv'];
 
@@ -105,7 +108,31 @@ export function ImportWizardModal({
       return;
     }
     setFile(f);
+
+    const nameLower = f.name.toLowerCase();
+    if (
+      nameLower.includes('пользовател') ||
+      nameLower.includes('слушател') ||
+      nameLower.includes('learner') ||
+      nameLower.includes('lms')
+    ) {
+      setDetectedTypeHint('lms_learners');
+    } else if (importType === 'auto' && nameLower.includes('user')) {
+      setDetectedTypeHint('Пользователи и ответственные сотрудники');
+    } else {
+      setDetectedTypeHint(null);
+    }
   }
+
+  const isLmsLearnersDetected =
+    detectedTypeHint === 'lms_learners' ||
+    previewData?.detected_type === 'lms_learners' ||
+    (file ? (
+      file.name.toLowerCase().includes('пользовател') ||
+      file.name.toLowerCase().includes('слушател') ||
+      file.name.toLowerCase().includes('learner') ||
+      file.name.toLowerCase().includes('lms')
+    ) : false);
 
   async function handlePreview() {
     if (!file) return;
@@ -114,9 +141,30 @@ export function ImportWizardModal({
     try {
       const formData = new FormData();
       formData.append('file', file);
-      const resp = await api.upload<ImportPreviewResponse>('/imports/organizations/preview', formData);
+      const qs = importType !== 'auto' ? `?import_type=${encodeURIComponent(importType)}` : '';
+      const resp = await api.upload<ImportPreviewResponse>(`/imports/organizations/preview${qs}`, formData);
       setPreviewData(resp);
       setStep(2);
+    } catch (err) {
+      setError(err);
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function rePreviewWithFormat(newType: string) {
+    if (!file) return;
+    setLoading(true);
+    setError(null);
+    try {
+      const formData = new FormData();
+      formData.append('file', file);
+      const resp = await api.upload<ImportPreviewResponse>(
+        `/imports/organizations/preview?import_type=${encodeURIComponent(newType)}`,
+        formData
+      );
+      setPreviewData(resp);
+      setImportType(newType);
     } catch (err) {
       setError(err);
     } finally {
@@ -129,11 +177,13 @@ export function ImportWizardModal({
     setLoading(true);
     setError(null);
     try {
+      const detected = previewData?.detected_type || (importType !== 'auto' ? importType : undefined);
+      const qs = detected ? `?import_type=${encodeURIComponent(detected)}` : '';
       let resp: ImportCommitResponse;
       if (previewData && previewData.preview_rows && previewData.preview_rows.length > 0) {
         const validRows = previewData.preview_rows.filter(r => r.is_valid).map(r => (r as any).data || r);
         resp = await api.post<ImportCommitResponse>(
-          '/imports/organizations/commit',
+          `/imports/organizations/commit${qs}`,
           { rows: validRows },
           makeMutationKey()
         );
@@ -141,7 +191,7 @@ export function ImportWizardModal({
         const formData = new FormData();
         formData.append('file', file);
         resp = await api.upload<ImportCommitResponse>(
-          '/imports/organizations/commit',
+          `/imports/organizations/commit${qs}`,
           formData,
           makeMutationKey()
         );
@@ -187,6 +237,51 @@ export function ImportWizardModal({
 
         {step === 1 && (
           <div>
+            <div style={{ marginBottom: '14px' }}>
+              <label style={{ display: 'block', fontSize: '13px', fontWeight: 600, marginBottom: '6px', color: '#344054' }}>
+                Тип импортируемых данных
+              </label>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: '8px' }}>
+                {[
+                  { id: 'auto', label: 'Автоопределение', note: 'Вузы / Вендоры / Пользователи' },
+                  { id: 'organizations', label: 'Организации / Вузы', note: '10-колоночный формат' },
+                  { id: 'vendors', label: 'Вендоры и ПО', note: 'Вендоры.xlsx с продуктами' },
+                  { id: 'users', label: 'Пользователи CRM', note: 'Загрузка пользователей.xlsx' },
+                ].map(opt => (
+                  <button
+                    key={opt.id}
+                    type="button"
+                    onClick={() => {
+                      setImportType(opt.id);
+                      if (opt.id === 'auto' && file) {
+                        const nameLower = file.name.toLowerCase();
+                        if (nameLower.includes('пользовател') || nameLower.includes('user')) {
+                          setDetectedTypeHint('Пользователи и ответственные сотрудники');
+                        } else {
+                          setDetectedTypeHint(null);
+                        }
+                      } else {
+                        setDetectedTypeHint(null);
+                      }
+                    }}
+                    style={{
+                      padding: '10px 12px',
+                      borderRadius: '8px',
+                      textAlign: 'left',
+                      border: importType === opt.id ? '2px solid var(--rtk-color-primary, #7700FF)' : '1px solid var(--rtk-color-border, #E4E7EC)',
+                      background: importType === opt.id ? 'var(--rtk-color-primary-light, #F9F5FF)' : '#FFFFFF',
+                      cursor: 'pointer',
+                    }}
+                  >
+                    <div style={{ fontWeight: 600, fontSize: '13px', color: importType === opt.id ? 'var(--rtk-color-primary, #7700FF)' : '#101828' }}>
+                      {opt.label}
+                    </div>
+                    <small style={{ fontSize: '11px', color: '#667085' }}>{opt.note}</small>
+                  </button>
+                ))}
+              </div>
+            </div>
+
             <div
               className={`dropzone ${isDragging ? 'active' : ''}`}
               onDragOver={(e) => { e.preventDefault(); setIsDragging(true); }}
@@ -217,7 +312,7 @@ export function ImportWizardModal({
                 <strong>{file ? `Выбран файл: ${file.name}` : 'Перетащите таблицу импорта сюда'}</strong>
                 <p>Поддерживаемые форматы: Microsoft Excel (.xlsx, .xls) и CSV (.csv)</p>
                 <div className="dropzone-limit">
-                  Автоматическое сопоставление колонок: Вуз, Тип, Контакт, Телефон, Программа, Продукт
+                  Автоматическое сопоставление колонок: Вузы, Вендоры, Продукты ПО, Пользователи CRM
                 </div>
               </div>
 
@@ -231,13 +326,63 @@ export function ImportWizardModal({
                   </span>
                   <Button
                     variant="ghost"
-                    onClick={(e) => { e.stopPropagation(); setFile(null); }}
+                    onClick={(e) => { e.stopPropagation(); setFile(null); setDetectedTypeHint(null); }}
                   >
                     Сменить
                   </Button>
                 </div>
               )}
             </div>
+
+            {isLmsLearnersDetected ? (
+              <div
+                className="warning-banner"
+                style={{
+                  marginTop: '14px',
+                  background: 'var(--rtk-color-warning-bg, #FFFBEB)',
+                  border: '1px solid #FCD34D',
+                  padding: '16px',
+                  borderRadius: '8px',
+                }}
+              >
+                <div style={{ display: 'flex', gap: '12px', alignItems: 'flex-start' }}>
+                  <Icon name="alert" size={24} />
+                  <div>
+                    <strong style={{ fontSize: '14px', color: '#92400E' }}>
+                      Распознан реестр слушателей LMS
+                    </strong>
+                    <p style={{ margin: '6px 0 12px', fontSize: '13px', color: '#B45309', lineHeight: 1.4 }}>
+                      Распознан реестр слушателей LMS. Данные перенаправлены в подсистему Интеграций. Обучающиеся не добавляются в список сотрудников CRM и обрабатываются в очереди сверки.
+                    </p>
+                    <Button
+                      variant="primary"
+                      onClick={() => {
+                        onClose();
+                        window.location.hash = '#/integrations';
+                      }}
+                    >
+                      <Icon name="arrow" size={16} />
+                      Перейти в раздел «Интеграции»
+                    </Button>
+                  </div>
+                </div>
+              </div>
+            ) : detectedTypeHint ? (
+              <div
+                className="info-note"
+                style={{
+                  marginTop: '14px',
+                  background: 'var(--rtk-color-info-bg, #EFF8FF)',
+                  border: '1px solid #B2DDFF',
+                  color: '#175CD3',
+                }}
+              >
+                <Icon name="users" size={16} />
+                <p>
+                  По имени файла автоматически распознан тип: <strong>{detectedTypeHint}</strong>
+                </p>
+              </div>
+            ) : null}
 
             <div className="info-note" style={{ marginTop: '14px' }}>
               <Icon name="alert" size={16} />
@@ -250,6 +395,85 @@ export function ImportWizardModal({
 
         {step === 2 && previewData && (
           <div>
+            {isLmsLearnersDetected && (
+              <div
+                className="warning-banner"
+                style={{
+                  marginBottom: '16px',
+                  background: 'var(--rtk-color-warning-bg, #FFFBEB)',
+                  border: '1px solid #FCD34D',
+                  padding: '16px',
+                  borderRadius: '8px',
+                }}
+              >
+                <div style={{ display: 'flex', gap: '12px', alignItems: 'flex-start' }}>
+                  <Icon name="alert" size={24} />
+                  <div>
+                    <strong style={{ fontSize: '14px', color: '#92400E' }}>
+                      Распознан реестр слушателей LMS
+                    </strong>
+                    <p style={{ margin: '6px 0 12px', fontSize: '13px', color: '#B45309', lineHeight: 1.4 }}>
+                      Распознан реестр слушателей LMS. Данные перенаправлены в подсистему Интеграций. Обучающиеся не добавляются в список сотрудников CRM и обрабатываются в очереди сверки.
+                    </p>
+                    <Button
+                      variant="primary"
+                      onClick={() => {
+                        onClose();
+                        window.location.hash = '#/integrations';
+                      }}
+                    >
+                      <Icon name="arrow" size={16} />
+                      Перейти в раздел «Интеграции»
+                    </Button>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '12px', flexWrap: 'wrap', gap: '10px' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <label
+                  htmlFor="import-format-select"
+                  style={{
+                    fontSize: '12px',
+                    fontWeight: 600,
+                    color: 'var(--rtk-color-text-secondary, #475467)',
+                    whiteSpace: 'nowrap',
+                  }}
+                >
+                  Формат данных:
+                </label>
+                <select
+                  id="import-format-select"
+                  value={previewData.detected_type || 'organizations'}
+                  onChange={(e) => rePreviewWithFormat(e.target.value)}
+                  disabled={loading}
+                  style={{
+                    padding: '6px 12px',
+                    fontSize: '12px',
+                    fontWeight: 600,
+                    borderRadius: 'var(--rtk-radius-md, 8px)',
+                    border: '1px solid var(--rtk-color-border, #E2E5EB)',
+                    background: 'var(--rtk-color-surface, #FFFFFF)',
+                    color: 'var(--rtk-color-text, #101828)',
+                    outline: 'none',
+                    cursor: loading ? 'not-allowed' : 'pointer',
+                  }}
+                >
+                  <option value="organizations">Образовательные организации (вузы, договоры)</option>
+                  <option value="vendors">Вендоры и отечественное ПО</option>
+                  <option value="users">Пользователи и ответственные сотрудники</option>
+                  {previewData.detected_type === 'lms_learners' && (
+                    <option value="lms_learners">Реестр слушателей LMS (контур интеграций)</option>
+                  )}
+                </select>
+                {loading && <span className="spinner small" style={{ marginLeft: '4px' }} />}
+              </div>
+              <span style={{ fontSize: '12px', color: 'var(--rtk-color-muted)' }}>
+                Проверено строк: {previewData.rows_total}
+              </span>
+            </div>
+
             <div className="import-summary-cards">
               <div className="import-summary-card total">
                 <span className="eyebrow">ВСЕГО СТРОК</span>
@@ -271,9 +495,9 @@ export function ImportWizardModal({
                 <div>
                   <strong>Обнаружены ошибки в строках импорта ({previewData.errors.length}):</strong>
                   <ul style={{ margin: '6px 0 0', paddingLeft: '18px', maxHeight: '100px', overflowY: 'auto' }}>
-                    {previewData.errors.map((e, idx) => (
+                    {previewData.errors.map((e: any, idx) => (
                       <li key={idx}>
-                        Строка {e.row_index}: {e.message}
+                        {typeof e === 'string' ? e : `Строка ${e.row_index || e.row_number || idx + 1}: ${e.message || ''}`}
                       </li>
                     ))}
                   </ul>
@@ -285,18 +509,115 @@ export function ImportWizardModal({
               <div className="table-scroll" style={{ maxHeight: '220px', border: '1px solid var(--rtk-color-border)', borderRadius: '8px' }}>
                 <table className="data-table">
                   <thead>
-                    <tr>
-                      <th>Статус</th>
-                      <th>Строка</th>
-                      <th>Организация</th>
-                      <th>Тип</th>
-                      <th>Контакт</th>
-                      <th>Программа / Продукт</th>
-                    </tr>
+                    {previewData.detected_type === 'vendors' ? (
+                      <tr>
+                        <th>Статус</th>
+                        <th>Строка</th>
+                        <th>Вендор</th>
+                        <th>Продукты ПО</th>
+                        <th>Контактное лицо</th>
+                        <th>Контакты</th>
+                      </tr>
+                    ) : previewData.detected_type === 'users' ? (
+                      <tr>
+                        <th>Статус</th>
+                        <th>Строка</th>
+                        <th>ФИО</th>
+                        <th>Email</th>
+                        <th>Роль в CRM</th>
+                        <th>Команда</th>
+                      </tr>
+                    ) : (
+                      <tr>
+                        <th>Статус</th>
+                        <th>Строка</th>
+                        <th>Организация</th>
+                        <th>Тип</th>
+                        <th>Контакт</th>
+                        <th>Программа / Продукт</th>
+                      </tr>
+                    )}
                   </thead>
                   <tbody>
                     {previewData.preview_rows.map((row, idx) => {
-                      const data = (row as any).data || row;
+                      const data = (row as any).data || (row as any).mapped_fields || row;
+                      const isValid = row.is_valid;
+                      const rowNum = (row as any).row_index || row.row_number || idx + 1;
+
+                      if (previewData.detected_type === 'vendors') {
+                        const vendor = data.vendor || data.name || row.organization_name || '—';
+                        const prods = row.products || (data.products && Array.isArray(data.products) ? data.products : []) || [];
+                        const contact = data.contact_name || row.contact_name || '—';
+                        const pos = data.position || data.contact_position || '';
+                        const contactInfo = [data.email || row.contact_email, data.phone || row.contact_phone].filter(Boolean).join(' · ');
+                        return (
+                          <tr key={idx}>
+                            <td>
+                              {isValid ? (
+                                <span className="stage-badge tone-green"><i />Корректно</span>
+                              ) : (
+                                <span className="stage-badge tone-orange"><i />Ошибка</span>
+                              )}
+                            </td>
+                            <td>{rowNum}</td>
+                            <td><strong>{vendor}</strong></td>
+                            <td>
+                              {prods.length > 0 ? (
+                                <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px' }}>
+                                  {prods.map((p: string, pIdx: number) => (
+                                    <span key={pIdx} className="stage-badge tone-purple" style={{ fontSize: '11px', padding: '2px 6px' }}>{p}</span>
+                                  ))}
+                                </div>
+                              ) : (
+                                <span>{data.product || data.product_name || '—'}</span>
+                              )}
+                            </td>
+                            <td>
+                              <div>{contact}</div>
+                              {pos && <small style={{ color: 'var(--rtk-color-muted)' }}>{pos}</small>}
+                            </td>
+                            <td>
+                              <small style={{ color: 'var(--rtk-color-muted)' }}>{contactInfo || '—'}</small>
+                            </td>
+                          </tr>
+                        );
+                      }
+
+                      if (previewData.detected_type === 'users') {
+                        const fullName = data.name || data.full_name || row.contact_name || '—';
+                        const email = data.email || data.contact_email || '—';
+                        const role = data.role || 'manager';
+                        const team = data.team || '—';
+                        return (
+                          <tr key={idx}>
+                            <td>
+                              {isValid ? (
+                                <span className="stage-badge tone-green"><i />Корректно</span>
+                              ) : (
+                                <span className="stage-badge tone-orange"><i />Ошибка</span>
+                              )}
+                            </td>
+                            <td>{rowNum}</td>
+                            <td><strong>{fullName}</strong></td>
+                            <td>{email}</td>
+                            <td>
+                              <span className={`stage-badge ${role === 'supervisor' ? 'tone-orange' : role === 'administrator' ? 'tone-purple' : 'tone-blue'}`}>
+                                {role === 'supervisor' ? 'Руководитель' : role === 'administrator' ? 'Администратор' : 'Менеджер'}
+                              </span>
+                            </td>
+                            <td>{team}</td>
+                          </tr>
+                        );
+                      }
+
+                      const orgName = data.organization_name || data.name || (row as any).organization_name || '—';
+                      const orgType = data.organization_type || data.org_type || data.type || (row as any).org_type || '—';
+                      const contactName = data.contact_name || (row as any).contact_name || '—';
+                      const contactInfo = data.contact_phone || data.phone || data.contact_email || data.email || '';
+                      const progName = data.program_name || data.program || (row as any).program_name || '—';
+                      const prodName = data.product_name || data.product || (row as any).product_name || '';
+                      const vendorName = data.vendor || '';
+                      const licenseInfo = data.license_term_years ? `${data.license_transfer_status || 'лицензия'} (${data.license_term_years} г.)` : '';
                       return (
                         <tr key={idx}>
                           <td>
@@ -306,16 +627,22 @@ export function ImportWizardModal({
                               <span className="stage-badge tone-orange"><i />Ошибка</span>
                             )}
                           </td>
-                          <td>{row.row_index}</td>
-                          <td><strong>{data.organization_name || '—'}</strong></td>
-                          <td>{data.organization_type || '—'}</td>
+                          <td>{rowNum}</td>
+                          <td><strong>{orgName}</strong></td>
+                          <td>{orgType}</td>
                           <td>
-                            <div>{data.contact_name || '—'}</div>
-                            <small style={{ color: 'var(--rtk-color-muted)' }}>{data.contact_phone || data.contact_email || ''}</small>
+                            <div>{contactName}</div>
+                            {contactInfo && <small style={{ color: 'var(--rtk-color-muted)' }}>{contactInfo}</small>}
+                            {data.manager && <small style={{ display: 'block', color: 'var(--rtk-color-muted)' }}>Менеджер: {data.manager}</small>}
                           </td>
                           <td>
-                            <div>{data.program_name || data.program_id || '—'}</div>
-                            <small style={{ color: 'var(--rtk-color-muted)' }}>{data.product_name || data.product_id || ''}</small>
+                            <div>{progName}</div>
+                            {(prodName || vendorName) && (
+                              <small style={{ color: 'var(--rtk-color-muted)' }}>
+                                {prodName}{vendorName ? ` (${vendorName})` : ''}
+                              </small>
+                            )}
+                            {licenseInfo && <small style={{ display: 'block', color: 'var(--rtk-color-muted)' }}>{licenseInfo}</small>}
                           </td>
                         </tr>
                       );
@@ -334,17 +661,45 @@ export function ImportWizardModal({
             </div>
             <h2 style={{ fontSize: '20px', margin: '0 0 8px' }}>Импорт успешно применен!</h2>
             <p style={{ color: 'var(--rtk-color-muted)', maxWidth: '420px', margin: '0 auto 20px' }}>
-              В базу данных записаны проверенные организации, контакты и договоры.
+              В базу данных записаны проверенные записи справочников и учетных записей.
             </p>
-            <div className="import-summary-cards" style={{ maxWidth: '400px', margin: '0 auto' }}>
-              <div className="import-summary-card valid">
-                <span className="eyebrow">ИМПОРТИРОВАНО</span>
-                <strong>{commitData.created_organizations || commitData.imported_rows || 0}</strong>
-              </div>
-              <div className="import-summary-card total">
-                <span className="eyebrow">ОБНОВЛЕНО</span>
-                <strong>{commitData.updated_organizations || 0}</strong>
-              </div>
+            <div className="import-summary-cards" style={{ maxWidth: '600px', margin: '0 auto' }}>
+              {((commitData.created_organizations || 0) > 0 || (commitData.details?.organizations_created || 0) > 0) && (
+                <div className="import-summary-card valid">
+                  <span className="eyebrow">ОРГАНИЗАЦИЙ</span>
+                  <strong>{commitData.created_organizations || commitData.details?.organizations_created || 0}</strong>
+                </div>
+              )}
+              {((commitData.created_vendors || 0) > 0 || (commitData.details?.vendors_created || 0) > 0) && (
+                <div className="import-summary-card valid">
+                  <span className="eyebrow">ВЕНДОРОВ</span>
+                  <strong>{commitData.created_vendors || commitData.details?.vendors_created || 0}</strong>
+                </div>
+              )}
+              {((commitData.created_products || 0) > 0 || (commitData.details?.products_created || 0) > 0) && (
+                <div className="import-summary-card total">
+                  <span className="eyebrow">ПРОДУКТОВ ПО</span>
+                  <strong>{commitData.created_products || commitData.details?.products_created || 0}</strong>
+                </div>
+              )}
+              {((commitData.created_users || 0) > 0 || (commitData.details?.users_created || 0) > 0) && (
+                <div className="import-summary-card valid">
+                  <span className="eyebrow">ПОЛЬЗОВАТЕЛЕЙ</span>
+                  <strong>{commitData.created_users || commitData.details?.users_created || 0}</strong>
+                </div>
+              )}
+              {(commitData.created_contacts || 0) > 0 && (
+                <div className="import-summary-card total">
+                  <span className="eyebrow">КОНТАКТОВ</span>
+                  <strong>{commitData.created_contacts}</strong>
+                </div>
+              )}
+              {((commitData.created_licenses || 0) > 0 || (commitData.created_contracts || 0) > 0) && (
+                <div className="import-summary-card valid">
+                  <span className="eyebrow">ЛИЦЕНЗИЙ / ДОГОВОРОВ</span>
+                  <strong>{(commitData.created_licenses || 0) + (commitData.created_contracts || 0)}</strong>
+                </div>
+              )}
             </div>
           </div>
         )}
@@ -371,13 +726,26 @@ export function ImportWizardModal({
             <Button variant="ghost" onClick={() => setStep(1)} disabled={loading}>
               <Icon name="back" size={16} />Назад
             </Button>
-            <Button
-              disabled={loading || !previewData || previewData.valid_count === 0}
-              onClick={handleCommit}
-            >
-              {loading ? <span className="spinner small" /> : <Icon name="check" size={16} />}
-              Применить импорт ({previewData?.valid_count || 0} записей)
-            </Button>
+            {isLmsLearnersDetected ? (
+              <Button
+                variant="primary"
+                onClick={() => {
+                  onClose();
+                  window.location.hash = '#/integrations';
+                }}
+              >
+                <Icon name="arrow" size={16} />
+                Перейти в раздел «Интеграции»
+              </Button>
+            ) : (
+              <Button
+                disabled={loading || !previewData || previewData.valid_count === 0}
+                onClick={handleCommit}
+              >
+                {loading ? <span className="spinner small" /> : <Icon name="check" size={16} />}
+                Применить импорт ({previewData?.valid_count || 0} записей)
+              </Button>
+            )}
           </>
         )}
 
@@ -762,6 +1130,96 @@ export function WorkflowMigratorModal({
   );
 }
 
+export function AssignOrganizationManagerModal({
+  api,
+  organization,
+  owners,
+  onClose,
+  onSaved,
+}: {
+  api: ApiClient;
+  organization: Organization;
+  owners: { id: string; name: string; role?: string }[];
+  onClose: () => void;
+  onSaved: (orgId: string, newOwnerId: string | null) => void;
+}) {
+  const [selectedUserId, setSelectedUserId] = useState<string>(organization.owner_id || '');
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<unknown>(null);
+
+  const managerOptions = owners.filter(o => !o.role || o.role === 'manager');
+
+  async function handleSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    setLoading(true);
+    setError(null);
+    try {
+      const newOwnerId = selectedUserId ? selectedUserId : null;
+      await api.updateOrganization(organization.id, { owner_id: newOwnerId });
+      onSaved(organization.id, newOwnerId);
+      onClose();
+    } catch (err) {
+      setError(err);
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  return (
+    <Modal
+      title="Назначение ответственного менеджера"
+      subtitle={`Организация: ${organization.name}`}
+      onClose={onClose}
+      busy={loading}
+    >
+      <form onSubmit={handleSubmit}>
+        <div className="modal-body" style={{ minHeight: '160px' }}>
+          <ErrorAlert error={error} />
+
+          <div style={{ marginBottom: '16px' }}>
+            <p style={{ fontSize: '13px', color: 'var(--rtk-color-text-secondary, #475467)', margin: '0 0 12px' }}>
+              Выберите ответственного сотрудника (менеджера) для кураторства образовательной организации.
+            </p>
+            <div className="field">
+              <span>Ответственный менеджер</span>
+              <select
+                value={selectedUserId}
+                onChange={(e) => setSelectedUserId(e.target.value)}
+                disabled={loading}
+                style={{ width: '100%', padding: '8px 12px', borderRadius: '8px', border: '1px solid var(--rtk-color-border)' }}
+              >
+                <option value="">Без ответственного (снять назначение)</option>
+                {managerOptions.map((m) => (
+                  <option key={m.id} value={m.id}>
+                    {m.name}
+                  </option>
+                ))}
+              </select>
+            </div>
+          </div>
+
+          <div className="info-note" style={{ fontSize: '12px' }}>
+            <Icon name="shield" size={16} />
+            <p>
+              При назначении ответственного сотруднику автоматически выдаются права <code>OrganizationAccess(read_all=True, can_create=True)</code> для работы с карточками вуза.
+            </p>
+          </div>
+        </div>
+
+        <div className="modal-actions">
+          <Button variant="ghost" onClick={onClose} disabled={loading}>
+            Отмена
+          </Button>
+          <Button type="submit" disabled={loading}>
+            {loading ? <span className="spinner small" /> : <Icon name="check" size={16} />}
+            Сохранить
+          </Button>
+        </div>
+      </form>
+    </Modal>
+  );
+}
+
 export function CatalogPage({
   catalogs,
   api,
@@ -774,8 +1232,19 @@ export function CatalogPage({
   const { me } = useAuth();
   const [importOpen, setImportOpen] = useState(false);
   const [migrationOpen, setMigrationOpen] = useState(false);
+  const [selectedOrgForManager, setSelectedOrgForManager] = useState<Organization | null>(null);
+  const [localOrganizations, setLocalOrganizations] = useState<Organization[]>(catalogs.organizations);
 
-  const isPrivileged = me && (me.role === 'supervisor' || me.role === 'administrator' || me.role === 'admin');
+  useEffect(() => {
+    setLocalOrganizations(catalogs.organizations);
+  }, [catalogs.organizations]);
+
+  const isPrivileged = !!(me && (me.role === 'supervisor' || me.role === 'administrator' || me.role === 'admin'));
+
+  function handleManagerSaved(orgId: string, newOwnerId: string | null) {
+    setLocalOrganizations(prev => prev.map(o => o.id === orgId ? { ...o, owner_id: newOwnerId } : o));
+    if (onChanged) onChanged();
+  }
 
   return (
     <>
@@ -786,7 +1255,7 @@ export function CatalogPage({
           <p>Единые реестры организаций, программ, продуктов, договоров и ответственных.</p>
         </div>
         <div style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
-          {api && (
+          {api && isPrivileged && (
             <Button variant="secondary" onClick={() => setImportOpen(true)}>
               <Icon name="upload" size={17} />
               Импорт каталогов
@@ -802,28 +1271,152 @@ export function CatalogPage({
       </div>
 
       <div className="reference-grid">
-        {[
-          ['Организации', catalogs.organizations.map((item) => item.name)],
-          ['ИТ-программы', catalogs.programs.map((item) => item.name)],
-          ['ИТ-продукты', catalogs.products.map((item) => `${item.name} (${item.vendor})`)],
-          ['Ответственные', catalogs.owners.map((item) => item.name)],
-          ['Направления', (catalogs.directions || []).map((item) => item.name)],
-          ['Договоры', (catalogs.contracts || []).map((item) => `№ ${item.number} (${item.status})`)],
-        ].map(([title, entries]) => (
-          <section className="panel reference-card" key={title as string}>
-            <h2>{title as string}</h2>
-            <ul>
-              {(entries as string[]).length ? (
-                (entries as string[]).map((entry) => <li key={entry}>{entry}</li>)
-              ) : (
-                <li>Нет доступных записей</li>
-              )}
-            </ul>
-          </section>
-        ))}
+        <section className="panel reference-card" key="Организации" style={{ gridColumn: 'span 2' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
+            <h2 style={{ margin: 0 }}>Организации</h2>
+            <span className="quiet-badge">{localOrganizations.length} записей</span>
+          </div>
+          <ul style={{ listStyle: 'none', padding: 0, margin: 0 }}>
+            {localOrganizations.length ? (
+              localOrganizations.map((item) => {
+                const assignedOwner = catalogs.owners.find(o => o.id === item.owner_id);
+                return (
+                  <li
+                    key={item.id}
+                    style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'space-between',
+                      padding: '10px 12px',
+                      borderBottom: '1px solid var(--rtk-color-border, #E2E5EB)',
+                      gap: '12px',
+                      flexWrap: 'wrap',
+                    }}
+                  >
+                    <div>
+                      <div style={{ fontWeight: 600, fontSize: '13px' }}>{item.name}</div>
+                      <div style={{ fontSize: '11px', color: 'var(--rtk-color-muted)', marginTop: '2px', display: 'flex', gap: '8px', alignItems: 'center' }}>
+                        <span className="stage-badge tone-blue" style={{ fontSize: '10px', padding: '1px 6px' }}>{item.type || 'вуз'}</span>
+                        <span>
+                          Ответственный:{' '}
+                          {assignedOwner ? (
+                            <strong style={{ color: 'var(--rtk-color-text)' }}>{assignedOwner.name}</strong>
+                          ) : item.owner_id ? (
+                            <strong style={{ color: 'var(--rtk-color-text)' }}>{item.owner_id}</strong>
+                          ) : (
+                            <span style={{ color: '#D92D20', fontStyle: 'italic' }}>Без ответственного</span>
+                          )}
+                        </span>
+                      </div>
+                    </div>
+                    {isPrivileged && api && (
+                      <Button
+                        variant="secondary"
+                        style={{ fontSize: '11px', padding: '4px 10px', height: 'auto' }}
+                        onClick={() => setSelectedOrgForManager(item)}
+                      >
+                        <Icon name="users" size={13} />
+                        {item.owner_id ? 'Сменить ответственного' : 'Назначить ответственного'}
+                      </Button>
+                    )}
+                  </li>
+                );
+              })
+            ) : (
+              <li>Нет доступных записей</li>
+            )}
+          </ul>
+        </section>
+
+        <section className="panel reference-card" key="ИТ-программы">
+          <h2>ИТ-программы</h2>
+          <ul>
+            {catalogs.programs.length ? (
+              catalogs.programs.map((item) => <li key={item.id}>{item.name}</li>)
+            ) : (
+              <li>Нет доступных записей</li>
+            )}
+          </ul>
+        </section>
+
+        <section className="panel reference-card" key="ИТ-продукты">
+          <h2>ИТ-продукты</h2>
+          <ul>
+            {catalogs.products.length ? (
+              catalogs.products.map((item) => <li key={item.id}>{`${item.name} (${item.vendor})`}</li>)
+            ) : (
+              <li>Нет доступных записей</li>
+            )}
+          </ul>
+        </section>
+
+        <section className="panel reference-card" key="Ответственные">
+          <h2>Ответственные</h2>
+          <ul>
+            {catalogs.owners.filter(o => !o.role || ['manager', 'supervisor', 'administrator', 'admin'].includes(o.role)).length ? (
+              catalogs.owners
+                .filter(o => !o.role || ['manager', 'supervisor', 'administrator', 'admin'].includes(o.role))
+                .map((owner) => {
+                  const roleLabel =
+                    owner.role === 'supervisor'
+                      ? 'Руководитель'
+                      : owner.role === 'administrator' || owner.role === 'admin'
+                      ? 'Администратор'
+                      : 'Менеджер';
+                  const roleTone =
+                    owner.role === 'supervisor'
+                      ? 'tone-orange'
+                      : owner.role === 'administrator' || owner.role === 'admin'
+                      ? 'tone-purple'
+                      : 'tone-blue';
+                  return (
+                    <li
+                      key={owner.id}
+                      style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'space-between',
+                        padding: '6px 0',
+                      }}
+                    >
+                      <span>{owner.name}</span>
+                      <span className={`stage-badge ${roleTone}`} style={{ fontSize: '11px' }}>
+                        <i />
+                        {roleLabel}
+                      </span>
+                    </li>
+                  );
+                })
+            ) : (
+              <li>Нет доступных записей</li>
+            )}
+          </ul>
+        </section>
+
+        <section className="panel reference-card" key="Направления">
+          <h2>Направления</h2>
+          <ul>
+            {(catalogs.directions || []).length ? (
+              (catalogs.directions || []).map((item) => <li key={item.id}>{item.name}</li>)
+            ) : (
+              <li>Нет доступных записей</li>
+            )}
+          </ul>
+        </section>
+
+        <section className="panel reference-card" key="Договоры">
+          <h2>Договоры</h2>
+          <ul>
+            {(catalogs.contracts || []).length ? (
+              (catalogs.contracts || []).map((item) => <li key={item.id}>{`№ ${item.number} (${item.status})`}</li>)
+            ) : (
+              <li>Нет доступных записей</li>
+            )}
+          </ul>
+        </section>
       </div>
 
-      {importOpen && api && (
+      {importOpen && api && isPrivileged && (
         <ImportWizardModal
           api={api}
           onClose={() => setImportOpen(false)}
@@ -834,7 +1427,7 @@ export function CatalogPage({
         />
       )}
 
-      {migrationOpen && api && (
+      {migrationOpen && api && isPrivileged && (
         <WorkflowMigratorModal
           api={api}
           onClose={() => setMigrationOpen(false)}
@@ -842,6 +1435,16 @@ export function CatalogPage({
             setMigrationOpen(false);
             if (onChanged) onChanged();
           }}
+        />
+      )}
+
+      {selectedOrgForManager && api && (
+        <AssignOrganizationManagerModal
+          api={api}
+          organization={selectedOrgForManager}
+          owners={catalogs.owners}
+          onClose={() => setSelectedOrgForManager(null)}
+          onSaved={handleManagerSaved}
         />
       )}
     </>

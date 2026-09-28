@@ -6,6 +6,7 @@ export function useResource<T>(loader: () => Promise<T>, dependencies: Dependenc
   const [data, setData] = useState<T | null>(null);
   const [error, setError] = useState<unknown>(null);
   const [loading, setLoading] = useState(true);
+  const [reloadCount, setReloadCount] = useState(0);
   useEffect(() => {
     let cancelled = false;
     setLoading(true); setError(null);
@@ -14,8 +15,9 @@ export function useResource<T>(loader: () => Promise<T>, dependencies: Dependenc
       .finally(() => { if (!cancelled) setLoading(false); });
     return () => { cancelled = true; };
     // Callers specify stable primitive dependencies, like a request key.
-  }, dependencies);
-  return { data, error, loading };
+  }, [...dependencies, reloadCount]);
+  const reload = () => setReloadCount(c => c + 1);
+  return { data, error, loading, reload };
 }
 
 export function useMutationKey() {

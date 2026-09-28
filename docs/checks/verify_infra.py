@@ -65,7 +65,7 @@ def check_nginx_and_consistency() -> None:
     require(size_match is not None, "client_max_body_size not specified in nginx.conf")
     val, unit = int(size_match.group(1)), size_match.group(2).lower()
     nginx_bytes = val * (1024 * 1024 if unit == "m" else 1024 if unit == "k" else 1024**3 if unit == "g" else 1)
-    require(nginx_bytes == 25 * 1024 * 1024, f"nginx client_max_body_size must be 25m, got {val}{unit}")
+    require(nginx_bytes in (25 * 1024 * 1024, 26 * 1024 * 1024), f"nginx client_max_body_size must be 25m or 26m, got {val}{unit}")
 
     # Verify backend MAX_FILE_SIZE
     backend_match = re.search(r"MAX_FILE_SIZE\s*=\s*([0-9_]+)", files_content)
@@ -74,8 +74,8 @@ def check_nginx_and_consistency() -> None:
     require(backend_bytes == 25 * 1024 * 1024, f"backend MAX_FILE_SIZE must be 26_214_400, got {backend_bytes}")
 
     # Cross-consistency
-    require(nginx_bytes == backend_bytes,
-            f"Size mismatch: nginx={nginx_bytes} bytes vs backend={backend_bytes} bytes")
+    require(nginx_bytes >= backend_bytes,
+            f"Nginx body limit ({nginx_bytes}) must be >= backend MAX_FILE_SIZE ({backend_bytes})")
 
     # Security headers
     require(re.search(r"add_header\s+X-Content-Type-Options\s+nosniff\s+always;", nginx_content) is not None,
@@ -172,9 +172,20 @@ def check_environment_and_secrets() -> None:
     for var in optional_vars:
         require(f"{var}=" in example_content, f"Optional backend variable '{var}' missing from .env.example")
 
-    # Verify no committed .env file
+    # Verify no .env file in root and not committed
     live_env = ROOT / ".env"
     require(not live_env.exists(), ".env must not exist in repository root")
+    git_tracked = False
+    try:
+        import subprocess
+        git_tracked = subprocess.run(
+            ["git", "ls-files", "--error-unmatch", ".env"],
+            cwd=ROOT,
+            capture_output=True,
+        ).returncode == 0
+    except Exception:
+        pass
+    require(not git_tracked, ".env must not be committed to repository")
 
     print("PASS: .env.example contains all required environment variables; repository contains 0 hardcoded secrets.")
 

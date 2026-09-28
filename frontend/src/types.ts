@@ -53,11 +53,18 @@ export interface InteractionUpdatePayload {
   license_id?: string | null;
 }
 
+export interface Organization {
+  id: string;
+  name: string;
+  type: string;
+  owner_id?: string | null;
+}
+
 export interface Catalogs {
-  organizations: { id: string; name: string; type: string }[];
+  organizations: Organization[];
   programs: { id: string; name: string; direction_id: string; direction_name: string }[];
   products: { id: string; name: string; vendor: string }[];
-  owners: { id: string; name: string }[];
+  owners: { id: string; name: string; role?: string }[];
   directions: { id: string; name: string }[];
   contacts?: OrganizationContact[];
   contracts?: Contract[];
@@ -74,12 +81,14 @@ export interface Interaction {
   organization_id: string; organization_name: string;
   program_id: string | null; program_name: string | null;
   product_id: string | null; product_name: string | null;
+  product_vendor?: string | null;
   direction_name: string | null; cycle_label: string;
   owner_id: string; owner_name: string; state: string; state_name: string;
   workflow_version: string | number; revision: number;
   contact_id?: string | null; contact_name?: string | null;
   contract_id?: string | null; contract_number?: string | null;
   license_id?: string | null; license_status?: string | null;
+  license_signed_on?: string | null; license_term_years?: number | null;
   created_at: string; updated_at: string; closed_at: string | null;
 }
 export interface Transition {
@@ -91,6 +100,7 @@ export interface WorkflowEvent {
   id: string; type: string; effective_at: string; received_at: string;
   sequence: number; actor_name: string;
   from_state?: string; to_state?: string; owner_id?: string; comment?: string;
+  file_name?: string; attachment_id?: string;
 }
 export interface Comment {
   id: string; body: string; author_name: string; created_at: string;
@@ -118,17 +128,28 @@ export interface InteractionDetail extends Interaction {
 export interface InteractionList {
   items: Interaction[]; total: number; page: number; page_size: number;
 }
+export interface SystemStats {
+  total_users: number;
+  total_organizations_catalog: number;
+  total_programs_catalog: number;
+  total_products_catalog: number;
+  total_inbox_pending: number;
+  lms_health_status: string;
+}
+
 export interface Dashboard {
   total_interactions: number; total_organizations: number;
   active_interactions: number; completed_interactions: number;
   counts_by_state: { code: string; name: string; count: number }[];
   recent_events: { interaction_id: string; title: string; event_type: string; actor_name: string; at: string }[];
   unassigned_program_count: number;
+  system_stats?: SystemStats;
 }
 export interface SnapshotQuery {
   as_of: string; knowledge_cutoff?: string; as_of_inclusive: true;
   organization_ids: string[]; program_ids: string[];
   product_ids: string[]; owner_ids: string[];
+  selected_columns?: string[];
 }
 export interface Snapshot {
   report_type: 'snapshot'; as_of: string; knowledge_cutoff: string;
@@ -137,6 +158,7 @@ export interface Snapshot {
     interaction_id: string; title: string; organization_name: string;
     program_name: string | null; product_name: string | null;
     state: string; state_name: string; owner_id: string; owner_name: string;
+    cycle_label?: string;
   }[];
   totals: { interactions: number; organizations: number; counts_by_state: Record<string, number> };
 }
@@ -150,20 +172,24 @@ export interface ActivityQuery {
   program_ids?: string[];
   product_ids?: string[];
   owner_ids?: string[];
+  selected_columns?: string[];
 }
 
 export interface ActivityRow {
   event_id: string;
   interaction_id: string;
-  title: string;
-  organization_name: string;
+  title?: string;
+  organization_name?: string;
   from_state: string;
+  from_state_name?: string | null;
   to_state: string;
+  to_state_name?: string | null;
   transition_code: string;
-  owner_at_event: string;
-  owner_at_event_name: string;
-  actor_name: string;
+  owner_at_event?: string;
+  owner_at_event_name?: string;
+  actor_name?: string;
   effective_at: string;
+  historical_owner_id?: string;
 }
 
 export interface ActivityResult {
@@ -184,6 +210,7 @@ export interface CreatedQuery {
   program_ids?: string[];
   product_ids?: string[];
   owner_ids?: string[];
+  selected_columns?: string[];
 }
 
 export interface CreatedRow {
@@ -211,6 +238,7 @@ export interface CreatedResult {
 
 export interface ImportPreviewRow {
   row_number: number;
+  row_index?: number;
   organization_name: string;
   org_type: string;
   contact_name?: string;
@@ -219,25 +247,62 @@ export interface ImportPreviewRow {
   contact_phone?: string;
   program_name?: string;
   product_name?: string;
+  vendor?: string;
+  products?: string[];
+  full_name?: string;
+  role?: string;
+  team?: string;
   is_valid: boolean;
   errors: string[];
+  warnings?: string[];
+  data?: Record<string, any>;
+  mapped_fields?: Record<string, any>;
+  raw_values?: Record<string, any>;
 }
 
 export interface ImportPreviewResponse {
+  import_id?: string;
+  import_type?: string;
+  detected_type?: string;
   rows_total: number;
+  total_rows?: number;
   valid_count: number;
   error_count: number;
   preview_rows: ImportPreviewRow[];
-  errors: string[];
+  rows?: ImportPreviewRow[];
+  errors: any[];
 }
 
 export interface ImportCommitResponse {
   success: boolean;
+  status?: string;
+  import_type?: string;
+  detected_type?: string;
   rows_total: number;
   imported_count: number;
+  created_count?: number;
   created_organizations: number;
   created_contacts: number;
+  created_contracts?: number;
+  created_licenses?: number;
+  created_products?: number;
+  created_users?: number;
+  updated_organizations?: number;
+  updated_users?: number;
+  created_vendors?: number;
+  details?: Record<string, any>;
   errors?: string[];
+}
+
+export interface LmsUploadResponse {
+  status: string;
+  total_records: number;
+  processed: number;
+  processed_count?: number;
+  skipped_nulls: number;
+  paid_count?: number;
+  total_paid_amount?: number;
+  message: string;
 }
 
 // ============================================================================
@@ -245,9 +310,42 @@ export interface ImportCommitResponse {
 // ============================================================================
 
 export type IntegrationSource = 'lms' | 'website';
-export type IntegrationEntityType = 'learning_metric' | 'application';
+export type IntegrationEntityType = 'learning_metric' | 'application' | 'learner' | 'lms_order';
 export type InboxStatus = 'pending' | 'processed' | 'quarantined' | 'rejected';
 export type ReconciliationAction = 'link_existing' | 'create_new' | 'reject';
+
+export interface LearnerProfilePayload {
+  last_name?: string;
+  first_name?: string;
+  patronymic?: string;
+  full_name?: string;
+  email?: string;
+  phone?: string;
+  gender?: string;
+  birth_date?: string;
+  snils?: string;
+  passport_series?: string;
+  passport_number?: string;
+  passport_issued_by?: string;
+  passport_issued_date?: string;
+  passport_issue_date?: string;
+  passport_subdivision_code?: string;
+  passport_unit_code?: string;
+  registration_region?: string;
+  registration_city?: string;
+  registration_address?: string;
+  education?: string;
+  profession?: string;
+  diploma_university?: string;
+  diploma_number?: string;
+  order_id?: string;
+  linked_order_id?: string;
+  course?: string;
+  course_name?: string;
+  cohort?: string;
+  payment_status?: string;
+  [key: string]: unknown;
+}
 
 export interface IntegrationAdapterStatus {
   status: 'ok' | 'degraded' | 'error' | string;
@@ -299,7 +397,7 @@ export interface IntegrationInboxItem {
   entity_type: IntegrationEntityType | string;
   external_id: string;
   source_revision: string;
-  payload: ApplicationPayload;
+  payload: ApplicationPayload & LearnerProfilePayload & Record<string, unknown>;
   status: InboxStatus;
   error_message: string | null;
   matched_organization_id: string | null;
@@ -362,6 +460,9 @@ export interface ProgramMetricSummary {
   students_enrolled: number;
   students_completed: number;
   avg_attendance_rate: number;
+  applications_count?: number;
+  payments_count?: number;
+  conversion_rate?: number;
 }
 
 export interface OrganizationMetricSummary {
@@ -437,3 +538,12 @@ export interface WorkflowMigrateCommitPayload {
 
 export type WorkflowMigratePreviewResponse = WorkflowMigrationPreview;
 export type WorkflowMigrateCommitResponse = WorkflowMigrationResult;
+
+export interface WorkflowVersionInfo {
+  version: number;
+  name: string;
+  description?: string;
+  is_published?: boolean;
+  created_at?: string;
+}
+

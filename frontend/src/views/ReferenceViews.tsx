@@ -1,21 +1,44 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useAuth } from '../auth';
-import { Button, ErrorAlert, Icon } from '../ui';
+import { Button, Icon } from '../ui';
 
 // Re-export CatalogPage and modals for backwards compatibility and clean modular separation
-export { CatalogPage, ImportWizardModal, WorkflowMigratorModal } from './CatalogPage';
+export { CatalogPage, ImportWizardModal, WorkflowMigratorModal, AssignOrganizationManagerModal } from './CatalogPage';
+
+export type HelpTab = 'manager' | 'supervisor' | 'admin' | 'errors' | 'security';
+
+export function isHelpTabAllowed(tab: HelpTab | string, role?: string | null): boolean {
+  const t = typeof tab === 'string' ? tab.trim().toLowerCase() : '';
+  if (t === 'errors' || t === 'security') return true;
+  const r = typeof role === 'string' ? role.trim().toLowerCase() : '';
+  const effRole = r || 'manager';
+  if (t === 'manager') return effRole === 'manager' || effRole === 'supervisor' || effRole === 'administrator' || effRole === 'admin';
+  if (t === 'supervisor') return effRole === 'supervisor' || effRole === 'administrator' || effRole === 'admin';
+  if (t === 'admin' || t === 'administrator') return effRole === 'administrator' || effRole === 'admin';
+  return false;
+}
+
+export function getInitialTab(role?: string | null): HelpTab {
+  const r = typeof role === 'string' ? role.trim().toLowerCase() : '';
+  if (r === 'supervisor') return 'supervisor';
+  if (r === 'administrator' || r === 'admin') return 'admin';
+  if (r === 'manager' || !r) return 'manager';
+  return 'errors';
+}
 
 export function HelpPage() {
   const { me } = useAuth();
+  const role = me?.role;
 
-  const getInitialTab = (): 'manager' | 'supervisor' | 'admin' | 'errors' | 'security' => {
-    if (me?.role === 'supervisor') return 'supervisor';
-    if (me?.role === 'administrator' || me?.role === 'admin') return 'admin';
-    return 'manager';
-  };
-
-  const [activeTab, setActiveTab] = useState<'manager' | 'supervisor' | 'admin' | 'errors' | 'security'>(getInitialTab);
+  const [activeTab, setActiveTab] = useState<HelpTab>(() => getInitialTab(role));
   const [openError, setOpenError] = useState<string | null>('409');
+
+  // Guard against invalid activeTab (auto-fallback if tab is inaccessible for current role)
+  useEffect(() => {
+    if (!isHelpTabAllowed(activeTab, role)) {
+      setActiveTab(getInitialTab(role));
+    }
+  }, [activeTab, role]);
 
   // AC21 Interactive Form Input Preservation Tester State
   const [demoTitle, setDemoTitle] = useState('Взаимодействие с МГТУ по программе «Сетевые технологии»');
@@ -56,64 +79,74 @@ export function HelpPage() {
 
       {/* Role and Topic Tabs */}
       <div className="help-tabs" role="tablist">
-        <button
-          role="tab"
-          aria-selected={activeTab === 'manager'}
-          className={`help-tab-btn ${activeTab === 'manager' ? 'active' : ''}`}
-          onClick={() => setActiveTab('manager')}
-        >
-          <Icon name="layers" size={18} />
-          <span>Менеджер</span>
-          <b>15 этапов воронки</b>
-        </button>
+        {isHelpTabAllowed('manager', role) && (
+          <button
+            role="tab"
+            aria-selected={activeTab === 'manager'}
+            className={`help-tab-btn ${activeTab === 'manager' ? 'active' : ''}`}
+            onClick={() => setActiveTab('manager')}
+          >
+            <Icon name="layers" size={18} />
+            <span>Менеджер</span>
+            <b>15 этапов воронки</b>
+          </button>
+        )}
 
-        <button
-          role="tab"
-          aria-selected={activeTab === 'supervisor'}
-          className={`help-tab-btn ${activeTab === 'supervisor' ? 'active' : ''}`}
-          onClick={() => setActiveTab('supervisor')}
-        >
-          <Icon name="users" size={18} />
-          <span>Руководитель</span>
-          <b>Квоты и отчёты</b>
-        </button>
+        {isHelpTabAllowed('supervisor', role) && (
+          <button
+            role="tab"
+            aria-selected={activeTab === 'supervisor'}
+            className={`help-tab-btn ${activeTab === 'supervisor' ? 'active' : ''}`}
+            onClick={() => setActiveTab('supervisor')}
+          >
+            <Icon name="users" size={18} />
+            <span>Руководитель</span>
+            <b>Квоты и отчёты</b>
+          </button>
+        )}
 
-        <button
-          role="tab"
-          aria-selected={activeTab === 'admin'}
-          className={`help-tab-btn ${activeTab === 'admin' ? 'active' : ''}`}
-          onClick={() => setActiveTab('admin')}
-        >
-          <Icon name="refresh" size={18} />
-          <span>Администратор</span>
-          <b>Импорт и миграции</b>
-        </button>
+        {isHelpTabAllowed('admin', role) && (
+          <button
+            role="tab"
+            aria-selected={activeTab === 'admin'}
+            className={`help-tab-btn ${activeTab === 'admin' ? 'active' : ''}`}
+            onClick={() => setActiveTab('admin')}
+          >
+            <Icon name="refresh" size={18} />
+            <span>Администратор</span>
+            <b>Импорт и миграции</b>
+          </button>
+        )}
 
-        <button
-          role="tab"
-          aria-selected={activeTab === 'errors'}
-          className={`help-tab-btn ${activeTab === 'errors' ? 'active' : ''}`}
-          onClick={() => setActiveTab('errors')}
-        >
-          <Icon name="alert" size={18} />
-          <span>Справочник ошибок</span>
-          <b>Коды HTTP / CAS</b>
-        </button>
+        {isHelpTabAllowed('errors', role) && (
+          <button
+            role="tab"
+            aria-selected={activeTab === 'errors'}
+            className={`help-tab-btn ${activeTab === 'errors' ? 'active' : ''}`}
+            onClick={() => setActiveTab('errors')}
+          >
+            <Icon name="alert" size={18} />
+            <span>Справочник ошибок</span>
+            <b>Коды HTTP / CAS</b>
+          </button>
+        )}
 
-        <button
-          role="tab"
-          aria-selected={activeTab === 'security'}
-          className={`help-tab-btn ${activeTab === 'security' ? 'active' : ''}`}
-          onClick={() => setActiveTab('security')}
-        >
-          <Icon name="shield" size={18} />
-          <span>Безопасность 152-ФЗ</span>
-          <b>ФСТЭК №117</b>
-        </button>
+        {isHelpTabAllowed('security', role) && (
+          <button
+            role="tab"
+            aria-selected={activeTab === 'security'}
+            className={`help-tab-btn ${activeTab === 'security' ? 'active' : ''}`}
+            onClick={() => setActiveTab('security')}
+          >
+            <Icon name="shield" size={18} />
+            <span>Безопасность 152-ФЗ</span>
+            <b>ФСТЭК №117</b>
+          </button>
+        )}
       </div>
 
       {/* Tab 1: Менеджер */}
-      {activeTab === 'manager' && (
+      {activeTab === 'manager' && isHelpTabAllowed('manager', role) && (
         <div className="help-tab-content">
           <div className="role-intro-banner">
             <div className="role-intro-icon">
@@ -387,7 +420,7 @@ export function HelpPage() {
       )}
 
       {/* Tab 2: Руководитель */}
-      {activeTab === 'supervisor' && (
+      {activeTab === 'supervisor' && isHelpTabAllowed('supervisor', role) && (
         <div className="help-tab-content">
           <div className="role-intro-banner supervisor">
             <div className="role-intro-icon">
@@ -499,7 +532,7 @@ export function HelpPage() {
       )}
 
       {/* Tab 3: Администратор */}
-      {activeTab === 'admin' && (
+      {activeTab === 'admin' && isHelpTabAllowed('admin', role) && (
         <div className="help-tab-content">
           <div className="role-intro-banner admin">
             <div className="role-intro-icon">

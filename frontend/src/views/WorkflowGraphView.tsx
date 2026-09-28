@@ -1,4 +1,8 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
+import { useAuth } from '../auth';
+import type { ApiClient } from '../api';
+import type { Workflow, WorkflowVersionInfo } from '../types';
+import { Button, ErrorAlert, Icon } from '../ui';
 
 export interface WorkflowStateMeta {
   code: string;
@@ -42,55 +46,246 @@ export interface WorkflowGraphViewProps {
   currentState?: string;
   onSelectState?: (stateCode: string) => void;
   compact?: boolean;
+  api?: ApiClient;
+  defaultVersion?: number;
 }
 
 export function WorkflowGraphView({
   currentState,
   onSelectState,
   compact = false,
+  api,
+  defaultVersion = 1,
 }: WorkflowGraphViewProps) {
+  const auth = useAuth();
+  const effectiveApi = api || auth?.api;
+  const me = auth?.me;
+  const isAdmin = me?.role === 'administrator' || me?.role === 'admin';
+
+  const [versions, setVersions] = useState<WorkflowVersionInfo[]>([]);
+  const [selectedVersion, setSelectedVersion] = useState<number>(defaultVersion);
+  const [workflowData, setWorkflowData] = useState<Workflow | null>(null);
   const [selectedCode, setSelectedCode] = useState<string | null>(currentState || null);
 
-  const selectedState = WORKFLOW_STATES.find(s => s.code === (selectedCode || currentState));
-  const activeState = WORKFLOW_STATES.find(s => s.code === currentState);
+  const [loading, setLoading] = useState(false);
+  const [publishing, setPublishing] = useState(false);
+  const [publishSuccess, setPublishSuccess] = useState<string | null>(null);
+  const [error, setError] = useState<unknown>(null);
+
+  // Load versions list dynamically from GET /api/v1/workflow/versions
+  useEffect(() => {
+    if (!effectiveApi) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const list = await effectiveApi.getWorkflowVersions();
+        if (!cancelled && list && list.length > 0) {
+          setVersions(list);
+        }
+      } catch (err) {
+        // Fallback gracefully to default if versions endpoint has issues
+        console.warn('Workflow versions load warning:', err);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [effectiveApi]);
+
+  // Load selected workflow version definition from GET /api/v1/workflow?version=X
+  useEffect(() => {
+    if (!effectiveApi) return;
+    let cancelled = false;
+    setLoading(true);
+    setPublishSuccess(null);
+    setError(null);
+    (async () => {
+      try {
+        const wf = await effectiveApi.getWorkflow(selectedVersion);
+        if (!cancelled && wf) {
+          setWorkflowData(wf);
+        }
+      } catch (err) {
+        if (!cancelled) {
+          setError(err);
+        }
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [effectiveApi, selectedVersion]);
+
+  useEffect(() => {
+    if (defaultVersion) {
+      setSelectedVersion(defaultVersion);
+    }
+  }, [defaultVersion]);
+
+  useEffect(() => {
+    if (currentState) {
+      setSelectedCode(currentState);
+    }
+  }, [currentState]);
+
+  // Handle version publishing for administrators via POST /api/v1/workflow/versions/{version}/publish
+  async function handlePublish() {
+    if (!effectiveApi || !selectedVersion) return;
+    setPublishing(true);
+    setError(null);
+    setPublishSuccess(null);
+    try {
+      await effectiveApi.publishWorkflowVersion(selectedVersion);
+      setPublishSuccess(`Версия v${selectedVersion} успешно опубликована.`);
+      setVersions(prev => prev.map(v => v.version === selectedVersion ? { ...v, is_published: true } : v));
+      const wf = await effectiveApi.getWorkflow(selectedVersion);
+      if (wf) setWorkflowData(wf);
+    } catch (err) {
+      setError(err);
+    } finally {
+      setPublishing(false);
+    }
+  }
+
+  // Combine dynamic states from API with layout coordinates
+  const statesToRender: WorkflowStateMeta[] = (workflowData?.states || WORKFLOW_STATES).map((st, idx) => {
+    const existingMeta = WORKFLOW_STATES.find(s => s.code === st.code);
+    const sourceStep = ('source_step' in st ? st.source_step : undefined) ?? ('step' in st ? st.step : undefined);
+    if (existingMeta) {
+      return {
+        ...existingMeta,
+        name: st.name || existingMeta.name,
+        kind: (st.kind as 'working' | 'terminal') || existingMeta.kind,
+        step: sourceStep ?? existingMeta.step ?? (idx + 1),
+      };
+    }
+    const col = idx % 3;
+    const row = Math.floor(idx / 3);
+    return {
+      code: st.code,
+      name: st.name,
+      kind: (st.kind as 'working' | 'terminal') || 'working',
+      step: sourceStep ?? (idx + 1),
+      phase: st.kind === 'terminal' ? 'Финал' : `Фаза ${row + 1}`,
+      description: `Этап ${st.name} (${st.code})`,
+      x: 40 + col * 220,
+      y: 70 + row * 100,
+    };
+  });
+
+  const selectedState = statesToRender.find(s => s.code === (selectedCode || currentState));
+  const activeState = statesToRender.find(s => s.code === currentState);
+  const currentVersionMeta = versions.find(v => v.version === selectedVersion);
+  const canPublish = isAdmin && currentVersionMeta && !currentVersionMeta.is_published;
 
   const nodeWidth = 190;
   const nodeHeight = 56;
 
   return (
     <div className="workflow-graph-card">
-      <div className="panel-heading" style={{ marginBottom: '14px' }}>
+      <div className="panel-heading" style={{ marginBottom: '14px', flexWrap: 'wrap', gap: '12px' }}>
         <div>
           <span className="eyebrow">АРХИТЕКТУРА ПРОЦЕССА</span>
-          <h2 style={{ margin: '4px 0' }}>Граф жизненного цикла (15 этапов)</h2>
+          <h2 style={{ margin: '4px 0' }}>
+            {workflowData ? workflowData.name : 'Граф жизненного цикла'} (версия v{selectedVersion})
+          </h2>
           <p style={{ margin: 0, fontSize: '12px', color: 'var(--rtk-color-muted)' }}>
-            13 рабочих этапов воронки партнерства и 2 терминальных состояния (04-base-workflow.json)
+            {statesToRender.filter(s => s.kind !== 'terminal').length} рабочих этапов и {statesToRender.filter(s => s.kind === 'terminal').length} терминальных состояния
           </p>
         </div>
-        {activeState && (
-          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-            <span style={{ fontSize: '11px', color: 'var(--rtk-color-muted)' }}>Текущий статус:</span>
-            <span
-              className="quiet-badge"
+
+        <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
+          {/* Version Selector Dropdown */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+            <label htmlFor="workflow-version-dropdown" style={{ fontSize: '12px', fontWeight: 600, color: 'var(--rtk-color-muted)' }}>
+              Версия:
+            </label>
+            <select
+              id="workflow-version-dropdown"
+              value={selectedVersion}
+              onChange={(e) => setSelectedVersion(Number(e.target.value))}
+              disabled={loading || publishing}
               style={{
-                background: currentState === 'completed'
-                  ? 'var(--rtk-color-success-bg)'
-                  : currentState === 'cancelled'
-                  ? 'var(--rtk-color-danger-bg)'
-                  : 'var(--rtk-color-primary-subtle)',
-                color: currentState === 'completed'
-                  ? 'var(--rtk-color-success)'
-                  : currentState === 'cancelled'
-                  ? 'var(--rtk-color-danger)'
-                  : 'var(--rtk-color-primary-text)',
-                fontWeight: 700,
+                padding: '5px 10px',
+                borderRadius: 'var(--rtk-radius-md, 8px)',
+                border: '1px solid var(--rtk-color-border, #E2E5EB)',
+                fontSize: '12px',
+                fontWeight: 600,
+                background: 'var(--rtk-color-card, #FFFFFF)',
+                color: 'var(--rtk-color-text, #101828)',
+                cursor: 'pointer',
               }}
             >
-              {activeState.name}
-            </span>
+              {versions.length > 0 ? (
+                versions
+                  .filter(v => isAdmin || v.is_published)
+                  .map((v) => (
+                    <option key={v.version} value={v.version}>
+                      v{v.version} {v.name ? `(${v.name})` : ''} {v.is_published ? '✓ Опубликована' : '· Черновик'}
+                    </option>
+                  ))
+              ) : (
+                <>
+                  <option value={1}>v1 (Базовый процесс 04-base-workflow)</option>
+                  <option value={2}>v2 (Оптимизированный процесс)</option>
+                </>
+              )}
+            </select>
           </div>
-        )}
+
+          {/* Admin Publish Button */}
+          {canPublish && (
+            <Button
+              variant="primary"
+              disabled={publishing || loading}
+              onClick={handlePublish}
+              style={{ fontSize: '11px', padding: '5px 12px', height: 'auto' }}
+            >
+              {publishing ? <span className="spinner small" /> : <Icon name="check" size={14} />}
+              Опубликовать версию
+            </Button>
+          )}
+
+          {activeState && (
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <span style={{ fontSize: '11px', color: 'var(--rtk-color-muted)' }}>Текущий статус:</span>
+              <span
+                className="quiet-badge"
+                style={{
+                  background: currentState === 'completed'
+                    ? 'var(--rtk-color-success-bg)'
+                    : currentState === 'cancelled'
+                    ? 'var(--rtk-color-danger-bg)'
+                    : 'var(--rtk-color-primary-subtle)',
+                  color: currentState === 'completed'
+                    ? 'var(--rtk-color-success)'
+                    : currentState === 'cancelled'
+                    ? 'var(--rtk-color-danger)'
+                    : 'var(--rtk-color-primary-text)',
+                  fontWeight: 700,
+                }}
+              >
+                {activeState.name}
+              </span>
+            </div>
+          )}
+        </div>
       </div>
+
+      {canPublish && (
+        <div className="info-note" style={{ marginBottom: '14px' }}>
+          <Icon name="alert" size={16} />
+          <span>
+            Версия v{selectedVersion} находится в статусе черновика. Чтобы граф стал доступен в системе, нажмите «Опубликовать версию».
+          </span>
+        </div>
+      )}
+
+      <ErrorAlert error={error} />
+      {publishSuccess && (
+        <div className="success-alert" style={{ marginBottom: '14px' }}>
+          <Icon name="check" size={16} />
+          {publishSuccess}
+        </div>
+      )}
 
       <div style={{ overflowX: 'auto', padding: '10px 0' }}>
         <svg
@@ -201,7 +396,7 @@ export function WorkflowGraphView({
           <path d="M 670 198 L 690 198 L 690 498 L 644 498" fill="none" stroke="#D92D20" strokeWidth="1.5" strokeDasharray="3 3" markerEnd="url(#arrow-cancel)" />
 
           {/* Render State Nodes */}
-          {WORKFLOW_STATES.map((state) => {
+          {statesToRender.map((state) => {
             const isCurrent = currentState === state.code;
             const isSelected = selectedState?.code === state.code;
             const isCompleted = state.code === 'completed';

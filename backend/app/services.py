@@ -1,16 +1,17 @@
 import hashlib
 import json
 from collections import Counter, defaultdict
-from datetime import timezone
+from datetime import date, datetime, timezone
 
-from sqlalchemy import false, func, or_, select, update
+from sqlalchemy import event, false, func, inspect, or_, select, update
 from sqlalchemy.exc import IntegrityError
+from sqlalchemy.orm import Session
 
 from .errors import APIError
-from .models import (Attachment, CommandResult, Comment, Contract, Direction, Interaction,
-                     InteractionEvent, License, Organization, OrganizationAccess,
-                     OrganizationContact, Product, Program, ProgramProduct, User,
-                     new_id, utcnow)
+from .models import (AccessPolicyState, Attachment, BackgroundJob, CommandResult, Comment, Contract, Direction,
+                     IntegrationInbox, Interaction, InteractionEvent, License, Organization, OrganizationAccess,
+                     OrganizationContact, Product, Program, ProgramProduct, ReportRow,
+                     ReportRun, StateVisit, TransactionalOutbox, User, new_id, utcnow)
 from .workflow import (STATES, SUBJECT_REQUIRED_STATES, TERMINAL_STATES,
                       WORKFLOW_REGISTRY, allowed_transitions, get_states,
                       get_transitions)
@@ -27,11 +28,11 @@ def iso(value):
 def permissions(user):
     defaults = {
         "manager": {"interactions.create", "interactions.transition", "interactions.comment",
-                    "interactions.edit", "reports.read"},
+                    "interactions.edit", "interactions.write", "reports.read"},
         "supervisor": {"interactions.create", "interactions.transition", "interactions.comment",
-                       "interactions.assign", "interactions.edit", "reports.read", "organizations.create",
-                       "integrations.manage"},
-        "administrator": {"workflow.manage", "users.manage", "organizations.create", "reports.read",
+                       "interactions.assign", "interactions.edit", "interactions.write", "reports.read",
+                       "organizations.create", "integrations.manage"},
+        "administrator": {"workflow.manage", "workflow.global_migrate", "users.manage", "organizations.create", "reports.read",
                           "integrations.manage"},
     }
     return sorted(defaults.get(user.role, set()) | set(user.permissions or []))
@@ -42,12 +43,216 @@ def require_permission(user, name):
         raise APIError("FORBIDDEN", "Недостаточно прав для этого действия.", 403)
 
 
+def get_authz_epoch(db: Session) -> int:
+    st = None
+    for obj in db.new:
+        if isinstance(obj, AccessPolicyState):
+            st = obj
+            break
+    if st is None:
+        st = db.get(AccessPolicyState, 1)
+    if st is None:
+        st = AccessPolicyState(singleton_id=1, epoch=1, updated_at=utcnow())
+        db.add(st)
+        db.flush(objects=[st])
+    return int(st.epoch)
+
+
+def bump_authz_epoch(db: Session) -> int:
+    now = utcnow()
+    db.info["_in_bump_authz_epoch"] = True
+    try:
+        st_new = None
+        for obj in db.new:
+            if isinstance(obj, AccessPolicyState):
+                st_new = obj
+                break
+        if st_new is not None:
+            st_new.epoch += 1
+            st_new.updated_at = now
+            db.info["_authz_epoch_bumped"] = True
+            db.flush(objects=[st_new])
+            return int(st_new.epoch)
+
+        db.flush()
+
+        res = db.execute(
+            update(AccessPolicyState)
+            .where(AccessPolicyState.singleton_id == 1)
+            .values(epoch=AccessPolicyState.epoch + 1, updated_at=now)
+        )
+        if res.rowcount == 0:
+            state = AccessPolicyState(singleton_id=1, epoch=2, updated_at=now)
+            db.add(state)
+            db.info["_authz_epoch_bumped"] = True
+            db.flush(objects=[state])
+            return 2
+
+        key = db.identity_key(AccessPolicyState, 1)
+        state = db.identity_map.get(key)
+        if state is not None:
+            db.expire(state)
+        db.info["_authz_epoch_bumped"] = True
+        epoch = db.scalar(select(AccessPolicyState.epoch).where(AccessPolicyState.singleton_id == 1))
+        return int(epoch)
+    finally:
+        db.info.pop("_in_bump_authz_epoch", None)
+
+
+def check_authz_epoch(db: Session, request_authz_epoch: int) -> bool:
+    return get_authz_epoch(db) == request_authz_epoch
+
+
+def ensure_authz_epoch_valid(db: Session, request_authz_epoch: int) -> None:
+    current = get_authz_epoch(db)
+    if current != request_authz_epoch:
+        raise APIError(
+            "REPORT_SCOPE_CHANGED",
+            f"Контекст прав доступа изменился (эпоха {request_authz_epoch} != {current}).",
+            403,
+        )
+
+
+def set_organization_access(
+    db: Session,
+    user_id: str,
+    organization_id: str,
+    *,
+    can_create: bool = False,
+    read_all: bool = False,
+) -> OrganizationAccess:
+    grant = db.get(OrganizationAccess, (user_id, organization_id))
+    if grant is None:
+        grant = OrganizationAccess(
+            user_id=user_id,
+            organization_id=organization_id,
+            can_create=can_create,
+            read_all=read_all,
+        )
+        db.add(grant)
+    else:
+        grant.can_create = can_create
+        grant.read_all = read_all
+    db.flush()
+    return grant
+
+
+def revoke_organization_access(
+    db: Session,
+    user_id: str,
+    organization_id: str,
+) -> bool:
+    grant = db.get(OrganizationAccess, (user_id, organization_id))
+    if grant is not None:
+        db.delete(grant)
+        db.flush()
+        return True
+    return False
+
+
+def update_user_access(
+    db: Session,
+    user_id: str,
+    *,
+    role: str | None = None,
+    team_id: str | None = None,
+    active: bool | None = None,
+    permissions: list | None = None,
+) -> User:
+    user = db.get(User, user_id)
+    if not user:
+        raise APIError("NOT_FOUND", "Пользователь не найден.", 404)
+    if role is not None:
+        user.role = role
+    if team_id is not None:
+        user.team_id = team_id
+    if active is not None:
+        user.active = active
+    if permissions is not None:
+        user.permissions = permissions
+    db.flush()
+    return user
+
+
+@event.listens_for(Session, "after_transaction_end")
+def _authz_epoch_on_transaction_end(session: Session, transaction):
+    if transaction.parent is not None:
+        return
+    session.info.pop("_authz_epoch_bumped", None)
+    session.info.pop("_in_bump_authz_epoch", None)
+
+
+@event.listens_for(Session, "before_flush")
+def _authz_epoch_before_flush(session: Session, flush_context, instances):
+    if (
+        session.info.get("_authz_epoch_bumped")
+        or session.info.get("_in_bump_authz_epoch")
+    ):
+        return
+    should_bump = False
+    flushing_new_del = (
+        (session.new | session.deleted)
+        if instances is None
+        else [obj for obj in instances if obj in session.new or obj in session.deleted]
+    )
+    for obj in flushing_new_del:
+        if isinstance(obj, (OrganizationAccess, User)):
+            should_bump = True
+            break
+    if not should_bump:
+        flushing_dirty = (
+            session.dirty
+            if instances is None
+            else [obj for obj in instances if obj in session.dirty]
+        )
+        for obj in flushing_dirty:
+            if isinstance(obj, OrganizationAccess):
+                insp = inspect(obj)
+                for attr in ("can_create", "read_all"):
+                    if attr in insp.attrs and insp.attrs[attr].history.has_changes():
+                        should_bump = True
+                        break
+                if should_bump:
+                    break
+            elif isinstance(obj, User):
+                insp = inspect(obj)
+                for attr in ("role", "team_id", "active", "permissions"):
+                    if attr in insp.attrs and insp.attrs[attr].history.has_changes():
+                        should_bump = True
+                        break
+                if should_bump:
+                    break
+    if should_bump:
+        now = utcnow()
+        st = None
+        for obj in session.new:
+            if isinstance(obj, AccessPolicyState):
+                st = obj
+                break
+        if st is not None:
+            st.epoch += 1
+            st.updated_at = now
+        else:
+            st = session.get(AccessPolicyState, 1)
+            if st is None:
+                st = AccessPolicyState(singleton_id=1, epoch=2, updated_at=now)
+                session.add(st)
+            else:
+                st.epoch = AccessPolicyState.epoch + 1
+                st.updated_at = now
+        session.info["_authz_epoch_bumped"] = True
+
+
+
 def scope_clause(user):
     granted = select(OrganizationAccess.organization_id).where(
         OrganizationAccess.user_id == user.id, OrganizationAccess.read_all.is_(True))
     own = Interaction.owner_id == user.id if user.role == "manager" else false()
-    team = ((Interaction.team_id == user.team_id) if user.role == "supervisor" and user.team_id
-            else false())
+    if user.role == "supervisor" and user.team_id:
+        team_mgr_ids = select(User.id).where(User.team_id == user.team_id)
+        team = or_(Interaction.team_id == user.team_id, Interaction.owner_id.in_(team_mgr_ids))
+    else:
+        team = false()
     return or_(own, team, Interaction.organization_id.in_(granted))
 
 
@@ -63,7 +268,37 @@ def visible_organization_ids(db, user):
     granted = set(db.scalars(select(OrganizationAccess.organization_id).where(
         OrganizationAccess.user_id == user.id,
         or_(OrganizationAccess.can_create.is_(True), OrganizationAccess.read_all.is_(True)))))
-    return scoped | granted
+    owned = set()
+    if user.role == "manager":
+        owned = set(db.scalars(select(Organization.id).where(Organization.owner_id == user.id)))
+    elif user.role == "supervisor" and user.team_id:
+        owned = set(db.scalars(select(Organization.id).join(User, Organization.owner_id == User.id).where(User.team_id == user.team_id)))
+        team_mgr_grants = set(db.scalars(
+            select(OrganizationAccess.organization_id)
+            .join(User, OrganizationAccess.user_id == User.id)
+            .where(
+                User.team_id == user.team_id,
+                or_(OrganizationAccess.can_create.is_(True), OrganizationAccess.read_all.is_(True))
+            )
+        ))
+        granted |= team_mgr_grants
+    return scoped | granted | owned
+
+
+def has_organization_access(db, user, org_id: str) -> bool:
+    if user.role == "administrator":
+        return True
+    org = db.get(Organization, org_id)
+    if org and org.owner_id == user.id:
+        return True
+    if org and user.role == "supervisor" and org.owner_id:
+        org_owner = db.get(User, org.owner_id)
+        if org_owner and org_owner.team_id and org_owner.team_id == user.team_id:
+            return True
+    grant = db.get(OrganizationAccess, (user.id, org_id))
+    if grant and (grant.read_all or grant.can_create):
+        return True
+    return org_id in visible_organization_ids(db, user)
 
 
 def validate_subject(db, program_id, product_id):
@@ -137,10 +372,13 @@ def interaction_dict(db, item, attachments=None, lookup=None):
         "organization_name": org.name, "program_id": item.program_id,
         "program_name": program.name if program else None, "product_id": item.product_id,
         "product_name": product.name if product else None,
+        "product_vendor": product.vendor if product else None,
         "direction_name": direction.name if direction else None,
         "contact_id": item.contact_id, "contact_name": contact.full_name if contact else None,
         "contract_id": item.contract_id, "contract_number": contract.number if contract else None,
         "license_id": item.license_id, "license_status": license_.transfer_status if license_ else None,
+        "license_term_years": license_.term_years if license_ else None,
+        "license_signed_on": iso(license_.signed_on) if (license_ and license_.signed_on) else None,
         "cycle_label": item.cycle_label, "owner_id": item.owner_id, "owner_name": owner.name,
         "state": item.state, "state_name": STATES[item.state]["name"],
         "workflow_version": item.workflow_version, "revision": item.revision,
@@ -185,9 +423,14 @@ def append_event(db, item, actor, kind, at, **extra):
     # (for example a comment after a transition), so history has its own sequence.
     last_sequence = db.scalar(select(func.max(InteractionEvent.sequence)).where(
         InteractionEvent.interaction_id == item.id)) or 0
+    for obj in db.new:
+        if isinstance(obj, InteractionEvent) and getattr(obj, "interaction_id", None) == item.id:
+            if obj.sequence and obj.sequence > last_sequence:
+                last_sequence = obj.sequence
     event = InteractionEvent(interaction_id=item.id, type=kind, effective_at=at, received_at=at,
                              sequence=last_sequence + 1, actor_id=actor.id, actor_name=actor.name, payload=payload)
     db.add(event)
+    db.flush()
     return event
 
 
@@ -269,6 +512,8 @@ def create_interaction(db, user, body, key):
         c = db.get(OrganizationContact, body.contact_id)
         if not c or c.organization_id != body.organization_id:
             raise APIError("VALIDATION_ERROR", "Контакт не принадлежит организации взаимодействия.")
+        if c.archived_at is not None:
+            raise APIError("VALIDATION_ERROR", "Нельзя привязать архивный контакт к взаимодействию.")
     if body.contract_id:
         c = db.get(Contract, body.contract_id)
         if not c or c.organization_id != body.organization_id:
@@ -277,15 +522,57 @@ def create_interaction(db, user, body, key):
         lic = db.get(License, body.license_id)
         if not lic or lic.organization_id != body.organization_id:
             raise APIError("VALIDATION_ERROR", "Лицензия не принадлежит организации взаимодействия.")
+        if lic and body.contract_id and lic.contract_id and lic.contract_id != body.contract_id:
+            raise APIError("VALIDATION_ERROR", "Лицензия не соответствует указанному договору.")
         if body.product_id and lic.product_id != body.product_id:
             raise APIError("VALIDATION_ERROR", "Лицензия не соответствует выбранному ИТ-продукту.")
+        if body.program_id and not db.get(ProgramProduct, (body.program_id, lic.product_id)):
+            raise APIError("VALIDATION_ERROR", "Лицензия не соответствует выбранной ИТ-программе.")
     now = utcnow()
-    item = Interaction(**body.model_dump(), id=new_id(), team_id=owner.team_id, state="contact_search",
-                       revision=1, workflow_version=1, created_at=now, updated_at=now, visit_id=new_id())
+    item_data = body.model_dump()
+    start_comment = item_data.pop("comment", None)
+    init_visit_id = new_id()
+    item = Interaction(**item_data, id=new_id(), team_id=owner.team_id, state="contact_search",
+                       revision=1, workflow_version=1, created_at=now, updated_at=now, visit_id=init_visit_id)
     db.add(item)
     db.flush()
+    db.add(StateVisit(id=init_visit_id, interaction_id=item.id, state=item.state, entered_at=now))
     append_event(db, item, user, "created", now, to_state=item.state, owner_id=item.owner_id)
+    if start_comment and start_comment.strip():
+        comm = Comment(
+            id=new_id(),
+            interaction_id=item.id,
+            author_id=user.id,
+            author_name=user.name,
+            body=start_comment.strip(),
+            visit_id=item.visit_id,
+            created_at=now,
+        )
+        db.add(comm)
+        append_event(db, item, user, "comment_added", now, comment=start_comment.strip(), comment_id=comm.id)
     return finish_command(db, saved, interaction_dict(db, item), item.id)
+
+
+def _advance_state_visit(db, interaction_id, new_state, now):
+    open_visits = db.scalars(
+        select(StateVisit).where(
+            StateVisit.interaction_id == interaction_id,
+            StateVisit.exited_at.is_(None),
+        ).order_by(StateVisit.entered_at.desc())
+    ).all()
+    for open_visit in open_visits:
+        open_visit.exited_at = now
+        if open_visit.entered_at:
+            open_visit.duration_seconds = max(0.0, (aware(now) - aware(open_visit.entered_at)).total_seconds())
+
+    new_visit = StateVisit(
+        id=new_id(),
+        interaction_id=interaction_id,
+        state=new_state,
+        entered_at=now,
+    )
+    db.add(new_visit)
+    return new_visit
 
 
 def transition(db, user, interaction_id, body, key):
@@ -304,8 +591,10 @@ def transition(db, user, interaction_id, body, key):
         raise APIError("VALIDATION_ERROR", "Перед этим этапом укажите ИТ-программу и ИТ-продукт.")
     validate_subject(db, item.program_id, item.product_id)
     old_state, old_visit, now = item.state, item.visit_id, utcnow()
+    new_visit = _advance_state_visit(db, item.id, edge["to"], now)
     cas(db, item, body.expected_revision, state=edge["to"], updated_at=now,
-        closed_at=now if edge["to"] in TERMINAL_STATES else None, visit_id=new_id())
+        closed_at=now if edge["to"] in TERMINAL_STATES else None, visit_id=new_visit.id)
+
     append_event(db, item, user, "state_changed", now, from_state=old_state, to_state=item.state,
                  owner_id=item.owner_id, comment=body.comment, previous_visit_id=old_visit)
     return finish_command(db, saved, interaction_dict(db, item), item.id)
@@ -341,9 +630,10 @@ def assign(db, user, interaction_id, body, key):
     if owner.id == item.owner_id:
         raise APIError("VALIDATION_ERROR", "Этот сотрудник уже назначен ответственным.")
     old_owner, now = item.owner_id, utcnow()
-    cas(db, item, body.expected_revision, owner_id=owner.id, updated_at=now)
+    cas(db, item, body.expected_revision, owner_id=owner.id, team_id=owner.team_id, updated_at=now)
     append_event(db, item, user, "owner_changed", now, owner_id=owner.id,
                  previous_owner_id=old_owner, comment=body.reason)
+    bump_authz_epoch(db)
     return finish_command(db, saved, interaction_dict(db, item), item.id)
 
 
@@ -352,7 +642,7 @@ def update_interaction(db, user, interaction_id, body, key):
     require_permission(user, "interactions.edit")
     if item.closed_at:
         raise APIError("VALIDATION_ERROR", "Завершённое взаимодействие не подлежит изменению.")
-    saved, replay = begin_command(db, user, f"update:{item.id}", key, body.model_dump())
+    saved, replay = begin_command(db, user, f"update:{item.id}", key, body.model_dump(exclude_unset=True))
     if replay is not None:
         return replay
 
@@ -373,6 +663,8 @@ def update_interaction(db, user, interaction_id, body, key):
         c = db.get(OrganizationContact, new_contact_id)
         if not c or c.organization_id != item.organization_id:
             raise APIError("VALIDATION_ERROR", "Контакт не принадлежит организации взаимодействия.")
+        if c.archived_at is not None and new_contact_id != item.contact_id:
+            raise APIError("VALIDATION_ERROR", "Нельзя привязать архивный контакт к взаимодействию.")
     if new_contract_id:
         c = db.get(Contract, new_contract_id)
         if not c or c.organization_id != item.organization_id:
@@ -381,8 +673,12 @@ def update_interaction(db, user, interaction_id, body, key):
         lic = db.get(License, new_license_id)
         if not lic or lic.organization_id != item.organization_id:
             raise APIError("VALIDATION_ERROR", "Лицензия не принадлежит организации взаимодействия.")
+        if lic and new_contract_id and lic.contract_id and lic.contract_id != new_contract_id:
+            raise APIError("VALIDATION_ERROR", "Лицензия не соответствует указанному договору.")
         if new_product_id and lic.product_id != new_product_id:
             raise APIError("VALIDATION_ERROR", "Лицензия не соответствует выбранному ИТ-продукту.")
+        if new_program_id and not db.get(ProgramProduct, (new_program_id, lic.product_id)):
+            raise APIError("VALIDATION_ERROR", "Лицензия не соответствует выбранной ИТ-программе.")
 
     changes = {}
     updates = {}
@@ -412,28 +708,56 @@ def catalogs(db, user):
     orgs = list(db.scalars(select(Organization).where(Organization.id.in_(org_ids)).order_by(Organization.name)))
     owner_ids = set(db.scalars(select(Interaction.owner_id).where(scope_clause(user))))
     owner_ids.add(user.id)
-    if user.role == "supervisor":
+    if user.role in ("administrator", "admin"):
+        owner_ids.update(db.scalars(select(User.id).where(User.role == "manager", User.active.is_(True))))
+    elif user.role == "supervisor" and user.team_id:
         owner_ids.update(db.scalars(select(User.id).where(User.team_id == user.team_id, User.role == "manager")))
-    owners = db.scalars(select(User).where(User.id.in_(owner_ids), User.active.is_(True)).order_by(User.name))
+    learner_ids = {"cherepanona-s", "max_crich", "grigorev355", "osipenko833484", "mp_ivanov"}
+    valid_roles = ["manager", "supervisor", "administrator"]
+    owners = db.scalars(
+        select(User).where(
+            User.id.in_(owner_ids),
+            User.active.is_(True),
+            User.role.in_(valid_roles),
+            User.id.not_in(learner_ids),
+        ).order_by(User.name)
+    )
     directions = {d.id: d for d in db.scalars(select(Direction).order_by(Direction.name))}
     contacts = list(db.scalars(select(OrganizationContact).where(
-        OrganizationContact.organization_id.in_(org_ids), OrganizationContact.active.is_(True)).order_by(OrganizationContact.full_name)))
+        OrganizationContact.organization_id.in_(org_ids),
+        OrganizationContact.active.is_(True),
+        OrganizationContact.archived_at.is_(None),
+    ).order_by(OrganizationContact.full_name)))
     contracts = list(db.scalars(select(Contract).where(
         Contract.organization_id.in_(org_ids)).order_by(Contract.number)))
     licenses = list(db.scalars(select(License).where(
         License.organization_id.in_(org_ids)).order_by(License.created_at.desc())))
     return {
-        "organizations": [{"id": o.id, "name": o.name, "type": o.type} for o in orgs],
+        "organizations": [{"id": o.id, "name": o.name, "type": o.type, "owner_id": getattr(o, "owner_id", None)} for o in orgs],
         "programs": [{"id": p.id, "name": p.name, "direction_id": p.direction_id,
                       "direction_name": directions[p.direction_id].name}
                      for p in db.scalars(select(Program).order_by(Program.name))],
         "products": [{"id": p.id, "name": p.name, "vendor": p.vendor}
                      for p in db.scalars(select(Product).order_by(Product.name))],
-        "owners": [{"id": o.id, "name": o.name} for o in owners],
+        "owners": [{"id": o.id, "name": o.name, "role": o.role} for o in owners],
         "directions": [{"id": d.id, "name": d.name} for d in directions.values()],
-        "contacts": [{"id": c.id, "organization_id": c.organization_id, "full_name": c.full_name,
-                      "position": c.position, "email": c.email, "phone": c.phone, "active": c.active}
-                     for c in contacts],
+        "contacts": [
+            {
+                "id": c.id,
+                "organization_id": c.organization_id,
+                "full_name": c.full_name,
+                "position": c.position,
+                "email": c.email,
+                "phone": c.phone,
+                "active": c.active,
+                "notes": c.notes,
+                "revision": c.revision,
+                "created_at": iso(c.created_at),
+                "updated_at": iso(c.updated_at),
+                "archived_at": iso(c.archived_at),
+            }
+            for c in contacts
+        ],
         "contracts": [{"id": c.id, "organization_id": c.organization_id, "number": c.number,
                        "signed_on": iso(c.signed_on), "status": c.status, "created_at": iso(c.created_at)}
                       for c in contracts],
@@ -514,13 +838,42 @@ def dashboard(db, user):
     item_map = {i.id: i for i in items}
     events = db.scalars(select(InteractionEvent).where(InteractionEvent.interaction_id.in_(item_map)).order_by(
         InteractionEvent.effective_at.desc(), InteractionEvent.sequence.desc()).limit(8))
-    return {"total_interactions": len(items), "total_organizations": len({i.organization_id for i in items}),
-            "active_interactions": sum(i.state not in TERMINAL_STATES for i in items),
-            "completed_interactions": counts["completed"],
-            "counts_by_state": [{"code": code, "name": STATES[code]["name"], "count": counts[code]} for code in STATES],
-            "recent_events": [{"interaction_id": e.interaction_id, "title": item_map[e.interaction_id].title,
-                               "event_type": e.type, "actor_name": e.actor_name, "at": iso(e.effective_at)} for e in events],
-            "unassigned_program_count": sum(i.program_id is None for i in items)}
+    res = {
+        "total_interactions": len(items), "total_organizations": len({i.organization_id for i in items}),
+        "active_interactions": sum(i.state not in TERMINAL_STATES for i in items),
+        "completed_interactions": counts["completed"],
+        "counts_by_state": [{"code": code, "name": STATES[code]["name"], "count": counts[code]} for code in STATES],
+        "recent_events": [{"interaction_id": e.interaction_id, "title": item_map[e.interaction_id].title,
+                           "event_type": e.type, "actor_name": e.actor_name, "at": iso(e.effective_at)} for e in events],
+        "unassigned_program_count": sum(i.program_id is None for i in items),
+    }
+    if user.role in ("administrator", "admin"):
+        total_users = db.scalar(select(func.count(User.id))) or 0
+        total_organizations_catalog = db.scalar(select(func.count(Organization.id))) or 0
+        total_programs_catalog = db.scalar(select(func.count(Program.id))) or 0
+        total_products_catalog = db.scalar(select(func.count(Product.id))) or 0
+        total_inbox_pending = db.scalar(
+            select(func.count(IntegrationInbox.id)).where(func.lower(IntegrationInbox.status) == "pending")
+        ) or 0
+        try:
+            from .config import get_settings
+            from .integrations.factory import get_adapter
+            adapter = get_adapter("lms", get_settings())
+            health = adapter.health_check()
+            raw_status = health.get("status", "ok") if isinstance(health, dict) else "ok"
+            lms_health_status = "healthy" if str(raw_status).strip().lower() in ("ok", "healthy") else str(raw_status).strip().lower()
+        except Exception:
+            lms_health_status = "error"
+
+        res["system_stats"] = {
+            "total_users": total_users,
+            "total_organizations_catalog": total_organizations_catalog,
+            "total_programs_catalog": total_programs_catalog,
+            "total_products_catalog": total_products_catalog,
+            "total_inbox_pending": total_inbox_pending,
+            "lms_health_status": lms_health_status,
+        }
+    return res
 
 
 def snapshot(db, user, body):
@@ -528,7 +881,17 @@ def snapshot(db, user, body):
     validate_filters(db, user, body.organization_ids, body.program_ids, body.product_ids, body.owner_ids)
     now = utcnow()
     cutoff = body.knowledge_cutoff or now
-    visible_ids = list(db.scalars(select(Interaction.id).where(scope_clause(user))))
+    where_clauses = [scope_clause(user)]
+    if body.organization_ids:
+        where_clauses.append(Interaction.organization_id.in_(body.organization_ids))
+    if body.program_ids:
+        where_clauses.append(Interaction.program_id.in_(body.program_ids))
+    if body.product_ids:
+        where_clauses.append(Interaction.product_id.in_(body.product_ids))
+    if body.owner_ids:
+        where_clauses.append(Interaction.owner_id.in_(body.owner_ids))
+
+    visible_ids = list(db.scalars(select(Interaction.id).where(*where_clauses)))
     if len(visible_ids) > 5000:
         raise APIError("REPORT_LIMIT_EXCEEDED", "Первый выпуск ограничивает синхронный отчёт 5000 карточками.")
     date_condition = (InteractionEvent.effective_at <= body.as_of if body.as_of_inclusive
@@ -536,7 +899,7 @@ def snapshot(db, user, body):
     # One ordered query freezes the selected event payloads for table and JSON export calculation.
     events = list(db.scalars(select(InteractionEvent).where(InteractionEvent.interaction_id.in_(visible_ids),
         date_condition, InteractionEvent.received_at <= cutoff).order_by(
-        InteractionEvent.effective_at, InteractionEvent.sequence, InteractionEvent.id)))
+        InteractionEvent.effective_at, InteractionEvent.sequence, InteractionEvent.id))) if visible_ids else []
     latest, created = {}, set()
     for event in events:
         if event.type in ("created", "initial_state"):
@@ -585,7 +948,17 @@ def activity(db, user, body):
     now = utcnow()
     cutoff = aware(body.knowledge_cutoff or now)
     start, end = aware(body.from_date), aware(body.to_date)
-    visible_ids = list(db.scalars(select(Interaction.id).where(scope_clause(user))))
+    where_clauses = [scope_clause(user)]
+    if body.organization_ids:
+        where_clauses.append(Interaction.organization_id.in_(body.organization_ids))
+    if body.program_ids:
+        where_clauses.append(Interaction.program_id.in_(body.program_ids))
+    if body.product_ids:
+        where_clauses.append(Interaction.product_id.in_(body.product_ids))
+    if body.owner_ids:
+        where_clauses.append(Interaction.owner_id.in_(body.owner_ids))
+
+    visible_ids = list(db.scalars(select(Interaction.id).where(*where_clauses)))
     if len(visible_ids) > 5000:
         raise APIError("REPORT_LIMIT_EXCEEDED", "Первый выпуск ограничивает синхронный отчёт 5000 карточками.")
 
@@ -594,7 +967,7 @@ def activity(db, user, body):
             InteractionEvent.interaction_id.in_(visible_ids),
             InteractionEvent.received_at <= cutoff,
         ).order_by(InteractionEvent.effective_at, InteractionEvent.sequence, InteractionEvent.id)
-    ))
+    )) if visible_ids else []
 
     assignments_by_interaction: dict[str, list[InteractionEvent]] = {}
     transitions: list[InteractionEvent] = []
@@ -634,14 +1007,33 @@ def activity(db, user, body):
             continue
         from_st = (trans.payload or {}).get("from_state")
         to_st = (trans.payload or {}).get("to_state")
+
+        inter = db.get(Interaction, trans.interaction_id)
+        title = (inter.title if inter else None) or (snap.get("title") or "")
+        org_id = (inter.organization_id if inter else None) or snap.get("organization_id")
+        org = db.get(Organization, org_id) if org_id else None
+        org_name = (org.name if org else None) or snap.get("organization_name") or ""
+
+        owner_user = db.get(User, hist_owner) if hist_owner else None
+        owner_name = owner_user.name if owner_user else (hist_owner or "Не назначен")
+
+        actor_user = db.get(User, trans.actor_id) if trans.actor_id else None
+        actor_name = actor_user.name if actor_user else (trans.actor_id or "Система")
+
         selected_rows.append({
             "event_id": trans.id,
             "interaction_id": trans.interaction_id,
+            "title": title,
+            "organization_name": org_name,
             "from_state": from_st,
             "from_state_name": STATES.get(from_st, {}).get("name") if from_st else None,
             "to_state": to_st,
             "to_state_name": STATES.get(to_st, {}).get("name") if to_st else None,
+            "transition_code": (trans.payload or {}).get("transition_code") or f"{from_st}_to_{to_st}",
             "historical_owner_id": hist_owner,
+            "owner_at_event": hist_owner,
+            "owner_at_event_name": owner_name,
+            "actor_name": actor_name,
             "effective_at": iso(trans.effective_at),
         })
 
@@ -679,7 +1071,17 @@ def created_report(db, user, body):
     now = utcnow()
     cutoff = aware(body.knowledge_cutoff or now)
     start, end = aware(body.from_date), aware(body.to_date)
-    visible_ids = list(db.scalars(select(Interaction.id).where(scope_clause(user))))
+    where_clauses = [scope_clause(user)]
+    if body.organization_ids:
+        where_clauses.append(Interaction.organization_id.in_(body.organization_ids))
+    if body.program_ids:
+        where_clauses.append(Interaction.program_id.in_(body.program_ids))
+    if body.product_ids:
+        where_clauses.append(Interaction.product_id.in_(body.product_ids))
+    if body.owner_ids:
+        where_clauses.append(Interaction.owner_id.in_(body.owner_ids))
+
+    visible_ids = list(db.scalars(select(Interaction.id).where(*where_clauses)))
     if len(visible_ids) > 5000:
         raise APIError("REPORT_LIMIT_EXCEEDED", "Первый выпуск ограничивает синхронный отчёт 5000 карточками.")
 
@@ -691,7 +1093,7 @@ def created_report(db, user, body):
             InteractionEvent.effective_at < end,
             InteractionEvent.received_at <= cutoff,
         ).order_by(InteractionEvent.effective_at, InteractionEvent.sequence, InteractionEvent.id)
-    ))
+    )) if visible_ids else []
 
     rows = []
     filters = (("organization_id", body.organization_ids), ("program_id", body.program_ids),
@@ -731,6 +1133,9 @@ def created_report(db, user, body):
         "counts_by_state": counts_by_state,
         "rows": rows,
         "totals": {
+            "interactions": len(rows),
+            "organizations": len(counts_by_organization),
+            "counts_by_state": counts_by_state,
             "created": len(rows),
             "counts_by_organization": counts_by_organization,
             "counts_by_owner": counts_by_owner,
@@ -771,12 +1176,17 @@ def preview_workflow_migration(
                 422,
             )
 
+    where_clauses = [
+        Interaction.workflow_version == from_version,
+        Interaction.state.not_in(from_terminal),
+    ]
+    has_global_migrate = "workflow.global_migrate" in permissions(user)
+    if not has_global_migrate:
+        where_clauses.append(scope_clause(user))
+
     items = list(db.scalars(
         select(Interaction)
-        .where(
-            Interaction.workflow_version == from_version,
-            Interaction.state.not_in(from_terminal),
-        )
+        .where(*where_clauses)
         .order_by(Interaction.id)
     ))
 
@@ -804,7 +1214,24 @@ def preview_workflow_migration(
             })
             warnings.append(f"Коллизия: статусы {sorted(sources)} объединены в '{target}'.")
 
-    is_valid = len(unmapped_statuses) == 0
+    invalid_subject_cards = []
+    for item in items:
+        target_state = status_mapping.get(item.state)
+        if target_state in SUBJECT_REQUIRED_STATES:
+            if not item.program_id or not item.product_id:
+                invalid_subject_cards.append(item.id)
+            else:
+                try:
+                    validate_subject(db, item.program_id, item.product_id)
+                except APIError:
+                    invalid_subject_cards.append(item.id)
+
+    if invalid_subject_cards:
+        warnings.append(
+            f"Карточки {invalid_subject_cards} не имеют обязательной привязки программы/продукта для целевых этапов."
+        )
+
+    is_valid = len(unmapped_statuses) == 0 and len(invalid_subject_cards) == 0
     if unmapped_statuses:
         warnings.append(f"Не все активные статусы сопоставлены: {unmapped_statuses}.")
 
@@ -818,6 +1245,7 @@ def preview_workflow_migration(
         "collisions": collisions,
         "warnings": warnings,
         "is_valid": is_valid,
+        "card_revisions": {item.id: item.revision for item in items},
     }
 
 
@@ -828,6 +1256,7 @@ def commit_workflow_migration(
     to_version: int,
     status_mapping: dict[str, str],
     idempotency_key: str | None,
+    expected_card_revisions: dict[str, int] | None = None,
 ) -> dict:
     if not idempotency_key or not idempotency_key.strip() or len(idempotency_key) > 200:
         raise APIError("VALIDATION_ERROR", "Нужен непустой заголовок Idempotency-Key (до 200 символов).")
@@ -868,18 +1297,57 @@ def commit_workflow_migration(
                 422,
             )
 
+    where_clauses = [
+        Interaction.workflow_version == from_version,
+        Interaction.state.not_in(from_terminal),
+    ]
+    has_global_migrate = "workflow.global_migrate" in permissions(user)
+    if not has_global_migrate:
+        where_clauses.append(scope_clause(user))
+
     items = list(db.scalars(
         select(Interaction)
-        .where(
-            Interaction.workflow_version == from_version,
-            Interaction.state.not_in(from_terminal),
-        )
+        .where(*where_clauses)
         .order_by(Interaction.id)
     ))
+
+    if expected_card_revisions is not None:
+        for item in items:
+            exp_rev = expected_card_revisions.get(item.id)
+            if exp_rev is not None and item.revision != exp_rev:
+                raise APIError(
+                    "REVISION_CONFLICT",
+                    f"Карточка {item.id} была изменена после формирования превью миграции.",
+                    409,
+                )
 
     for item in items:
         if item.state not in status_mapping:
             raise APIError("VALIDATION_ERROR", f"Статус '{item.state}' у карточки {item.id} не сопоставлен.", 422)
+
+    invalid_card_ids = []
+    invalid_target_states = set()
+    for item in items:
+        target_state = status_mapping[item.state]
+        if target_state in SUBJECT_REQUIRED_STATES:
+            if not item.program_id or not item.product_id:
+                invalid_card_ids.append(item.id)
+                invalid_target_states.add(target_state)
+            else:
+                try:
+                    validate_subject(db, item.program_id, item.product_id)
+                except APIError:
+                    invalid_card_ids.append(item.id)
+                    invalid_target_states.add(target_state)
+
+    if invalid_card_ids:
+        target_str = ", ".join(sorted(invalid_target_states))
+        raise APIError(
+            "VALIDATION_ERROR",
+            f"Карточки {invalid_card_ids} не имеют обязательной привязки к программе/продукту для этапа {target_str}",
+            422,
+            details={"invalid_card_ids": invalid_card_ids},
+        )
 
     now = utcnow()
     details = []
@@ -891,6 +1359,11 @@ def commit_workflow_migration(
         new_state = status_mapping[old_state]
         new_revision = old_revision + 1
 
+        new_visit_id = item.visit_id
+        if old_state != new_state:
+            new_visit = _advance_state_visit(db, item.id, new_state, now)
+            new_visit_id = new_visit.id
+
         cas(
             db,
             item,
@@ -899,6 +1372,7 @@ def commit_workflow_migration(
             state=new_state,
             updated_at=now,
             closed_at=now if new_state in to_terminal else item.closed_at,
+            visit_id=new_visit_id,
         )
 
         append_event(
@@ -933,5 +1407,298 @@ def commit_workflow_migration(
     }
 
     return finish_command(db, saved, response, None)
+
+
+def _json_safe(obj):
+    return json.loads(json.dumps(obj, default=str, ensure_ascii=False))
+
+
+def freeze_report_dataset(
+    db: Session,
+    user: User,
+    report_type: str,
+    parameters: dict,
+    rows: list[dict],
+    knowledge_cutoff: datetime | None = None,
+) -> ReportRun:
+    if not user or not getattr(user, "id", None):
+        raise APIError("UNAUTHORIZED", "Пользователь не определен.", 401)
+    if not report_type or not str(report_type).strip():
+        raise APIError("VALIDATION_ERROR", "Тип отчета обязателен.", 422)
+    clean_type = str(report_type).strip()
+    if len(clean_type) > 50:
+        raise APIError("VALIDATION_ERROR", "Тип отчета не может превышать 50 символов.", 422)
+
+    param_dict = _json_safe(parameters) if parameters is not None else {}
+    if not isinstance(param_dict, dict):
+        param_dict = {"value": param_dict}
+
+    raw_rows = list(rows) if rows is not None else []
+    row_list = [
+        _json_safe(r) if isinstance(r, dict) else {"value": _json_safe(r)}
+        for r in raw_rows
+    ]
+
+    cutoff_aware = None
+    if knowledge_cutoff is not None:
+        if isinstance(knowledge_cutoff, str):
+            cleaned_cutoff = knowledge_cutoff.strip()
+            if cleaned_cutoff:
+                try:
+                    dt = datetime.fromisoformat(cleaned_cutoff.replace("Z", "+00:00"))
+                except ValueError:
+                    raise APIError("VALIDATION_ERROR", "Некорректный формат knowledge_cutoff.", 422)
+                cutoff_aware = aware(dt)
+        elif isinstance(knowledge_cutoff, datetime):
+            cutoff_aware = aware(knowledge_cutoff)
+        elif isinstance(knowledge_cutoff, date):
+            cutoff_aware = aware(datetime.combine(knowledge_cutoff, datetime.min.time()))
+        else:
+            raise APIError("VALIDATION_ERROR", "Некорректный тип knowledge_cutoff.", 422)
+
+    p_hash = hashlib.sha256(
+        json.dumps(param_dict, sort_keys=True, ensure_ascii=False, separators=(",", ":")).encode("utf-8")
+    ).hexdigest()
+    d_hash = hashlib.sha256(
+        json.dumps(row_list, sort_keys=True, ensure_ascii=False, separators=(",", ":")).encode("utf-8")
+    ).hexdigest()
+
+    run = ReportRun(
+        id=new_id(),
+        requested_by=user.id,
+        report_type=clean_type,
+        parameters=param_dict,
+        parameters_hash=p_hash,
+        knowledge_cutoff=cutoff_aware,
+        row_count=len(row_list),
+        dataset_checksum=d_hash,
+        created_at=utcnow(),
+    )
+    db.add(run)
+    db.flush()
+    db.add_all([
+        ReportRow(
+            id=new_id(),
+            report_run_id=run.id,
+            ordinal=ordinal,
+            row_data=row,
+        )
+        for ordinal, row in enumerate(row_list, start=1)
+    ])
+    db.flush()
+    return run
+
+
+def get_frozen_report_rows(db: Session, report_run_id: str) -> list[dict]:
+    if report_run_id is None:
+        raise APIError("NOT_FOUND", "Срез отчета не найден.", 404)
+    clean_id = str(report_run_id).strip()
+    if not clean_id:
+        raise APIError("NOT_FOUND", "Срез отчета не найден.", 404)
+    run = db.get(ReportRun, clean_id)
+    if not run:
+        raise APIError("NOT_FOUND", "Срез отчета не найден.", 404)
+    rows = db.scalars(
+        select(ReportRow)
+        .where(ReportRow.report_run_id == clean_id)
+        .order_by(ReportRow.ordinal.asc())
+    ).all()
+    return [r.row_data for r in rows]
+
+
+def enqueue_background_job(db: Session, user: User, kind: str, parameters: dict | None = None) -> BackgroundJob:
+    if not user or not getattr(user, "id", None) or not getattr(user, "active", True):
+        raise APIError("UNAUTHORIZED", "Пользователь не определен.", 401)
+
+    clean_kind = str(kind or "").strip()
+    if not clean_kind:
+        raise APIError("VALIDATION_ERROR", "Тип фоновой задачи не может быть пустым.", 422)
+
+    if parameters is not None:
+        if not isinstance(parameters, dict):
+            raise APIError("VALIDATION_ERROR", "Параметры фоновой задачи должны быть словарем.", 422)
+        param_dict = _json_safe(parameters)
+    else:
+        param_dict = {}
+
+    current_epoch = get_authz_epoch(db)
+    job = BackgroundJob(
+        id=new_id(),
+        kind=clean_kind,
+        status="queued",
+        progress=0,
+        requester_id=user.id,
+        authz_epoch=current_epoch,
+        parameters=param_dict,
+        result_id=None,
+        error_message=None,
+        created_at=utcnow(),
+        updated_at=utcnow(),
+    )
+    outbox = TransactionalOutbox(
+        id=new_id(),
+        event_type=f"job_queued:{clean_kind}",
+        payload={"job_id": job.id, "kind": clean_kind, "requester_id": user.id},
+        status="pending",
+        created_at=utcnow(),
+    )
+    db.add(job)
+    db.add(outbox)
+    db.commit()
+    return job
+
+
+def _mark_job_outbox_processed(db: Session, job_id: str) -> None:
+    if not job_id:
+        return
+    now = utcnow()
+    for outbox in db.scalars(
+        select(TransactionalOutbox).where(TransactionalOutbox.status == "pending")
+    ).all():
+        if isinstance(outbox.payload, dict) and outbox.payload.get("job_id") == job_id:
+            outbox.status = "processed"
+            outbox.processed_at = now
+            break
+
+
+def process_background_job(db: Session, job_id: str) -> BackgroundJob:
+    clean_id = str(job_id).strip() if job_id else ""
+    if not clean_id:
+        raise APIError("NOT_FOUND", "Фоновая задача не найдена.", 404)
+    job = db.get(BackgroundJob, clean_id)
+    if not job:
+        raise APIError("NOT_FOUND", "Фоновая задача не найдена.", 404)
+
+    if job.status in ("completed", "cancelled", "failed", "running"):
+        return job
+
+    # 1. Atomic CAS transition to running for concurrency safety
+    now = utcnow()
+    res = db.execute(
+        update(BackgroundJob)
+        .where(BackgroundJob.id == clean_id, BackgroundJob.status == "queued")
+        .values(status="running", progress=10, updated_at=now)
+    )
+    db.commit()
+    db.refresh(job)
+    if res.rowcount == 0:
+        return job
+
+    # 2. Check requester active status (152-ФЗ)
+    requester = db.get(User, job.requester_id)
+    if not requester or not requester.active:
+        job.status = "cancelled"
+        job.error_message = "REQUESTER_INACTIVE"
+        job.updated_at = utcnow()
+        _mark_job_outbox_processed(db, job.id)
+        db.commit()
+        return job
+
+    # 3. Check authz_epoch (152-ФЗ)
+    if not check_authz_epoch(db, job.authz_epoch):
+        job.status = "cancelled"
+        job.error_message = "REPORT_SCOPE_CHANGED"
+        job.updated_at = utcnow()
+        _mark_job_outbox_processed(db, job.id)
+        db.commit()
+        return job
+
+    # 4. Process report or background workload
+    try:
+        job.progress = 50
+        job.updated_at = utcnow()
+        db.commit()
+
+        if job.kind in ("report_snapshot", "snapshot"):
+            from .schemas import SnapshotRequest
+
+            params = dict(job.parameters or {})
+            if "as_of" not in params or not params["as_of"]:
+                params["as_of"] = utcnow().isoformat()
+            req = SnapshotRequest(**params)
+            report_result = snapshot(db, requester, req)
+
+            # Re-verify epoch before freezing to guarantee zero race condition
+            if not check_authz_epoch(db, job.authz_epoch):
+                job.status = "cancelled"
+                job.error_message = "REPORT_SCOPE_CHANGED"
+                job.updated_at = utcnow()
+                _mark_job_outbox_processed(db, job.id)
+                db.commit()
+                return job
+
+            rows = report_result.get("rows", [])
+            cutoff = req.knowledge_cutoff
+
+            report_run = freeze_report_dataset(
+                db=db,
+                user=requester,
+                report_type="snapshot",
+                parameters=params,
+                rows=rows,
+                knowledge_cutoff=cutoff,
+            )
+            job.result_id = report_run.id
+        elif job.parameters and "rows" in job.parameters:
+            report_run = freeze_report_dataset(
+                db=db,
+                user=requester,
+                report_type=job.kind,
+                parameters=job.parameters,
+                rows=job.parameters.get("rows", []),
+            )
+            job.result_id = report_run.id
+        else:
+            job.result_id = new_id()
+
+        _mark_job_outbox_processed(db, job.id)
+        job.status = "completed"
+        job.progress = 100
+        job.error_message = None
+        job.updated_at = utcnow()
+        db.commit()
+        return job
+    except Exception as exc:
+        db.rollback()
+        job = db.get(BackgroundJob, clean_id)
+        if job:
+            job.status = "failed"
+            job.error_message = getattr(exc, "message", None) or str(exc)
+            job.updated_at = utcnow()
+            _mark_job_outbox_processed(db, job.id)
+            db.commit()
+            return job
+        raise
+
+
+def get_background_job_scoped(db: Session, user: User, job_id: str) -> BackgroundJob:
+    if not user or not getattr(user, "id", None) or not getattr(user, "active", True):
+        raise APIError("UNAUTHORIZED", "Пользователь не определен.", 401)
+
+    clean_id = str(job_id).strip() if job_id else ""
+    if not clean_id:
+        raise APIError("NOT_FOUND", "Фоновая задача не найдена.", 404)
+
+    job = db.get(BackgroundJob, clean_id)
+    if not job:
+        raise APIError("NOT_FOUND", "Фоновая задача не найдена.", 404)
+
+    # 1. Administrator sees all system jobs
+    if user.role == "administrator":
+        return job
+
+    # 2. Requester sees their own jobs
+    if job.requester_id == user.id:
+        return job
+
+    # 3. Supervisor sees own team jobs
+    if user.role == "supervisor" and user.team_id:
+        requester = db.get(User, job.requester_id)
+        if requester and requester.team_id == user.team_id:
+            return job
+
+    # Any other user -> 404 Not Found (152-ФЗ invariant: do not reveal existence)
+    raise APIError("NOT_FOUND", "Фоновая задача не найдена.", 404)
+
 
 

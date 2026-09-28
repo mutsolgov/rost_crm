@@ -106,12 +106,51 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     void keycloak.current.login({ redirectUri: window.location.origin }).catch(problem => setError(messageOf(problem)));
   };
   const logout = () => {
+    setMe(null);
+    setAuthenticated(false);
+    setLoading(false);
     if (config?.auth_mode === 'demo') {
-      setMe(null); setDemoUserId(''); setLoading(false); setError('');
+      setDemoUserId('');
+      setError('');
+      try {
+        keycloak.current?.clearToken();
+      } catch {
+        // ignore if uninitialized
+      }
       return;
     }
-    void keycloak.current?.logout({ redirectUri: window.location.origin })
-      .catch(problem => setError(messageOf(problem)));
+    try {
+      const redirectUri = window.location.origin
+        ? (window.location.origin.endsWith('/') ? window.location.origin : `${window.location.origin}/`)
+        : (window.location.href || '/');
+      const logoutPromise = keycloak.current?.logout({ redirectUri });
+      try {
+        keycloak.current?.clearToken();
+      } catch {
+        // ignore if uninitialized
+      }
+      void logoutPromise?.catch(problem => {
+        setMe(null);
+        setAuthenticated(false);
+        setLoading(false);
+        try {
+          keycloak.current?.clearToken();
+        } catch {
+          // ignore
+        }
+        setError(messageOf(problem));
+      });
+    } catch (problem) {
+      setMe(null);
+      setAuthenticated(false);
+      setLoading(false);
+      try {
+        keycloak.current?.clearToken();
+      } catch {
+        // ignore
+      }
+      setError(messageOf(problem));
+    }
   };
   const retry = () => {
     if (!config || (config.auth_mode === 'oidc' && !oidcReady)) window.location.reload();

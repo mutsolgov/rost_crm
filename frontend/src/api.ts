@@ -8,6 +8,8 @@ import type {
   WorkflowMigrationResult,
   WorkflowMigratePreviewPayload,
   WorkflowMigrateCommitPayload,
+  WorkflowVersionInfo,
+  Workflow,
 } from './types';
 
 export class ApiError extends Error {
@@ -132,6 +134,39 @@ export class ApiClient {
     window.setTimeout(() => URL.revokeObjectURL(url), 1000);
   }
 
+  async previewAttachmentBlob(path: string): Promise<{ blobUrl: string; cleanup: () => void }> {
+    const normalizedPath = path.startsWith('/api/v1') ? path.slice(7) : path;
+    const response = await this.raw(normalizedPath, {
+      method: 'GET',
+      headers: { Accept: '*/*' },
+    });
+    const blob = await response.blob();
+    const blobUrl = URL.createObjectURL(blob);
+    return {
+      blobUrl,
+      cleanup: () => {
+        URL.revokeObjectURL(blobUrl);
+      },
+    };
+  }
+
+  async deleteAttachment(
+    interactionId: string,
+    attachmentId: string,
+    expectedRevision?: number,
+    key?: string,
+  ): Promise<{ status: string; revision: number }> {
+    const query = expectedRevision !== undefined ? `?expected_revision=${encodeURIComponent(expectedRevision)}` : '';
+    const path = `/interactions/${encodeURIComponent(interactionId)}/attachments/${encodeURIComponent(attachmentId)}${query}`;
+    const mutationKey = key || makeMutationKey();
+    const response = await this.raw(path, {
+      method: 'DELETE',
+      headers: mutationKey ? { 'Idempotency-Key': mutationKey } : {},
+    });
+    return response.json() as Promise<{ status: string; revision: number }>;
+  }
+
+
   async getIntegrationsStatus(): Promise<IntegrationsStatusResponse> {
     return this.get<IntegrationsStatusResponse>('/integrations/status');
   }
@@ -152,6 +187,12 @@ export class ApiClient {
     if (params?.page_size) query.set('page_size', String(params.page_size));
     const qs = query.toString();
     return this.get<IntegrationInboxResponse>('/integrations/inbox' + (qs ? `?${qs}` : ''));
+  }
+
+  async uploadLmsLearners(file: File, key: string = makeMutationKey()): Promise<any> {
+    const formData = new FormData();
+    formData.append('file', file);
+    return this.upload<any>('/integrations/upload/learners', formData, key);
   }
 
   async resolveInboxItem(
@@ -223,6 +264,23 @@ export class ApiClient {
       headers,
     });
     return response.json() as Promise<WorkflowMigrationResult>;
+  }
+
+  async updateOrganization(organizationId: string, body: { owner_id: string | null }): Promise<any> {
+    return this.patch<any>(`/organizations/${encodeURIComponent(organizationId)}`, body);
+  }
+
+  async getWorkflowVersions(): Promise<WorkflowVersionInfo[]> {
+    return this.get<WorkflowVersionInfo[]>('/workflow/versions');
+  }
+
+  async getWorkflow(version?: number): Promise<Workflow> {
+    const qs = version !== undefined ? `?version=${encodeURIComponent(version)}` : '';
+    return this.get<Workflow>(`/workflow${qs}`);
+  }
+
+  async publishWorkflowVersion(version: number): Promise<any> {
+    return this.post<any>(`/workflow/versions/${encodeURIComponent(version)}/publish`, {});
   }
 }
 

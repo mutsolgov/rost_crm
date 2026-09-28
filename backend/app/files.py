@@ -2,14 +2,18 @@ from __future__ import annotations
 
 import hashlib
 from pathlib import Path, PurePath
+import re
+import socket
+import struct
 from uuid import uuid4
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from .config import Settings, get_settings
 from .errors import APIError
 from .models import Attachment, User
-from .services import append_event, iso, scoped_interaction, utcnow
+from .services import append_event, cas, iso, require_permission, scoped_interaction, utcnow
 
 MAX_FILE_SIZE = 26_214_400  # 25 MB
 
@@ -88,6 +92,50 @@ def validate_magic_bytes(ext: str, data: bytes) -> bool:
     return False
 
 
+CHUNK_SIZE = 64 * 1024  # 64 KB
+
+
+def scan_clamav_stream(data: bytes, host: str, port: int, timeout: float = 10.0) -> str | None:
+    """Streams data to clamd via INSTREAM protocol and returns detected virus signature or None."""
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
+        sock.settimeout(timeout)
+        sock.connect((host, port))
+        sock.sendall(b"zINSTREAM\0")
+
+        offset = 0
+        total_len = len(data)
+        while offset < total_len:
+            chunk = data[offset : offset + CHUNK_SIZE]
+            sock.sendall(struct.pack(">I", len(chunk)) + chunk)
+            offset += len(chunk)
+
+        sock.sendall(struct.pack(">I", 0))
+
+        response = b""
+        while True:
+            part = sock.recv(4096)
+            if not part:
+                break
+            response += part
+            if b"\0" in response or b"\n" in response:
+                break
+
+    text = response.decode("utf-8", errors="replace").strip("\x00\r\n ")
+    upper = text.upper()
+    if upper.endswith("ERROR"):
+        raise RuntimeError(f"ClamAV scan error: {text}")
+    if upper == "STREAM: OK" or upper.endswith(" OK") or upper == "OK":
+        return None
+    if upper.endswith("FOUND"):
+        clean = text
+        if clean.lower().startswith("stream:"):
+            clean = clean[len("stream:") :].strip()
+        if clean.upper().endswith("FOUND"):
+            clean = clean[: -len("FOUND")].strip()
+        return clean or "FOUND"
+    raise RuntimeError(f"Unexpected ClamAV response: {text}")
+
+
 def save_attachment(
     db: Session,
     user: User,
@@ -96,8 +144,9 @@ def save_attachment(
     file_bytes: bytes,
     storage_dir: str = "storage",
     content_type_header: str | None = None,
+    settings: Settings | None = None,
 ) -> Attachment:
-    """Validates format, size, magic bytes, stores to isolated directory under UUID, inserts record and audit event."""
+    """Validates format, size, magic bytes, antivirus scan, stores to isolated directory under UUID, inserts record and audit event."""
     item = scoped_interaction(db, user, interaction_id)
 
     if len(file_bytes) > MAX_FILE_SIZE:
@@ -111,6 +160,22 @@ def save_attachment(
             f"Содержимое файла не соответствует заявленному типу '{ext}' или содержит исполняемый код.",
             422,
         )
+
+    cfg = settings or get_settings()
+    if cfg.clamav_enabled:
+        try:
+            virus_name = scan_clamav_stream(
+                file_bytes,
+                host=cfg.clamav_host,
+                port=cfg.clamav_port,
+                timeout=cfg.clamav_timeout,
+            )
+            if virus_name:
+                raise APIError("VIRUS_DETECTED", f"Обнаружена вредоносная сигнатура: {virus_name}", 422)
+        except APIError:
+            raise
+        except (OSError, TimeoutError, RuntimeError) as exc:
+            raise APIError("ANTIVIRUS_UNAVAILABLE", "Сервис антивирусной проверки временно недоступен.", 503) from exc
 
     target_dir = Path(storage_dir) / "attachments" / item.id
     target_dir.mkdir(parents=True, exist_ok=True)
@@ -188,3 +253,56 @@ def attachment_dict(att: Attachment) -> dict:
         "uploaded_by": att.uploaded_by,
         "created_at": iso(att.created_at),
     }
+
+
+def delete_attachment(
+    db: Session,
+    user: User,
+    interaction_id: str,
+    attachment_id: str,
+    expected_revision: int | None = None,
+) -> dict:
+    """Safely deletes attachment, removing disk file and DB record, verifying CAS and logging audit event."""
+    item = scoped_interaction(db, user, interaction_id)
+    require_permission(user, "interactions.write")
+
+    attachment = db.scalar(
+        select(Attachment).where(
+            Attachment.id == attachment_id,
+            Attachment.interaction_id == item.id,
+        )
+    )
+    if not attachment:
+        raise APIError("NOT_FOUND", "Вложение не найдено.", 404)
+
+    if attachment.uploaded_by != user.id and user.role not in {"supervisor", "administrator", "admin"}:
+        raise APIError("FORBIDDEN", "Удаление вложения доступно автору или руководителю.", 403)
+
+    if expected_revision is not None:
+        cas(db, item, expected_revision)
+    else:
+        item.revision += 1
+
+    Path(attachment.file_path).unlink(missing_ok=True)
+
+    append_event(
+        db,
+        item,
+        user,
+        "attachment_deleted",
+        utcnow(),
+        attachment_id=attachment.id,
+        file_name=attachment.file_name,
+        file_size=attachment.file_size,
+        checksum=attachment.checksum,
+    )
+
+    db.delete(attachment)
+    db.flush()
+
+    return {
+        "status": "ok",
+        "deleted_attachment_id": attachment_id,
+        "revision": item.revision,
+    }
+

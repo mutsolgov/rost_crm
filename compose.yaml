@@ -14,6 +14,8 @@ services:
     volumes:
       - postgres-data:/var/lib/postgresql/data
       - ./deploy/postgres/01-create-databases.sh:/docker-entrypoint-initdb.d/01-create-databases.sh:ro
+    networks:
+      - backend_net
     healthcheck:
       test: [CMD-SHELL, "pg_isready -h 127.0.0.1 -U rtk_bootstrap -d postgres"]
       interval: 5s
@@ -43,6 +45,9 @@ services:
       - ./deploy/keycloak/rtk-crm-realm.json:/opt/keycloak/data/import/rtk-crm-realm.json:ro
     ports:
       - "127.0.0.1:8080:8080"
+    networks:
+      - frontend_net
+      - backend_net
     depends_on:
       postgres:
         condition: service_healthy
@@ -62,6 +67,44 @@ services:
     mem_limit: 1g
     restart: unless-stopped
 
+  db-migrator:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    environment:
+      APP_ENV: development
+      DATABASE_URL: postgresql+psycopg://rtk_crm:${CRM_DB_PASSWORD:?Set CRM_DB_PASSWORD in .env}@postgres:5432/rtk_crm
+    command: ["alembic", "upgrade", "head"]
+    networks:
+      - backend_net
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: "no"
+
+  clamav:
+    image: clamav/clamav:latest
+    networks:
+      - backend_net
+    healthcheck:
+      test: ["CMD-SHELL", "echo PING | nc -w 1 127.0.0.1 3310 | grep -q PONG || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
+    restart: unless-stopped
+
+  redis:
+    image: redis:7-alpine
+    networks:
+      - backend_net
+    healthcheck:
+      test: [CMD, redis-cli, ping]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+    restart: unless-stopped
+
   api:
     build:
       context: ./backend
@@ -77,6 +120,17 @@ services:
       OIDC_URL: ${KEYCLOAK_PUBLIC_URL:-http://localhost:8080}
       OIDC_REALM: rtk-crm
       OIDC_CLIENT_ID: rtk-crm-web
+      CLAMAV_HOST: ${CLAMAV_HOST:-clamav}
+      CLAMAV_PORT: ${CLAMAV_PORT:-3310}
+      CLAMAV_ENABLED: ${CLAMAV_ENABLED:-false}
+      REDIS_URL: ${REDIS_URL:-redis://redis:6379/0}
+      BACKGROUND_WORKER_ENABLED: "true"
+      LMS_INTEGRATION_MODE: ${LMS_INTEGRATION_MODE:-mock}
+      LMS_BASE_URL: ${LMS_BASE_URL:-https://rtkb.zion-lms.ru}
+      LMS_API_TOKEN: ${LMS_API_TOKEN:-}
+      WEBSITE_INTEGRATION_MODE: ${WEBSITE_INTEGRATION_MODE:-mock}
+      WEBSITE_BASE_URL: ${WEBSITE_BASE_URL:-https://crm-auth-dev.apps.os-01.zion.org.ru}
+      WEBSITE_API_TOKEN: ${WEBSITE_API_TOKEN:-}
     # Only schema creation is automatic. Synthetic records require --seed-demo.
     command:
       - /bin/sh
@@ -84,11 +138,16 @@ services:
       - python -m app.seed --init-db && exec uvicorn app.main:app --host 0.0.0.0 --port 8000
     volumes:
       - storage-data:/app/storage
+    networks:
+      - frontend_net
+      - backend_net
     depends_on:
       postgres:
         condition: service_healthy
       keycloak:
         condition: service_healthy
+      db-migrator:
+        condition: service_completed_successfully
     healthcheck:
       test: [CMD, python, -c, "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health/ready', timeout=3)"]
       interval: 10s
@@ -103,6 +162,8 @@ services:
       dockerfile: frontend/Dockerfile
     ports:
       - "127.0.0.1:3000:8080"
+    networks:
+      - frontend_net
     depends_on:
       api:
         condition: service_healthy
@@ -116,3 +177,10 @@ services:
 volumes:
   postgres-data:
   storage-data:
+
+networks:
+  frontend_net:
+    driver: bridge
+  backend_net:
+    driver: bridge
+    internal: true

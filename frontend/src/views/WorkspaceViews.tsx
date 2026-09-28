@@ -26,6 +26,156 @@ export function Overview({ api, revision, me, onCreate, canCreate, openInteracti
   const recent = useResource<InteractionList>(() => api.get('/interactions?page=1&page_size=5'), [api, revision, retry]);
   const data = dashboard.data;
   const date = new Date().toLocaleDateString('ru-RU', { day: 'numeric', month: 'long', year: 'numeric' });
+  const isAdmin = me.role === 'administrator' || me.role === 'admin';
+
+  if (isAdmin) {
+    const stats = data?.system_stats;
+    return <>
+      <PageHeader
+        eyebrow={'СИСТЕМНОЕ УПРАВЛЕНИЕ CRM · ' + date.toLocaleUpperCase('ru-RU')}
+        title="Панель системного управления CRM"
+        description={'Здравствуйте, ' + me.name.split(' ')[0] + '. Телеметрия платформы, управление каталогами и интеграционными потоками.'}
+        action={<div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+          <Button onClick={() => navigate('catalogs')}><Icon name="building" size={18}/>Каталоги</Button>
+          <Button variant="secondary" onClick={() => navigate('integrations')}><Icon name="spark" size={18}/>Интеграции</Button>
+        </div>}
+      />
+      <ErrorAlert error={dashboard.error} onRetry={() => setRetry(value => value + 1)}/>
+      {!data ? (!dashboard.error && <Loading/>) : <>
+        <div className="panel" style={{ padding: '18px 22px', marginBottom: '20px', background: '#F8F9FC', borderLeft: '4px solid var(--rtk-color-primary, #7700FF)', borderRadius: '8px' }}>
+          <div style={{ display: 'flex', alignItems: 'flex-start', gap: '14px' }}>
+            <span style={{ color: 'var(--rtk-color-primary, #7700FF)', marginTop: '2px' }}><Icon name="shield" size={24}/></span>
+            <div>
+              <div style={{ fontWeight: 600, fontSize: '15px', color: '#101828', marginBottom: '4px' }}>
+                Инвариант 152-ФЗ и ФСТЭК №117: Изоляция коммерческих воронок
+              </div>
+              <p style={{ margin: 0, fontSize: '13px', color: '#475467', lineHeight: '1.5' }}>
+                Режим системного администратора: в соответствии с регламентом 152-ФЗ прямой доступ к коммерческим воронкам менеджеров изолирован. Используйте вкладки «Интеграции», «Справочники» и «Отчёты» для конфигурирования системы.
+              </p>
+            </div>
+          </div>
+        </div>
+
+        <div className="stats-grid">
+          {[
+            { label: 'Всего пользователей', value: stats?.total_users ?? 0, icon: 'layers', tone: 'purple', note: 'Учётные записи платформы' },
+            { label: 'Организаций в каталоге', value: stats?.total_organizations_catalog ?? 0, icon: 'building', tone: 'blue', note: 'Вузы, школы, вендоры' },
+            { label: 'ИТ-продуктов и вендоров', value: stats?.total_products_catalog ?? 0, icon: 'check', tone: 'green', note: 'Отечественные решения' },
+            { label: 'Заявок на сверку в очереди интеграций', value: stats?.total_inbox_pending ?? 0, icon: 'clock', tone: 'purple', note: 'Буфер входящих заявок' },
+            { label: 'ИТ-программы обучения', value: stats?.total_programs_catalog ?? 0, icon: 'spark', tone: 'orange', note: 'Каталог направлений' },
+            { label: 'Статус контура LMS', value: (stats?.lms_health_status === 'healthy' || stats?.lms_health_status === 'ok') ? 'В норме' : 'Внимание', icon: 'spark', tone: (stats?.lms_health_status === 'healthy' || stats?.lms_health_status === 'ok') ? 'green' : 'orange', note: 'Телеметрия синхронизации' },
+          ].map(stat => <div className="stat-card" key={stat.label}>
+            <div className="stat-card-top">
+              <span>{stat.label}</span>
+              <span className={'stat-icon tone-' + stat.tone}><Icon name={stat.icon} size={19}/></span>
+            </div>
+            <strong>{typeof stat.value === 'number' ? <Count value={stat.value}/> : stat.value}</strong>
+            <small>{stat.note}</small>
+          </div>)}
+        </div>
+
+        {data.total_interactions > 0 && (
+          <section className="panel stage-panel" style={{ marginBottom: '20px' }}>
+            <div className="panel-heading">
+              <div><span className="eyebrow">ДОСТУПНАЯ ВОРОНКА</span><h2>Этапы сотрудничества (по назначенным организациям)</h2></div>
+              <span className="quiet-badge">{data.total_interactions} процессов</span>
+            </div>
+            <div className="stage-bars">
+              {data.counts_by_state.filter(stage => stage.count > 0).map(stage => <button key={stage.code} className="stage-bar-row" onClick={() => navigate('interactions?state=' + encodeURIComponent(stage.code))}><div><span>{stage.name}</span><strong>{stage.count}</strong></div><span className="bar-track"><i style={{ width: Math.max(3, stage.count / Math.max(1, ...data.counts_by_state.map(item => item.count)) * 100) + '%' }}/></span></button>)}
+            </div>
+            <div className="panel-footnote"><span className="legend-dot"/>Количество взаимодействий по мандатам OrganizationAccess</div>
+          </section>
+        )}
+
+        <div className="overview-grid">
+          <section className="panel stage-panel">
+            <div className="panel-heading">
+              <div><span className="eyebrow">БЫСТРЫЙ ПЕРЕХОД</span><h2>Кнопки быстрых действий</h2></div>
+              <span className="quiet-badge">4 действия</span>
+            </div>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', padding: '16px 20px' }}>
+              <button className="stage-bar-row" style={{ textAlign: 'left', padding: '12px 14px' }} onClick={() => navigate('catalogs')}>
+                <div>
+                  <span style={{ fontWeight: 600 }}>Импорт каталогов</span>
+                  <small style={{ color: 'var(--rtk-color-muted)' }}>Вузы, вендоры, ИТ-продукты и пользователи CRM</small>
+                </div>
+                <Icon name="arrow" size={16}/>
+              </button>
+              <button className="stage-bar-row" style={{ textAlign: 'left', padding: '12px 14px' }} onClick={() => navigate('integrations')}>
+                <div>
+                  <span style={{ fontWeight: 600 }}>Шлюз интеграций</span>
+                  <small style={{ color: 'var(--rtk-color-muted)' }}>LMS Zion, выгрузка оплат, сверка заявок и метрики</small>
+                </div>
+                <Icon name="arrow" size={16}/>
+              </button>
+              <button className="stage-bar-row" style={{ textAlign: 'left', padding: '12px 14px' }} onClick={() => navigate('catalogs')}>
+                <div>
+                  <span style={{ fontWeight: 600 }}>Миграция процессов v1/v2</span>
+                  <small style={{ color: 'var(--rtk-color-muted)' }}>Маппинг статусов жизненного цикла и аудит миграций</small>
+                </div>
+                <Icon name="arrow" size={16}/>
+              </button>
+              <button className="stage-bar-row" style={{ textAlign: 'left', padding: '12px 14px' }} onClick={() => navigate('help')}>
+                <div>
+                  <span style={{ fontWeight: 600 }}>База знаний и регламенты</span>
+                  <small style={{ color: 'var(--rtk-color-muted)' }}>Архитектура, ролевая модель и стандарты 152-ФЗ</small>
+                </div>
+                <Icon name="arrow" size={16}/>
+              </button>
+            </div>
+            <div className="panel-footnote"><span className="legend-dot"/>Оперативный доступ к конфигурации CRM</div>
+          </section>
+
+          <section className="focus-panel">
+            <span className="focus-symbol"><Icon name="shield" size={27}/></span>
+            <span className="eyebrow">БЕЗОПАСНОСТЬ И АУДИТ</span>
+            <h2>Строгая изоляция данных.<br/>Полный аудит операций.</h2>
+            <p>Все изменяющие запросы требуют Idempotency-Key и CAS-проверку ревизий. Доступ к коммерческим воронкам разделен по ролевой модели.</p>
+            <div className="focus-metric">
+              <strong>{stats?.total_inbox_pending ?? 0}</strong>
+              <span>заявок в буфере<br/>интеграций</span>
+            </div>
+            <button className="light-link" onClick={() => navigate('integrations')}>
+              Открыть шлюз интеграций<Icon name="arrow" size={19}/>
+            </button>
+          </section>
+        </div>
+      </>}
+
+      <div className="overview-lower">
+        <section className="panel recent-panel">
+          <div className="panel-heading">
+            <div><h2>Доступные карточки процессов</h2><p>Карточки с явным мандатом OrganizationAccess</p></div>
+            <button className="text-link" onClick={() => navigate('interactions')}>Реестр<Icon name="arrow" size={16}/></button>
+          </div>
+          <ErrorAlert error={recent.error} onRetry={() => setRetry(value => value + 1)}/>
+          {!recent.data ? (!recent.error && <Loading/>) : recent.data.items.length ? (
+            <InteractionTable compact items={recent.data.items} openInteraction={openInteraction}/>
+          ) : (
+            <EmptyState
+              title="Коммерческие воронки изолированы"
+              description="В соответствии со ст. 7 152-ФЗ администратор не видит коммерческие карточки без прямого мандата доступа. Используйте разделы «Каталоги» и «Интеграции»."
+              action={<Button variant="secondary" onClick={() => navigate('catalogs')}>Перейти в каталоги</Button>}
+            />
+          )}
+        </section>
+        <section className="panel activity-panel">
+          <div className="panel-heading"><div><h2>Последние изменения</h2><p>События доступных объектов</p></div><Icon name="clock" size={20}/></div>
+          {!data ? <Loading/> : data.recent_events.length === 0 ? (
+            <EmptyState title="Событий пока нет" description="Здесь появятся события доступных объектов." icon="clock"/>
+          ) : (
+            <div className="activity-feed">{data.recent_events.slice(0, 6).map((event, index) => (
+              <button className="activity-item" key={event.interaction_id + event.at + index} onClick={() => openInteraction(event.interaction_id)}>
+                <span className="activity-dot"/>
+                <div><span className="activity-type">{eventNames[event.event_type] || 'Обновление'}</span><strong>{event.title}</strong><small>{event.actor_name} · {formatDate(event.at)}</small></div>
+              </button>
+            ))}</div>
+          )}
+        </section>
+      </div>
+    </>;
+  }
+
   return <>
     <PageHeader eyebrow={'РАБОЧИЙ ОБЗОР · ' + date.toLocaleUpperCase('ru-RU')} title="Партнёрства в движении" description={'Здравствуйте, ' + me.name.split(' ')[0] + '. Здесь всё, что важно для вашей работы с вузами.'}
       action={<Button onClick={onCreate} disabled={!canCreate}><Icon name="plus" size={18}/>Новое взаимодействие</Button>}/>
@@ -81,7 +231,7 @@ export function Interactions({ api, catalogs, workflow, revision, initialState, 
   const totalPages = Math.max(1, Math.ceil((list.data?.total || 0) / 15));
   return <>
     <PageHeader eyebrow="ПАРТНЁРСКАЯ РАБОТА" title="Взаимодействия" description="Каждая программа и каждый цикл сотрудничества — отдельная история."
-      action={<Button onClick={onCreate} disabled={!canCreate}><Icon name="plus" size={18}/>Новое взаимодействие</Button>}/>
+      action={canCreate ? <Button onClick={onCreate}><Icon name="plus" size={18}/>Новое взаимодействие</Button> : undefined}/>
     <section className="panel registry-panel">
       <div className="registry-toolbar"><div><span className="section-tab">Все взаимодействия{list.data && <b>{list.data.total}</b>}</span></div><span className="subtle-inline"><Icon name="shield" size={15}/>С учётом ваших прав</span></div>
       <div className="filter-grid">
