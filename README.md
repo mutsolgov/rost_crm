@@ -68,7 +68,7 @@
 ### 1. Подготовка окружения
 ```bash
 # Клонирование репозитория
-git clone <URL_РЕПОЗИТОРИЯ> rost_crm
+git clone git@github.com:mutsolgov/rost_crm.git rost_crm
 cd rost_crm
 
 # Создание конфигурационного файла
