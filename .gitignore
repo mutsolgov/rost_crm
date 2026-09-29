@@ -24,3 +24,15 @@ Thumbs.db
 artifacts/
 storage/
 backend/storage/
+
+# Agent internals and temporary working artifacts
+.agents/
+backend/.agents/
+AGENTS.md
+ORIGINAL_REQUEST.md
+
+# LibreOffice temp files and locks
+backend/.tmp_lo*/
+.tmp_lo*/
+submission_package/.lo_profile_pres/
+.~lock.*

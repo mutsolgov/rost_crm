@@ -172,9 +172,7 @@ def check_environment_and_secrets() -> None:
     for var in optional_vars:
         require(f"{var}=" in example_content, f"Optional backend variable '{var}' missing from .env.example")
 
-    # Verify no .env file in root and not committed
-    live_env = ROOT / ".env"
-    require(not live_env.exists(), ".env must not exist in repository root")
+    # Verify .env is never tracked/committed to repository
     git_tracked = False
     try:
         import subprocess

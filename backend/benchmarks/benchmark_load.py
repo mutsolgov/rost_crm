@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Standalone Load & Concurrency Benchmark for rost_crm (Task B31, R18, R19).
 
-Complies strictly with Ponytail Ladder: 0 new external dependencies!
+Complies strictly with Stdlib-first principles: 0 new external dependencies!
 Uses only Python standard library (asyncio, time, statistics, argparse, dataclasses, json)
 and existing installed httpx.
 """
