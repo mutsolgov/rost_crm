@@ -4010,3 +4010,81 @@ Integrity mode: development
 - [ ] 0 новых сторонних зависимостей в `requirements.txt` и `package.json`.
 - [ ] Итоговый вердикт независимого аудитора: VICTORY CONFIRMED.
 
+
+## 2026-09-29T08:37:02Z
+
+# Teamwork Project Prompt — Launched
+
+> Status: Launched  
+> Goal: Craft prompt → get user approval → delegate to teamwork_preview  
+> Requested team: Small, focused team
+
+This is a single self-contained fix; keep it small and focused.
+
+Устранение визуальных дефектов генерации PDF-отчётов в `backend/app/reports_export.py`: извлечение метрик ширин символов (`hmtx`) для формирования спецификационного массива `/W` в объекте `CIDFontType2`, балансировка весов колонок отчётов (включая 8 колонок `activity`), форматирование ISO-дат и предотвращение висячих букв и пунктуации при переносе строк.
+
+Working directory: /home/muhammad/Dev/HACKATHON/LCT/rost_crm  
+Integrity mode: development
+
+## Requirements
+
+### R1. Извлечение метрик ширин глифов (`hmtx`) и формирование массива `/W` в PDF
+- В модуле `backend/app/reports_export.py`:
+  * Расширить разбор TrueType шрифта `LiberationSans-Regular.ttf` (или дополнить `_build_cid_to_gid_map`):
+    - Извлечь `unitsPerEm` из таблицы `head` (смещение 18, `>H`).
+    - Извлечь `numberOfHMetrics` из таблицы `hhea` (смещение 34, `>H`).
+    - Извлечь горизонтальные метрики из таблицы `hmtx` (`advanceWidth` для каждого GID).
+  * Вычислить нормализованные ширины глифов в 1000-ных долях ем:
+    $$\text{width\_1000} = \operatorname{round}\left(\frac{\text{advanceWidth} \times 1000}{\text{unitsPerEm}}\right)$$
+  * Сгенерировать компактный массив `/W` для объекта `CIDFontType2` (группируя последовательные CID: `c [w1 w2 ...]`).
+  * Внедрить сгенерированный массив `/W [...]` в объект `4 0 obj` перед `/DW 600`.
+  * Сформировать кэш ширин символов `_CHAR_WIDTHS: dict[int, int]` для точного расчёта ширины строк при переносах.
+
+### R2. Балансировка весов колонок таблицы (`col_weights`)
+- В функции `generate_pdf_report`:
+  * Задать корректные веса для всех 8 колонок отчёта `activity` (headers: `["ID события", "ID карточки", "Название", "Организация", "Из этапа", "В этап", "Исторический ответственный", "Дата перехода"]`):
+    ```python
+    col_weights = {
+        "snapshot": [0.08, 0.22, 0.22, 0.15, 0.13, 0.10, 0.10],
+        "activity": [0.07, 0.08, 0.20, 0.20, 0.13, 0.13, 0.10, 0.09],
+        "created": [0.08, 0.22, 0.22, 0.15, 0.13, 0.10, 0.10],
+    }
+    ```
+  * Обеспечить адаптивное и пропорциональное распределение ширины колонок при передаче кастомных `selected_columns`.
+
+### R3. Точный перенос строк ячеек (`wrap_cell_text`) и форматирование дат
+- В модуле `backend/app/reports_export.py`:
+  * Форматирование дат: при рендеринге ячеек со значениями ISO-8601 меток времени (например, `2026-09-24T19:56:11.784833Z`) форматировать их в компактный человекочитаемый вид `24.09.2026 19:56` (или `24.09.2026\n19:56`).
+  * Точный расчёт ширины текста: заменить эвристику `0.58 * font_size` на расчёт по реальным метрикам символов `_CHAR_WIDTHS`:
+    $$\text{width} = \sum_{c \in \text{text}} \frac{\text{\_CHAR\_WIDTHS}[c]}{1000.0} \times \text{font\_size}$$
+  * Защита от висячих букв и пунктуации: исключить перенос строки, если остаток слова составляет $\le 2$ символов (запрет строк из одиночных букв «й», «я» или одиночных знаков «:», «.»).
+
+## Verification Resources
+- Набор тестов отчётов:
+  `backend/.venv/bin/pytest backend/tests/test_reports_multiformat.py -v`
+  `backend/.venv/bin/pytest backend/tests/test_challenger_reports_adversarial.py -v`
+  `backend/.venv/bin/pytest backend/tests/test_working_slice.py -v`
+- Оракул отчётов:
+  `python3 docs/checks/verify_reports.py`
+- Все 4 системных оракула:
+  `python3 docs/checks/verify_infra.py`
+  `python3 docs/checks/verify_workflow.py`
+  `python3 docs/checks/verify_reports.py`
+  `python3 docs/checks/verify_plan.py`
+
+## Acceptance Criteria
+
+### Типографика и PDF-объекты
+- [ ] Объект `CIDFontType2` в сгенерированном PDF содержит валидный массив `/W` с реальными метриками ширин глифов.
+- [ ] Текст на русском языке отображается с корректными межбуквенными интервалами без наложения широких букв (`Ю`, `Ж`, `Ш`, `М`, `С`, `О`, `Д`).
+- [ ] В ячейках таблицы отсутствуют строки из одиночных букв («й», «Z») и строки, начинающиеся с двоеточий или точек.
+- [ ] Значения ISO-дат форматируются компактно в виде `ДД.ММ.ГГГГ ЧЧ:ММ`.
+
+### Вёрстка таблицы
+- [ ] В отчёте `activity` все 8 колонок имеют индивидуальные веса, предотвращая схлопывание в 12.5%.
+- [ ] При кастомных `selected_columns` ширина колонок распределяется пропорционально сумме доступной ширины.
+
+### Инварианты проекта
+- [ ] 0 новых сторонних библиотек в `backend/requirements.txt` (чистый Python stdlib: `struct`, `io`, `zlib`, `pathlib`).
+- [ ] Каталог `docs/architecture/` строго не изменён (0 байт diff).
+- [ ] Все тесты `test_reports_multiformat.py`, `test_challenger_reports_adversarial.py`, `test_working_slice.py` и оракул `verify_reports.py` проходят со 100% успехом.

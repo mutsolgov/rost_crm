@@ -7,6 +7,7 @@ import struct
 import xml.sax.saxutils as sax
 import zipfile
 import zlib
+from datetime import date, datetime
 from pathlib import Path
 from typing import Any
 
@@ -21,19 +22,20 @@ _FONT_RAW = _FONT_PATH.read_bytes() if _FONT_PATH.exists() else b""
 _FONT_ZLIB = zlib.compress(_FONT_RAW) if _FONT_RAW else b""
 
 
-def _build_cid_to_gid_map(ttf_bytes: bytes) -> bytes:
+def _parse_ttf_font(ttf_bytes: bytes) -> tuple[bytes, dict[int, int], str]:
     if not ttf_bytes:
-        return b""
+        return b"", {}, ""
     try:
         num_tables = struct.unpack(">H", ttf_bytes[4:6])[0]
-        cmap_offset = None
+        tables: dict[bytes, tuple[int, int]] = {}
         for i in range(num_tables):
             tag, check, off, length = struct.unpack(">4sIII", ttf_bytes[12 + i * 16 : 12 + (i + 1) * 16])
-            if tag == b"cmap":
-                cmap_offset = off
-                break
-        if not cmap_offset:
-            return b"\x00" * 131072
+            tables[tag] = (off, length)
+
+        if b"cmap" not in tables:
+            return b"\x00" * 131072, {}, ""
+
+        cmap_offset = tables[b"cmap"][0]
         num_sub = struct.unpack(">H", ttf_bytes[cmap_offset + 2 : cmap_offset + 4])[0]
         sub_off = None
         for i in range(num_sub):
@@ -43,7 +45,8 @@ def _build_cid_to_gid_map(ttf_bytes: bytes) -> bytes:
                 sub_off = cmap_offset + off
                 break
         if not sub_off:
-            return b"\x00" * 131072
+            return b"\x00" * 131072, {}, ""
+
         fmt, length, lang, seg_count_x2 = struct.unpack(">HHHH", ttf_bytes[sub_off : sub_off + 8])
         seg_count = seg_count_x2 // 2
         end_counts = struct.unpack(f">{seg_count}H", ttf_bytes[sub_off + 14 : sub_off + 14 + seg_count * 2])
@@ -59,8 +62,8 @@ def _build_cid_to_gid_map(ttf_bytes: bytes) -> bytes:
             delta = id_deltas[i]
             ro = id_range_offsets[i]
             for c in range(start, end + 1):
-                if c > 65535:
-                    break
+                if c >= 65535:
+                    continue
                 if ro == 0:
                     gid = (c + delta) & 0xFFFF
                 else:
@@ -69,13 +72,225 @@ def _build_cid_to_gid_map(ttf_bytes: bytes) -> bytes:
                     if gid != 0:
                         gid = (gid + delta) & 0xFFFF
                 mapping[c] = gid
-        return struct.pack(f">{65536}H", *mapping)
+
+        cid_to_gid_bytes = struct.pack(f">{65536}H", *mapping)
+
+        char_widths: dict[int, int] = {}
+        w_array_str = ""
+        if b"head" in tables and b"hhea" in tables and b"hmtx" in tables:
+            head_off = tables[b"head"][0]
+            units_per_em = struct.unpack(">H", ttf_bytes[head_off + 18 : head_off + 20])[0] or 1000
+
+            hhea_off = tables[b"hhea"][0]
+            num_hmetrics = struct.unpack(">H", ttf_bytes[hhea_off + 34 : hhea_off + 36])[0]
+
+            hmtx_off = tables[b"hmtx"][0]
+            if num_hmetrics > 0:
+                for c in range(65536):
+                    gid = mapping[c]
+                    if gid != 0:
+                        hmtx_idx = gid if gid < num_hmetrics else num_hmetrics - 1
+                        adv = struct.unpack(">H", ttf_bytes[hmtx_off + hmtx_idx * 4 : hmtx_off + hmtx_idx * 4 + 2])[0]
+                        char_widths[c] = round((adv * 1000) / units_per_em)
+
+            groups: list[str] = []
+            curr_start: int | None = None
+            curr_widths: list[int] = []
+            for c in sorted(char_widths.keys()):
+                w = char_widths[c]
+                if curr_start is None:
+                    curr_start = c
+                    curr_widths = [w]
+                elif c == curr_start + len(curr_widths):
+                    curr_widths.append(w)
+                else:
+                    inner_w = " ".join(str(x) for x in curr_widths)
+                    groups.append(f"{curr_start} [{inner_w}]")
+                    curr_start = c
+                    curr_widths = [w]
+            if curr_start is not None:
+                inner_w = " ".join(str(x) for x in curr_widths)
+                groups.append(f"{curr_start} [{inner_w}]")
+
+            if groups:
+                w_array_str = f"/W [{' '.join(groups)}]"
+
+        return cid_to_gid_bytes, char_widths, w_array_str
     except Exception:
-        return b"\x00" * 131072
+        return b"\x00" * 131072, {}, ""
 
 
-_CID_TO_GID_BYTES = _build_cid_to_gid_map(_FONT_RAW) if _FONT_RAW else b""
+def _build_cid_to_gid_map(ttf_bytes: bytes) -> bytes:
+    cid_bytes, _, _ = _parse_ttf_font(ttf_bytes)
+    return cid_bytes
+
+
+_CID_TO_GID_BYTES, _CHAR_WIDTHS, _W_ARRAY = _parse_ttf_font(_FONT_RAW) if _FONT_RAW else (b"", {}, "")
 _CID_TO_GID_ZLIB = zlib.compress(_CID_TO_GID_BYTES) if _CID_TO_GID_BYTES else b""
+
+
+def _text_width(text: str, font_size: float = 8.5) -> float:
+    return sum(_CHAR_WIDTHS.get(ord(c), 600) / 1000.0 * font_size for c in text)
+
+
+_PUNCT_CHARS = (":", ".", ",", ";", "!", "?")
+
+
+def _format_cell_value(val: Any) -> str:
+    if val is None:
+        return ""
+    if isinstance(val, datetime):
+        return val.strftime("%d.%m.%Y %H:%M")
+    if isinstance(val, date):
+        return val.strftime("%d.%m.%Y")
+    text = str(val).strip()
+    if len(text) >= 10 and text[0:4].isdigit() and text[4] == "-" and text[5:7].isdigit() and text[7] == "-" and text[8:10].isdigit():
+        try:
+            if len(text) == 10:
+                dt = datetime.fromisoformat(text)
+                return dt.strftime("%d.%m.%Y")
+            if text[10] in ("T", "t", " "):
+                clean = (text[:-1] + "+00:00") if text.endswith(("Z", "z")) else text
+                dt = datetime.fromisoformat(clean)
+                return dt.strftime("%d.%m.%Y %H:%M")
+        except Exception:
+            pass
+    return text
+
+
+def _split_long_word(word: str, avail_w: float, font_size: float) -> list[str]:
+    if len(word) <= 3 or _text_width(word, font_size) <= avail_w:
+        return [word]
+    if "-" in word:
+        best_h = -1
+        for idx, ch in enumerate(word):
+            if ch == "-" and idx >= 2 and (len(word) - (idx + 1)) >= 3:
+                if _text_width(word[: idx + 1], font_size) <= avail_w:
+                    best_h = idx + 1
+        if best_h > 0:
+            part1 = word[:best_h]
+            part2 = word[best_h:]
+            return [part1] + _split_long_word(part2, avail_w, font_size)
+    chunks: list[str] = []
+    w = word
+    while len(w) >= 6 and _text_width(w, font_size) > avail_w:
+        k = len(w)
+        while k > 3 and _text_width(w[:k], font_size) > avail_w:
+            k -= 1
+        rem_len = len(w) - k
+        if 1 <= rem_len <= 2:
+            needed = 3 - rem_len
+            if k - needed >= 3:
+                k -= needed
+            else:
+                break
+        if k < 3:
+            break
+        chunks.append(w[:k])
+        w = w[k:]
+    if w:
+        chunks.append(w)
+    return chunks or [word]
+
+
+def wrap_cell_text(text: Any, col_w: float, font_size: float = 8.5, max_lines: int = 10) -> list[str]:
+    text_str = _format_cell_value(text)
+    if not text_str:
+        return [""]
+
+    avail_w = max(10.0, col_w - 4.0)
+    if "\n" not in text_str and not text_str.startswith(_PUNCT_CHARS) and _text_width(text_str, font_size) <= avail_w:
+        return [text_str]
+
+    raw_paras = text_str.split("\n")
+    all_lines: list[str] = []
+
+    for para in raw_paras:
+        words = para.split()
+        if not words:
+            if not all_lines:
+                all_lines.append("")
+            continue
+
+        glued_words: list[str] = []
+        for w in words:
+            if glued_words and w in _PUNCT_CHARS:
+                glued_words[-1] += w
+            else:
+                glued_words.append(w)
+
+        lines: list[str] = []
+        curr = ""
+        for w in glued_words:
+            test = (curr + " " + w) if curr else w
+            if _text_width(test, font_size) <= avail_w:
+                curr = test
+            else:
+                if curr:
+                    lines.append(curr)
+                    curr = ""
+                if _text_width(w, font_size) <= avail_w:
+                    curr = w
+                else:
+                    chunks = _split_long_word(w, avail_w, font_size)
+                    for chunk in chunks[:-1]:
+                        lines.append(chunk)
+                    curr = chunks[-1] if chunks else ""
+        if curr:
+            lines.append(curr)
+
+        # Eliminate orphan single-character lines within paragraph
+        if len(lines) > 1:
+            i = len(lines) - 1
+            while i >= 1 and len(lines) > 1:
+                stripped = lines[i].strip()
+                if len(stripped) == 1:
+                    prev_words = lines[i - 1].split()
+                    if len(prev_words) > 1:
+                        moved = prev_words.pop()
+                        cand = moved + " " + stripped
+                        if _text_width(cand, font_size) <= avail_w:
+                            lines[i - 1] = " ".join(prev_words)
+                            lines[i] = cand
+                            i -= 1
+                            continue
+                    sep = "" if stripped in _PUNCT_CHARS else " "
+                    lines[i - 1] = lines[i - 1] + sep + stripped
+                    lines.pop(i)
+                i -= 1
+
+            if len(lines) > 1 and len(lines[0].strip()) == 1:
+                lines[1] = lines[0].strip() + " " + lines[1]
+                lines.pop(0)
+
+        all_lines.extend(lines)
+
+    # Post-process all_lines to enforce typographic constraints
+    idx = 0
+    while idx < len(all_lines):
+        while all_lines[idx] and all_lines[idx][0] in _PUNCT_CHARS:
+            punc = all_lines[idx][0]
+            if idx > 0:
+                all_lines[idx - 1] = all_lines[idx - 1].rstrip() + punc
+            all_lines[idx] = all_lines[idx][1:].lstrip()
+        if not all_lines[idx]:
+            all_lines.pop(idx)
+            continue
+        idx += 1
+
+    if not all_lines:
+        return [""]
+    if len(all_lines) == 1 and all_lines[0].strip() in _PUNCT_CHARS:
+        return [""]
+
+    if len(all_lines) > max_lines:
+        all_lines = all_lines[:max_lines]
+        last = all_lines[-1]
+        while last and _text_width(last + "..", font_size) > avail_w:
+            last = last[:-1]
+        all_lines[-1] = (last.rstrip(":.,;!? ") + "..") if last else ".."
+
+    return all_lines or [""]
 
 
 def sanitize_formula_cell(value: Any) -> str:
@@ -146,7 +361,6 @@ def _get_report_spec(report_type: str, report_data: dict, user: User, selected_c
         metadata = {"Тип отчёта": report_type, "Инициатор": f"{user.name} ({user.role})"}
 
     if selected_columns:
-        sel_set = set(selected_columns)
         extra_name_map = {
             "cycle_label": "Метка цикла",
             "owner_at_event_name": "Ответственный на момент перехода",
@@ -163,18 +377,45 @@ def _get_report_spec(report_type: str, report_data: dict, user: User, selected_c
             "historical_owner_id": "Исторический ответственный",
             "created_at": "Дата создания",
             "effective_at": "Время события",
+            "interaction_id": "ID карточки" if report_type == "activity" else "ID",
+            "event_id": "ID события",
+            "title": "Название",
+            "organization_name": "Организация",
+            "program_name": "Программа",
+            "product_name": "Продукт",
+            "state_name": "Этап",
+            "owner_name": "Ответственный",
         }
-        for k, v in extra_name_map.items():
-            if (k in sel_set or v in sel_set) and k not in fields:
-                headers.append(v)
-                fields.append(k)
+        f_to_h = dict(zip(fields, headers))
+        h_to_f = dict(zip(headers, fields))
 
         filtered_headers, filtered_fields = [], []
-        for h, f in zip(headers, fields):
-            if f in sel_set or h in sel_set:
-                filtered_headers.append(h)
-                filtered_fields.append(f)
-        if filtered_headers:
+        seen = set()
+        for col in selected_columns:
+            if not col:
+                continue
+            if col in f_to_h:
+                if col not in seen:
+                    filtered_fields.append(col)
+                    filtered_headers.append(f_to_h[col])
+                    seen.add(col)
+            elif col in h_to_f:
+                f = h_to_f[col]
+                if f not in seen:
+                    filtered_fields.append(f)
+                    filtered_headers.append(col)
+                    seen.add(f)
+            elif col in extra_name_map:
+                if col not in seen:
+                    filtered_fields.append(col)
+                    filtered_headers.append(extra_name_map[col])
+                    seen.add(col)
+            else:
+                if col not in seen:
+                    filtered_fields.append(col)
+                    filtered_headers.append(col)
+                    seen.add(col)
+        if filtered_fields:
             headers, fields = filtered_headers, filtered_fields
 
     rows = report_data.get("rows", [])
@@ -339,51 +580,48 @@ def generate_pdf_report(report_data: dict, report_type: str, user: User, selecte
     # Proportional column widths per report type (when using default fields)
     col_weights = {
         "snapshot": [0.08, 0.22, 0.22, 0.15, 0.13, 0.10, 0.10],
-        "activity": [0.10, 0.10, 0.20, 0.20, 0.22, 0.18],
+        "activity": [0.07, 0.08, 0.20, 0.20, 0.13, 0.13, 0.10, 0.09],
         "created": [0.08, 0.22, 0.22, 0.15, 0.13, 0.10, 0.10],
     }
-    weights = col_weights.get(report_type)
-    if selected_columns or not weights or len(weights) != len(headers):
-        col_widths = [usable_w / len(headers)] * len(headers) if headers else [usable_w]
-    else:
+    field_weight_hints = {
+        "event_id": 0.07,
+        "interaction_id": 0.08,
+        "id": 0.08,
+        "organization_id": 0.08,
+        "program_id": 0.08,
+        "product_id": 0.08,
+        "transition_code": 0.08,
+        "effective_at": 0.09,
+        "created_at": 0.10,
+        "state_name": 0.10,
+        "historical_owner_id": 0.10,
+        "cycle_label": 0.10,
+        "owner_name": 0.10,
+        "owner_at_event": 0.10,
+        "from_state": 0.12,
+        "to_state": 0.12,
+        "from_state_name": 0.13,
+        "to_state_name": 0.13,
+        "actor_name": 0.12,
+        "owner_at_event_name": 0.12,
+        "product_name": 0.13,
+        "program_name": 0.15,
+        "organization_name": 0.20,
+        "title": 0.20,
+    }
+    if not selected_columns and report_type in col_weights and len(col_weights[report_type]) == len(headers):
+        weights = col_weights[report_type]
         col_widths = [usable_w * w for w in weights]
+    elif fields and len(fields) == len(headers):
+        raw_weights = [field_weight_hints.get(f, 0.12) for f in fields]
+        total_w = sum(raw_weights) or 1.0
+        col_widths = [usable_w * (w / total_w) for w in raw_weights]
+    else:
+        col_widths = [usable_w / len(headers)] * len(headers) if headers else [usable_w]
 
     col_x = [margin_x]
     for w in col_widths[:-1]:
         col_x.append(col_x[-1] + w)
-
-    def wrap_cell_text(text: Any, col_w: float, font_size: float = 8.5, max_lines: int = 10) -> list[str]:
-        text_str = str(text or "").strip()
-        if not text_str:
-            return [""]
-        char_w = 0.58 * font_size
-        max_chars = max(4, int((col_w - 6) / char_w))
-        if len(text_str) <= max_chars:
-            return [text_str]
-        words = text_str.split()
-        lines: list[str] = []
-        curr = ""
-        for w in words:
-            test = (curr + " " + w).strip() if curr else w
-            if len(test) <= max_chars:
-                curr = test
-            else:
-                if curr:
-                    lines.append(curr)
-                while len(w) > max_chars:
-                    lines.append(w[:max_chars])
-                    w = w[max_chars:]
-                curr = w
-            if len(lines) >= max_lines:
-                break
-        if curr and len(lines) < max_lines:
-            lines.append(curr)
-        if len(lines) > max_lines:
-            lines = lines[:max_lines]
-        if len(lines) == max_lines and len(text_str) > sum(len(l) for l in lines) + len(lines):
-            last = lines[-1]
-            lines[-1] = (last[:max(0, max_chars - 2)] + "..") if len(last) >= max_chars else (last + "..")
-        return lines or [""]
 
     def hex_tj(s: Any) -> bytes:
         if s is None:
@@ -493,12 +731,17 @@ def generate_pdf_report(report_data: dict, report_type: str, user: User, selecte
         s.write(f"{margin_x:.2f} {curr_y - th_h:.2f} {usable_w:.2f} {th_h:.2f} re f\n".encode("ascii"))
 
         # Header text
-        s.write(b"BT /F1 9 Tf 1 1 1 rg\n")  # White
+        s.write(b"BT /F1 8.5 Tf 1 1 1 rg\n")  # White
         for ci, header in enumerate(headers):
             cx = col_x[ci] + 4
-            cy = curr_y - 15
-            h_lines = wrap_cell_text(header, col_widths[ci], font_size=9.0, max_lines=1)
-            s.write(f"1 0 0 1 {cx:.2f} {cy:.2f} Tm ".encode("ascii") + hex_tj(h_lines[0]) + b" Tj\n")
+            h_lines = wrap_cell_text(header, col_widths[ci], font_size=8.5, max_lines=2)
+            if len(h_lines) == 1:
+                cy = curr_y - 15.0
+                s.write(f"1 0 0 1 {cx:.2f} {cy:.2f} Tm ".encode("ascii") + hex_tj(h_lines[0]) + b" Tj\n")
+            else:
+                for line_idx, line_text in enumerate(h_lines[:2]):
+                    cy = curr_y - 9.5 - line_idx * 10.0
+                    s.write(f"1 0 0 1 {cx:.2f} {cy:.2f} Tm ".encode("ascii") + hex_tj(line_text) + b" Tj\n")
         s.write(b"ET\n")
         curr_y -= th_h
 
@@ -567,8 +810,11 @@ def generate_pdf_report(report_data: dict, report_type: str, user: User, selecte
             b"3 0 obj\n<< /Type /Font /Subtype /Type0 /BaseFont /LiberationSans /Encoding /Identity-H /DescendantFonts [4 0 R] /ToUnicode 5 0 R >>\nendobj\n"
         )
         # 4: Descendant CIDFont
+        w_part = f" {_W_ARRAY}" if _W_ARRAY else ""
         objects.append(
-            b"4 0 obj\n<< /Type /Font /Subtype /CIDFontType2 /BaseFont /LiberationSans /CIDSystemInfo << /Registry (Adobe) /Ordering (Identity) /Supplement 0 >> /FontDescriptor 6 0 R /CIDToGIDMap 7 0 R /DW 600 >>\nendobj\n"
+            f"4 0 obj\n<< /Type /Font /Subtype /CIDFontType2 /BaseFont /LiberationSans /CIDSystemInfo << /Registry (Adobe) /Ordering (Identity) /Supplement 0 >> /FontDescriptor 6 0 R /CIDToGIDMap 7 0 R{w_part} /DW 600 >>\nendobj\n".encode(
+                "latin1"
+            )
         )
         # 5: ToUnicode CMap
         objects.append(f"5 0 obj\n<< /Length {len(cmap_data)} >>\nstream\n".encode("latin1") + cmap_data + b"\nendstream\nendobj\n")
