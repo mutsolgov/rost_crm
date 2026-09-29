@@ -381,7 +381,7 @@ export function Reports({
     }
   }
 
-  async function handleExport(format: 'xlsx' | 'pdf' | 'csv' | 'json') {
+  async function handleExport(format: 'xlsx' | 'xls' | 'pdf' | 'csv' | 'json') {
     setExporting(true);
     setError(null);
     try {
@@ -714,6 +714,14 @@ export function Reports({
                 title="Скачать отчёт в формате Microsoft Excel (OpenXML)"
               >
                 <Icon name="download" size={16} />Скачать XLSX
+              </Button>
+              <Button
+                variant="secondary"
+                disabled={exporting}
+                onClick={() => handleExport('xls')}
+                title="Скачать отчёт в формате Microsoft Excel (XLS)"
+              >
+                <Icon name="download" size={16} />Скачать XLS
               </Button>
               <Button
                 variant="secondary"

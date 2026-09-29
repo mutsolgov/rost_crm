@@ -188,12 +188,414 @@ export const SIMULATED_ERRORS: Record<DemoErrorCode, SimulatedErrorSpec> = {
   },
 };
 
+export interface ScreenshotCallout {
+  label: string;
+  description: string;
+}
+
+export interface DocScreenshotItem {
+  id: string;
+  filename: string;
+  src: string;
+  screenNumber: string;
+  title: string;
+  subtitle: string;
+  route: string;
+  section: 'user' | 'sysadmin';
+  category: 'auth' | 'manager' | 'supervisor' | 'errors' | 'admin' | 'security';
+  caption: string;
+  callouts: ScreenshotCallout[];
+}
+
+export const SCREENSHOTS_CATALOG: Record<string, DocScreenshotItem> = {
+  'screen-01': {
+    id: 'screen-01',
+    filename: 'screen-01-login.png',
+    src: '/docs/screenshots/screen-01-login.png',
+    screenNumber: '01',
+    title: 'Экран авторизации и выбор демонстрационных ролей',
+    subtitle: 'Аутентификация через Keycloak OIDC и выбор контекста демонстрационного стенда',
+    route: '#/',
+    section: 'user',
+    category: 'auth',
+    caption: 'Стартовый экран системы с возможностью переключения ролей на демонстрационных данных и корпоративной авторизацией.',
+    callouts: [
+      { label: 'Выбор роли', description: 'Переключение между ролями: Менеджер партнерств, Руководитель, Администратор.' },
+      { label: 'Брендинг Gen2', description: 'Соблюдение дизайн-системы Ростелеком: логотип, цвета #7700FF и #FF4F12.' },
+      { label: 'Zero-Oracle защита', description: 'Авторизация и ограничения видимости проверяются на стороне сервера (152-ФЗ).' },
+    ],
+  },
+  'screen-02': {
+    id: 'screen-02',
+    filename: 'screen-02-manager-overview.png',
+    src: '/docs/screenshots/screen-02-manager-overview.png',
+    screenNumber: '02',
+    title: 'Рабочий стол менеджера (Воронка 15 этапов и KPI)',
+    subtitle: 'Сводные показатели, карта воронки и оперативный фокус на ближайших задачах',
+    route: '#/overview',
+    section: 'user',
+    category: 'manager',
+    caption: 'Дашборд менеджера с метриками активных партнерств, прогрессом по этапам воронки и лентой недавних действий.',
+    callouts: [
+      { label: 'KPI-счетчики', description: 'Количество партнерств в работе, на подписании и завершенных циклов.' },
+      { label: 'Воронка 15 этапов', description: 'Визуализация распределения взаимодействий по 4 фазам жизненного цикла.' },
+      { label: 'Оперативный фокус', description: 'Карточки, требующие первоочередного внимания куратора.' },
+    ],
+  },
+  'screen-03': {
+    id: 'screen-03',
+    filename: 'screen-03-interactions-registry.png',
+    src: '/docs/screenshots/screen-03-interactions-registry.png',
+    screenNumber: '03',
+    title: 'Реестр взаимодействий с фильтрами и поиском',
+    subtitle: 'Многокритериальная фильтрация, поиск по вузам и быстрый доступ к карточкам',
+    route: '#/interactions',
+    section: 'user',
+    category: 'manager',
+    caption: 'Табличный реестр карточек сотрудничества с фильтрами по этапам, датам и ответственным сотрудникам.',
+    callouts: [
+      { label: 'Панель фильтров', description: 'Фильтрация по текущему этапу, типу взаимодействия и датам создания.' },
+      { label: 'Быстрый поиск', description: 'Поиск по наименованию образовательной организации и номеру договора.' },
+      { label: 'Статусные бейджи', description: 'Цветовая индикация этапов воронки в соответствии с брендбуком.' },
+    ],
+  },
+  'screen-04': {
+    id: 'screen-04',
+    filename: 'screen-04-interaction-card-graph.png',
+    src: '/docs/screenshots/screen-04-interaction-card-graph.png',
+    screenNumber: '04',
+    title: 'Карточка взаимодействия с графом жизненного цикла',
+    subtitle: 'Интерактивный граф 15 этапов, метаданные и доступные переходы',
+    route: '#/interactions/:id',
+    section: 'user',
+    category: 'manager',
+    caption: 'Детальная карточка партнерства с отображением графа состояний, кнопок переходов и привязанных документов.',
+    callouts: [
+      { label: 'Граф процесса', description: 'Отображение текущего положения в базовом процессе из 15 этапов.' },
+      { label: 'Кнопки переходов', description: 'Primary (шаг вперед), Secondary (возврат на доработку), Danger (отмена).' },
+      { label: 'Реквизиты', description: 'Сведения об организации, контакте, договоре и лицензии.' },
+    ],
+  },
+  'screen-05': {
+    id: 'screen-05',
+    filename: 'screen-05-interaction-d02-prevent.png',
+    src: '/docs/screenshots/screen-05-interaction-d02-prevent.png',
+    screenNumber: '05',
+    title: 'Редактирование параметров и предотвращение дедлока D02',
+    subtitle: 'Обязательное связывание программы и продукта перед этапом «Передача материалов»',
+    route: '#/interactions/:id (Modal)',
+    section: 'user',
+    category: 'manager',
+    caption: 'Модальное окно редактирования параметров карточки с проверкой совместимости ИТ-программы и ИТ-продукта.',
+    callouts: [
+      { label: 'Совместимость пар', description: 'Выбор продукта, строго валидируемого по каталогу программ.' },
+      { label: 'Защита от дедлока D02', description: 'Без заполненной пары программа+продукт переход на шаг 7 блокируется.' },
+      { label: 'CAS-блокировка', description: 'Оптимистический контроль версий expected_revision исключает потерянные правки.' },
+    ],
+  },
+  'screen-06': {
+    id: 'screen-06',
+    filename: 'screen-06-interaction-transition-rework.png',
+    src: '/docs/screenshots/screen-06-interaction-transition-rework.png',
+    screenNumber: '06',
+    title: 'Модальное окно перехода с обязательным обоснованием',
+    subtitle: 'Фиксация регламентных комментариев при возврате на доработку и отмене',
+    route: '#/interactions/:id (Transition Modal)',
+    section: 'user',
+    category: 'manager',
+    caption: 'Диалог подтверждения перехода с проверкой обязательного ввода комментария и защитой от потери текста при ошибках (AC21).',
+    callouts: [
+      { label: 'Обязательный комментарий', description: 'Кнопка подтверждения неактивна до ввода содержательного комментария.' },
+      { label: 'Несбрасываемый ввод (AC21)', description: 'При сетевом сбое или 409 Conflict введённый текст остаётся в поле.' },
+      { label: 'Запись в Audit Trail', description: 'Комментарий навечно фиксируется в аудит-логе с ревизией карточки.' },
+    ],
+  },
+  'screen-07': {
+    id: 'screen-07',
+    filename: 'screen-07-attachments-and-audit.png',
+    src: '/docs/screenshots/screen-07-attachments-and-audit.png',
+    screenNumber: '07',
+    title: 'Блок загрузки файлов (25 МБ, 10 форматов) и Audit Trail',
+    subtitle: 'Валидация magic bytes, антивирусная проверка и неизменяемый аудит-лог',
+    route: '#/interactions/:id#attachments',
+    section: 'user',
+    category: 'manager',
+    caption: 'Зона прикрепления сопроводительных документов с проверкой расширений и хронологическая лента аудита.',
+    callouts: [
+      { label: 'Лимит 25 МБ', description: 'Клиентская и серверная валидация размера загружаемого документа.' },
+      { label: '10 форматов ТЗ', description: 'png, jpeg, pdf, zip, gzip, rar, doc, docx, xls, xlsx с проверкой сигнатур.' },
+      { label: 'Audit Trail', description: 'Последовательность событий sequence с фиксацией автора и временных меток.' },
+    ],
+  },
+  'screen-08': {
+    id: 'screen-08',
+    filename: 'screen-08-supervisor-overview-reassign.png',
+    src: '/docs/screenshots/screen-08-supervisor-overview-reassign.png',
+    screenNumber: '08',
+    title: 'Консоль руководителя и переназначение куратора (Reassign)',
+    subtitle: 'Сквозной контроль подразделения (team_id) и мгновенный отзыв доступа (HTTP 404)',
+    route: '#/overview (Supervisor)',
+    section: 'user',
+    category: 'supervisor',
+    caption: 'Рабочее место руководителя с возможностью ротации ответственных менеджеров по карточкам подразделения.',
+    callouts: [
+      { label: 'Командный охват', description: 'Руководитель видит все карточки своего подразделения (team_id).' },
+      { label: 'Диалог Reassign', description: 'Передача карточки коллеге с записью события owner_changed.' },
+      { label: '152-ФЗ Zero-Oracle', description: 'Прежний менеджер мгновенно получает 404 Not Found при обращении к карточке.' },
+    ],
+  },
+  'screen-09': {
+    id: 'screen-09',
+    filename: 'screen-09-reports-analytics-export.png',
+    src: '/docs/screenshots/screen-09-reports-analytics-export.png',
+    screenNumber: '09',
+    title: 'Аналитический модуль отчётов (3 среза, экспорт XLSX/PDF)',
+    subtitle: 'Срезы Snapshot, Activity, Created с выгрузкой в фирменном стиле Ростелеком',
+    route: '#/reports',
+    section: 'user',
+    category: 'supervisor',
+    caption: 'Генератор темпоральных аналитических срезов с настройкой колонок и экспортом в XLSX/PDF/JSON.',
+    callouts: [
+      { label: '3 темпоральных среза', description: 'Срез на дату (Snapshot), динамика переходов (Activity), созданные (Created).' },
+      { label: 'Выбор метрик', description: 'Интерактивный выбор выводимых колонок таблицы.' },
+      { label: 'Экспорт по брендбуку', description: 'Фирменная шапка #7700FF в Excel и векторный PDF с колонтитулами.' },
+    ],
+  },
+  'screen-10': {
+    id: 'screen-10',
+    filename: 'screen-10-admin-overview-telemetry.png',
+    src: '/docs/screenshots/screen-10-admin-overview-telemetry.png',
+    screenNumber: '10',
+    title: 'Панель администратора (Телеметрия LMS/Сайта и каталоги)',
+    subtitle: 'Мониторинг очередей интеграций, статус коннекторов и счетчики справочников',
+    route: '#/integrations',
+    section: 'sysadmin',
+    category: 'admin',
+    caption: 'Консоль администратора платформы со статусом интеграционных контуров и очередью сверки Reconciliation Inbox.',
+    callouts: [
+      { label: 'Статус коннекторов', description: 'Мониторинг адаптеров LMS Zion и Сайта образовательных программ.' },
+      { label: 'Reconciliation Inbox', description: 'Дедупликация входящих заявок и разрешение коллизий.' },
+      { label: 'Каталоги платформы', description: 'Счётчики вузов, контактов, договоров и учебных потоков.' },
+    ],
+  },
+  'screen-11': {
+    id: 'screen-11',
+    filename: 'screen-11-catalog-import-wizard.png',
+    src: '/docs/screenshots/screen-11-catalog-import-wizard.png',
+    screenNumber: '11',
+    title: 'Мастер двухфазного импорта каталогов (XLSX / CSV)',
+    subtitle: 'Фаза 1: Сухой прогон (Dry-Run Preview); Фаза 2: Транзакционный коммит',
+    route: '#/catalogs (Import Wizard)',
+    section: 'sysadmin',
+    category: 'admin',
+    caption: 'Мастер пакетной загрузки справочников с предварительной проверкой связей и защитой по Idempotency-Key.',
+    callouts: [
+      { label: 'Парсер таблиц', description: 'Автоматическое распознавание колонок вуза, контактов, договоров и программ.' },
+      { label: 'Dry-Run предпросмотр', description: 'Проверка ошибок структуры данных до выполнения записи в БД.' },
+      { label: 'Транзакционный коммит', description: 'Атомарное сохранение валидных записей в единой транзакции.' },
+    ],
+  },
+  'screen-12': {
+    id: 'screen-12',
+    filename: 'screen-12-workflow-migrator.png',
+    src: '/docs/screenshots/screen-12-workflow-migrator.png',
+    screenNumber: '12',
+    title: 'Мигратор версий процессов (v1 -> v2)',
+    subtitle: 'Матрица сопоставления статусов, сухой прогон и блокировка коллизий',
+    route: '#/catalogs (Workflow Migrator)',
+    section: 'sysadmin',
+    category: 'admin',
+    caption: 'Инструмент миграции активных взаимодействий при обновлении версий жизненного цикла партнерств.',
+    callouts: [
+      { label: 'Матрица маппинга', description: 'Сопоставление старых и новых статусов процессов.' },
+      { label: 'Защита от коллизий', description: 'Блокировка недопустимого перевода терминальных статусов в активные.' },
+      { label: 'Сухой прогон', description: 'Оценка числа затронутых карточек перед фиксацией миграции.' },
+    ],
+  },
+  'screen-13': {
+    id: 'screen-13',
+    filename: 'screen-13-error-diagnostic-center.png',
+    src: '/docs/screenshots/screen-13-error-diagnostic-center.png',
+    screenNumber: '13',
+    title: 'Справочник кодов ошибок и симулятор сохранения ввода AC21',
+    subtitle: 'Интерактивный симулятор обработки сбоев и канонический формат ошибок API',
+    route: '#/help (Tab: Errors)',
+    section: 'user',
+    category: 'errors',
+    caption: 'Диагностический центр с рекомендациями по устранению ошибок и живым тестом сохранения введённого текста.',
+    callouts: [
+      { label: 'Аккордеон ошибок', description: 'Разбор симптомов и действий при кодах 400, 401, 403, 404, 409, 413, 422, 500, 502, 503, 504.' },
+      { label: 'Симулятор AC21', description: 'Эмуляция ошибок сервера для доказательства сохранения пользовательского ввода.' },
+      { label: 'Канонический Envelope', description: 'Отображение точной JSON-структуры ошибки { error: { code, message, request_id } }.' },
+    ],
+  },
+};
+
+export function DocScreenshotCard({
+  item,
+  onOpenLightbox,
+}: {
+  item: DocScreenshotItem;
+  onOpenLightbox: (item: DocScreenshotItem) => void;
+}) {
+  return (
+    <figure className="doc-screenshot-card" id={`screenshot-${item.id}`}>
+      <div className="doc-screenshot-header">
+        <div className="doc-window-controls" aria-hidden="true">
+          <span className="window-dot dot-red" />
+          <span className="window-dot dot-yellow" />
+          <span className="window-dot dot-green" />
+        </div>
+        <div className="doc-window-address-bar">
+          <Icon name="shield" size={12} />
+          <span>https://crm.school.rt.ru/{item.route.replace(/^#\/?/, '')}</span>
+        </div>
+        <div className="doc-screenshot-badge">Экран {item.screenNumber}</div>
+      </div>
+
+      <div
+        className="doc-screenshot-viewport"
+        onClick={() => onOpenLightbox(item)}
+        role="button"
+        tabIndex={0}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter' || e.key === ' ') {
+            e.preventDefault();
+            onOpenLightbox(item);
+          }
+        }}
+        title="Нажмите для полноэкранного просмотра (ESC)"
+        aria-label={`Увеличить скриншот: ${item.title}`}
+      >
+        <img
+          src={item.src}
+          alt={item.title}
+          className="doc-screenshot-img"
+          loading="lazy"
+        />
+        <div className="doc-screenshot-zoom-overlay">
+          <Icon name="search" size={22} />
+          <span>Нажмите для увеличения</span>
+        </div>
+      </div>
+
+      <figcaption className="doc-screenshot-caption">
+        <div className="doc-screenshot-title-row">
+          <strong>{item.title}</strong>
+          <span className="doc-screenshot-route-badge">{item.route}</span>
+        </div>
+        <p className="doc-screenshot-subtitle">{item.caption}</p>
+
+        {item.callouts && item.callouts.length > 0 && (
+          <div className="doc-callouts-list">
+            <span className="doc-callouts-label">Ключевые элементы экрана:</span>
+            {item.callouts.map((callout, index) => (
+              <div key={index} className="doc-callout-item">
+                <span className="callout-badge">{index + 1}</span>
+                <div className="callout-text">
+                  <strong>{callout.label}:</strong> {callout.description}
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </figcaption>
+    </figure>
+  );
+}
+
+export function DocScreenshotLightbox({
+  item,
+  onClose,
+}: {
+  item: DocScreenshotItem | null;
+  onClose: () => void;
+}) {
+  useEffect(() => {
+    if (!item) return;
+
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        onClose();
+      }
+    };
+
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    window.addEventListener('keydown', handleKeyDown);
+
+    return () => {
+      document.body.style.overflow = previousOverflow;
+      window.removeEventListener('keydown', handleKeyDown);
+    };
+  }, [item, onClose]);
+
+  if (!item) return null;
+
+  return (
+    <div
+      className="doc-lightbox-backdrop"
+      onClick={(e) => {
+        if (e.target === e.currentTarget) {
+          onClose();
+        }
+      }}
+      role="dialog"
+      aria-modal="true"
+      aria-label={item.title}
+    >
+      <div className="doc-lightbox-container">
+        <div className="doc-lightbox-header">
+          <div className="doc-lightbox-title-block">
+            <div className="doc-lightbox-eyebrow">ЭКРАН {item.screenNumber} · {item.route}</div>
+            <h3>{item.title}</h3>
+          </div>
+          <button
+            className="icon-button doc-lightbox-close-btn"
+            onClick={onClose}
+            aria-label="Закрыть полноэкранный просмотр (ESC)"
+            title="Закрыть (ESC)"
+          >
+            <Icon name="close" size={22} />
+          </button>
+        </div>
+
+        <div className="doc-lightbox-image-wrap">
+          <img
+            src={item.src}
+            alt={item.title}
+            className="doc-lightbox-image"
+          />
+        </div>
+
+        <div className="doc-lightbox-footer">
+          <p className="doc-lightbox-caption">{item.caption}</p>
+          {item.callouts && item.callouts.length > 0 && (
+            <div className="doc-lightbox-callouts">
+              {item.callouts.map((c, i) => (
+                <div key={i} className="doc-lightbox-callout-item">
+                  <span className="callout-badge">{i + 1}</span>
+                  <div><strong>{c.label}:</strong> {c.description}</div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+export type GuideSection = 'USER_GUIDE' | 'SYSADMIN_GUIDE';
+
 export function HelpPage() {
   const { me } = useAuth();
   const role = me?.role;
 
+  const [guideSection, setGuideSection] = useState<GuideSection>('USER_GUIDE');
   const [activeTab, setActiveTab] = useState<HelpTab>(() => getInitialTab(role));
   const [openError, setOpenError] = useState<string | null>('409');
+  const [lightboxScreenshot, setLightboxScreenshot] = useState<DocScreenshotItem | null>(null);
 
   // Guard against invalid activeTab (auto-fallback if tab is inaccessible for current role)
   useEffect(() => {
@@ -201,6 +603,19 @@ export function HelpPage() {
       setActiveTab(getInitialTab(role));
     }
   }, [activeTab, role]);
+
+  function handleSelectGuide(section: GuideSection) {
+    setGuideSection(section);
+    if (section === 'USER_GUIDE') {
+      if (activeTab === 'admin' || activeTab === 'security') {
+        setActiveTab('manager');
+      }
+    } else {
+      if (activeTab !== 'admin' && activeTab !== 'security') {
+        setActiveTab(isHelpTabAllowed('admin', role) ? 'admin' : 'security');
+      }
+    }
+  }
 
   // AC21 Interactive Form Input Preservation Tester State
   const [demoTitle, setDemoTitle] = useState('Взаимодействие с МГТУ по программе «Сетевые технологии»');
@@ -222,18 +637,67 @@ export function HelpPage() {
 
   return (
     <div className="help-center">
-      <div className="page-heading">
+      <div className="page-heading help-page-heading">
         <div>
-          <div className="eyebrow">БАЗА ЗНАНИЙ И РЕГЛАМЕНТЫ (B34 / R21 / AC21)</div>
-          <h1>Центр базы знаний CRM</h1>
-          <p>Ролевые регламенты ведения воронки, справочник ошибок HTTP/CAS и стандарты безопасности 152-ФЗ.</p>
+          <div className="eyebrow">БАЗА ЗНАНИЙ И ДОКУМЕНТАЦИЯ (ТЗ п. 5 / B34 / AC21)</div>
+          <h1>Центр документации CRM</h1>
+          <p>Встроенные руководства пользователя и системного администратора со скриншотами интерфейса.</p>
         </div>
-        {me && (
-          <div className="user-role-chip">
-            <Icon name="shield" size={16} />
-            <span>Ваша текущая роль: <strong>{me.role}</strong></span>
+        <div className="help-header-actions">
+          <Button
+            variant="secondary"
+            className="help-print-btn"
+            onClick={() => window.print()}
+            title="Распечатать текущее руководство или сохранить в PDF (Ctrl+P / Cmd+P)"
+          >
+            <Icon name="download" size={16} />
+            <span>Печать / PDF экспорт</span>
+          </Button>
+          <a
+            href="/docs/USER_GUIDE.md"
+            download="USER_GUIDE.md"
+            className="button button-ghost help-download-btn"
+            title="Скачать руководство пользователя в формате Markdown"
+          >
+            <Icon name="file" size={16} />
+            <span>Скачать Markdown</span>
+          </a>
+          {me && (
+            <div className="user-role-chip">
+              <Icon name="shield" size={16} />
+              <span>Ваша текущая роль: <strong>{me.role}</strong></span>
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* Root Guide Selector Tabs (USER_GUIDE vs SYSADMIN_GUIDE) */}
+      <div className="guide-mode-selector" role="tablist" aria-label="Разделы документации">
+        <button
+          role="tab"
+          aria-selected={guideSection === 'USER_GUIDE'}
+          className={`guide-mode-btn ${guideSection === 'USER_GUIDE' ? 'active' : ''}`}
+          onClick={() => handleSelectGuide('USER_GUIDE')}
+        >
+          <Icon name="book" size={20} />
+          <div>
+            <strong>Руководство пользователя</strong>
+            <small>КАМ-менеджер, руководитель направления, воронка 15 этапов, отчёты и регламенты при ошибках</small>
           </div>
-        )}
+        </button>
+
+        <button
+          role="tab"
+          aria-selected={guideSection === 'SYSADMIN_GUIDE'}
+          className={`guide-mode-btn ${guideSection === 'SYSADMIN_GUIDE' ? 'active' : ''}`}
+          onClick={() => handleSelectGuide('SYSADMIN_GUIDE')}
+        >
+          <Icon name="shield" size={20} />
+          <div>
+            <strong>Руководство системного администратора</strong>
+            <small>Развертывание, импорт каталогов, миграция процессов, интеграции LMS/Сайта, аудит 152-ФЗ</small>
+          </div>
+        </button>
       </div>
 
       {/* Role and Topic Tabs */}
@@ -243,7 +707,7 @@ export function HelpPage() {
             role="tab"
             aria-selected={activeTab === 'manager'}
             className={`help-tab-btn ${activeTab === 'manager' ? 'active' : ''}`}
-            onClick={() => setActiveTab('manager')}
+            onClick={() => { setActiveTab('manager'); setGuideSection('USER_GUIDE'); }}
           >
             <Icon name="layers" size={18} />
             <span>Менеджер</span>
@@ -256,7 +720,7 @@ export function HelpPage() {
             role="tab"
             aria-selected={activeTab === 'supervisor'}
             className={`help-tab-btn ${activeTab === 'supervisor' ? 'active' : ''}`}
-            onClick={() => setActiveTab('supervisor')}
+            onClick={() => { setActiveTab('supervisor'); setGuideSection('USER_GUIDE'); }}
           >
             <Icon name="users" size={18} />
             <span>Руководитель</span>
@@ -269,7 +733,7 @@ export function HelpPage() {
             role="tab"
             aria-selected={activeTab === 'admin'}
             className={`help-tab-btn ${activeTab === 'admin' ? 'active' : ''}`}
-            onClick={() => setActiveTab('admin')}
+            onClick={() => { setActiveTab('admin'); setGuideSection('SYSADMIN_GUIDE'); }}
           >
             <Icon name="refresh" size={18} />
             <span>Администратор</span>
@@ -282,7 +746,7 @@ export function HelpPage() {
             role="tab"
             aria-selected={activeTab === 'errors'}
             className={`help-tab-btn ${activeTab === 'errors' ? 'active' : ''}`}
-            onClick={() => setActiveTab('errors')}
+            onClick={() => { setActiveTab('errors'); setGuideSection('USER_GUIDE'); }}
           >
             <Icon name="alert" size={18} />
             <span>Справочник ошибок</span>
@@ -295,7 +759,7 @@ export function HelpPage() {
             role="tab"
             aria-selected={activeTab === 'security'}
             className={`help-tab-btn ${activeTab === 'security' ? 'active' : ''}`}
-            onClick={() => setActiveTab('security')}
+            onClick={() => { setActiveTab('security'); setGuideSection('SYSADMIN_GUIDE'); }}
           >
             <Icon name="shield" size={18} />
             <span>Безопасность 152-ФЗ</span>
@@ -473,6 +937,13 @@ export function HelpPage() {
             </div>
           </div>
 
+          {/* Manager Illustrated Workflows: Screens 01, 02, 03 */}
+          <div className="doc-screenshots-section">
+            <DocScreenshotCard item={SCREENSHOTS_CATALOG['screen-01']} onOpenLightbox={setLightboxScreenshot} />
+            <DocScreenshotCard item={SCREENSHOTS_CATALOG['screen-02']} onOpenLightbox={setLightboxScreenshot} />
+            <DocScreenshotCard item={SCREENSHOTS_CATALOG['screen-03']} onOpenLightbox={setLightboxScreenshot} />
+          </div>
+
           {/* Scenario Cards Grid */}
           <div className="scenario-grid">
             <div className="scenario-card">
@@ -488,6 +959,7 @@ export function HelpPage() {
                 <li>Каждое изменение проверяет версию карточки через CAS (<code>expected_revision</code>).</li>
                 <li>История изменений фиксируется в аудит-логе с инкрементом ревизии.</li>
               </ul>
+              <DocScreenshotCard item={SCREENSHOTS_CATALOG['screen-04']} onOpenLightbox={setLightboxScreenshot} />
             </div>
 
             <div className="scenario-card">
@@ -527,6 +999,7 @@ export function HelpPage() {
                 <li>При отмене взаимодействия (<code>cancellation</code>) причина отмены <strong>обязательна</strong>.</li>
                 <li>Текст комментария навечно сохраняется в аудит-логе с указанием автора и времени.</li>
               </ul>
+              <DocScreenshotCard item={SCREENSHOTS_CATALOG['screen-06']} onOpenLightbox={setLightboxScreenshot} />
             </div>
 
             <div className="scenario-card">
@@ -543,6 +1016,7 @@ export function HelpPage() {
                 <li>Проверка magic bytes: маскировка исполняемых файлов блокируется (HTTP 422).</li>
                 <li>Файлы изолированы на сервере, скачивание защищено проверкой прав доступа.</li>
               </ul>
+              <DocScreenshotCard item={SCREENSHOTS_CATALOG['screen-07']} onOpenLightbox={setLightboxScreenshot} />
             </div>
 
             <div className="scenario-card scenario-highlight warning">
@@ -559,6 +1033,7 @@ export function HelpPage() {
                   <strong>Решение:</strong> Нажмите «Редактировать параметры» на карточке, выберите совместимую программу и продукт из каталога, затем сохраните изменения. Дедлок будет устранен.
                 </span>
               </div>
+              <DocScreenshotCard item={SCREENSHOTS_CATALOG['screen-05']} onOpenLightbox={setLightboxScreenshot} />
             </div>
 
             <div className="scenario-card scenario-highlight important">
@@ -622,6 +1097,7 @@ export function HelpPage() {
                 <li><strong>Мгновенный отзыв доступа:</strong> Прежний менеджер немедленно теряет доступ к карточке (HTTP 404).</li>
                 <li>В аудит-логе фиксируется событие передачи с указанием прежнего и нового владельца.</li>
               </ul>
+              <DocScreenshotCard item={SCREENSHOTS_CATALOG['screen-08']} onOpenLightbox={setLightboxScreenshot} />
             </div>
 
             <div className="scenario-card">
@@ -637,6 +1113,7 @@ export function HelpPage() {
                 <li><strong>Динамика переходов (Activity):</strong> Переходы статусов за период с привязкой к историческому ответственному (<code>owner_at_event</code>).</li>
                 <li><strong>Созданные карточки (Created):</strong> Привлечение новых вузов за выбранный интервал.</li>
               </ul>
+              <DocScreenshotCard item={SCREENSHOTS_CATALOG['screen-09']} onOpenLightbox={setLightboxScreenshot} />
             </div>
 
             <div className="scenario-card">
@@ -708,6 +1185,21 @@ export function HelpPage() {
           <div className="scenario-grid">
             <div className="scenario-card">
               <div className="scenario-card-header">
+                <span className="scenario-step-badge">0</span>
+                <h3>Развертывание платформы и конфигурация окружения</h3>
+              </div>
+              <p>
+                Платформа CRM разворачивается в изолированном Docker-окружении со строгим разделением сервисных контуров:
+              </p>
+              <ul className="scenario-bullet-list">
+                <li><strong>Инфраструктура:</strong> FastAPI-сервер, Nginx reverse proxy, PostgreSQL 16 и Keycloak OIDC.</li>
+                <li><strong>Конфигурация .env:</strong> Защита секретов, параметры подключения к БД и таймауты интеграционных адаптеров.</li>
+                <li><strong>Безопасность портов:</strong> Сервис PostgreSQL доступен исключительно во внутренней сети контейнеров.</li>
+              </ul>
+            </div>
+
+            <div className="scenario-card">
+              <div className="scenario-card-header">
                 <span className="scenario-step-badge">1</span>
                 <h3>Двухфазный мастер импорта каталогов</h3>
               </div>
@@ -719,6 +1211,7 @@ export function HelpPage() {
                 <li><strong>Фаза 2 (Transactional Commit):</strong> Применение валидных строк в единой транзакции с защитой от повторных отправок по <code>Idempotency-Key</code>.</li>
                 <li>Автоматическое определение колонок: Вуз, Тип, Контакт, Телефон, Email, Программа, Продукт.</li>
               </ul>
+              <DocScreenshotCard item={SCREENSHOTS_CATALOG['screen-11']} onOpenLightbox={setLightboxScreenshot} />
             </div>
 
             <div className="scenario-card">
@@ -734,6 +1227,7 @@ export function HelpPage() {
                 <li>Строгая дедупликация по ключу <code>(source, entity_type, external_id, source_revision)</code>.</li>
                 <li>Разрешение заявок вузов: привязка к существующему вузу, создание новой организации или отклонение.</li>
               </ul>
+              <DocScreenshotCard item={SCREENSHOTS_CATALOG['screen-10']} onOpenLightbox={setLightboxScreenshot} />
             </div>
 
             <div className="scenario-card scenario-highlight warning">
@@ -749,6 +1243,7 @@ export function HelpPage() {
                 <li>Сухой прогон (Dry-Run Preview) с подсчетом затронутых карточек и коллизий слияния.</li>
                 <li>Транзакционный коммит с записью события <code>workflow_migrated</code> в аудит-лог.</li>
               </ul>
+              <DocScreenshotCard item={SCREENSHOTS_CATALOG['screen-12']} onOpenLightbox={setLightboxScreenshot} />
             </div>
 
             <div className="scenario-card">
@@ -782,6 +1277,8 @@ export function HelpPage() {
               </p>
             </div>
           </div>
+
+          <DocScreenshotCard item={SCREENSHOTS_CATALOG['screen-13']} onOpenLightbox={setLightboxScreenshot} />
 
           {/* Accordion List */}
           <div className="error-accordion">
@@ -1159,6 +1656,12 @@ export function HelpPage() {
           </div>
         </div>
       )}
+
+      {/* Doc Screenshot Modal Lightbox */}
+      <DocScreenshotLightbox
+        item={lightboxScreenshot}
+        onClose={() => setLightboxScreenshot(null)}
+      />
     </div>
   );
 }

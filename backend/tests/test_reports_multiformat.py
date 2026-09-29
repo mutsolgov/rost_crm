@@ -59,6 +59,13 @@ def test_snapshot_export_json_xlsx_pdf(client):
         assert "xl/worksheets/sheet2.xml" in zf.namelist()
         assert "xl/styles.xml" in zf.namelist()
 
+    # XLS export (legacy format alias supported for TZ compliance)
+    xls_resp = client.post("/api/v1/reports/snapshot/export?format=xls", json=req, headers=headers("supervisor"))
+    assert xls_resp.status_code == 200
+    assert xls_resp.headers["X-Report-Format"] == "xls"
+    assert "application/vnd.ms-excel" in xls_resp.headers["Content-Type"]
+    assert xls_resp.content.startswith(b"PK\x03\x04")
+
     # PDF export
     pdf_resp = client.post("/api/v1/reports/snapshot/export?format=pdf", json=req, headers=headers("supervisor"))
     assert pdf_resp.status_code == 200

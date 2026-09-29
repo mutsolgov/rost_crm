@@ -8,10 +8,12 @@ import hmac
 import json
 import os
 from contextlib import asynccontextmanager
+from pathlib import Path
 from uuid import uuid4
 
 from fastapi import Depends, FastAPI, Header, Query, Request, Response
 from fastapi.responses import FileResponse
+from fastapi.staticfiles import StaticFiles
 from sqlalchemy import select, text
 from sqlalchemy.orm import Session, sessionmaker
 
@@ -240,15 +242,38 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             yield
 
     app = FastAPI(
-        title="ИТ Школа · Партнёры API",
-        version="0.1.0",
-        description="API первого рабочего среза CRM взаимодействий с образовательными организациями.",
+        title="ИТ Школа Ростелекома — CRM API",
+        version="1.0.0",
+        description="""### CRM «ИТ Школа Ростелекома» — Сервисный API
+
+API для управления взаимодействиями с образовательными организациями (вузами, колледжами) 
+по внедрению отечественного программного обеспечения в рамках инициатив ПАО «Ростелеком».
+
+#### Реализованные ключевые возможности:
+- **Управление воронкой взаимодействий:** 15 этапов жизненного цикла (13 рабочих + 2 терминальных), оптимистический контроль версий CAS (`expected_revision`), устранение дедлока D02.
+- **Интеграционные контуры:** забор данных по REST API и Webhook из LMS Zion (`/api/v1/metrics`, `/api/v1/deliveries`) и Веб-сайта Laravel (`/api/v1/applications`) с очередью сверки Reconciliation Inbox.
+- **Аналитический модуль и отчёты:** темпоральные срезы (Snapshot на дату, Activity по переходам, Created по динамике) с экспортом в форматы XLSX, XLS, PDF, CSV, JSON.
+- **Двухфазный импорт справочников:** Preview (Dry-Run) и Commit из файлов Excel без сторонних библиотек.
+- **Безопасность:** 152-ФЗ Zero-Oracle сокрытие (HTTP 404), In-Memory JWT, побайтовая проверка magic bytes и ClamAV.
+
+#### Перечень использованных библиотек и компонентов (ТЗ п. 6.2):
+- **Backend:** Python 3.12+, FastAPI (MIT), Uvicorn (BSD-3), SQLAlchemy 2.0 (MIT), Alembic (MIT), psycopg 3 (LGPL-3), PyJWT (MIT), httpx (BSD-3), AnyIO (MIT).
+- **Frontend:** React 19 (MIT), TypeScript (Apache-2.0), Vite (MIT), Ростелеком Gen2 Design Tokens (Atomaro).
+- **Инфраструктура:** PostgreSQL 16 (PostgreSQL License), Keycloak 26 (Apache-2.0), Nginx 1.27 (2-clause BSD), ClamAV (GPL-2.0), Redis 7 (BSD-3).
+""",
         lifespan=lifespan,
     )
     app.state.settings = config
     app.state.engine = engine
     app.state.session_factory = factory
     install_error_handlers(app)
+
+    repo_root = Path(__file__).resolve().parents[2]
+    frontend_screenshots = repo_root / "frontend" / "public" / "docs" / "screenshots"
+    docs_screenshots = repo_root / "docs" / "screenshots"
+    screenshots_target = frontend_screenshots if frontend_screenshots.exists() else docs_screenshots
+    if screenshots_target.exists():
+        app.mount("/docs/screenshots", StaticFiles(directory=str(screenshots_target)), name="screenshots")
 
     @app.middleware("http")
     async def request_context(request: Request, call_next):

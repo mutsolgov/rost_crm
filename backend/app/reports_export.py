@@ -917,14 +917,15 @@ def export_report(report_data: dict, report_type: str, export_format: str, user:
         response.headers["Content-Disposition"] = f'attachment; filename="rtk-{report_type}.json"'
         response.headers["X-Report-Format"] = "json"
         return response
-    elif fmt == "xlsx":
+    elif fmt in {"xlsx", "xls"}:
         xlsx_bytes = generate_xlsx_report(report_data, report_type, user, selected_columns)
+        media_type = "application/vnd.ms-excel" if fmt == "xls" else "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
         response = Response(
             content=xlsx_bytes,
-            media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            media_type=media_type,
         )
-        response.headers["Content-Disposition"] = f'attachment; filename="rtk-{report_type}.xlsx"'
-        response.headers["X-Report-Format"] = "xlsx"
+        response.headers["Content-Disposition"] = f'attachment; filename="rtk-{report_type}.{fmt}"'
+        response.headers["X-Report-Format"] = fmt
         return response
     elif fmt == "pdf":
         pdf_bytes = generate_pdf_report(report_data, report_type, user, selected_columns)
@@ -941,6 +942,6 @@ def export_report(report_data: dict, report_type: str, export_format: str, user:
     else:
         raise APIError(
             "VALIDATION_ERROR",
-            f"Неподдерживаемый формат экспорта '{export_format}'. Допустимы: json, xlsx, pdf, csv.",
+            f"Неподдерживаемый формат экспорта '{export_format}'. Допустимы: json, xls, xlsx, pdf, csv.",
             422,
         )
