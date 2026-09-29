@@ -119,11 +119,52 @@ export interface Attachment {
   created_at: string;
 }
 
+export interface DeliveryItemRecord {
+  id: string;
+  delivery_id: string;
+  item_kind: string;
+  title: string;
+  attachment_id?: string | null;
+  license_id?: string | null;
+  material_version?: string | null;
+  created_at: string;
+}
+
+export interface DeliveryRecord {
+  id: string;
+  organization_id: string;
+  interaction_id?: string | null;
+  status: string;
+  channel: string;
+  sent_at?: string | null;
+  confirmed_at?: string | null;
+  recipient_contact_id?: string | null;
+  recipient_contact_name?: string | null;
+  recorded_by: string;
+  recorded_by_name?: string | null;
+  comment?: string | null;
+  created_at: string;
+  revision: number;
+  items: DeliveryItemRecord[];
+}
+
+export interface CreateDeliveryPayload {
+  title: string;
+  item_kind?: string;
+  material_version?: string;
+  channel?: string;
+  recipient_contact_id?: string;
+  license_id?: string;
+  comment?: string;
+  expected_revision?: number;
+}
+
 export interface InteractionDetail extends Interaction {
   allowed_transitions: Transition[];
   events: WorkflowEvent[];
   comments: Comment[];
   attachments?: Attachment[];
+  deliveries?: DeliveryRecord[];
 }
 export interface InteractionList {
   items: Interaction[]; total: number; page: number; page_size: number;

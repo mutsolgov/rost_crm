@@ -134,5 +134,6 @@ export const eventNames: Record<string, string> = {
   owner_changed: 'Назначен ответственный', assignment: 'Назначен ответственный',
   comment_added: 'Добавлен комментарий', comment: 'Добавлен комментарий',
   attachment_uploaded: 'Загружен файл', attachment_deleted: 'Удалён файл',
+  delivery_recorded: 'Зафиксирована выдача ПО',
 };
 

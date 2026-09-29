@@ -122,7 +122,7 @@ services:
       OIDC_CLIENT_ID: rtk-crm-web
       CLAMAV_HOST: ${CLAMAV_HOST:-clamav}
       CLAMAV_PORT: ${CLAMAV_PORT:-3310}
-      CLAMAV_ENABLED: ${CLAMAV_ENABLED:-false}
+      CLAMAV_ENABLED: ${CLAMAV_ENABLED:-true}
       REDIS_URL: ${REDIS_URL:-redis://redis:6379/0}
       BACKGROUND_WORKER_ENABLED: "true"
       LMS_INTEGRATION_MODE: ${LMS_INTEGRATION_MODE:-mock}

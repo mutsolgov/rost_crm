@@ -1,7 +1,8 @@
 from __future__ import annotations
 
+import math
 import re
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any
 from uuid import uuid4
 
@@ -34,6 +35,7 @@ from ..services import (
     validate_subject,
     visible_organization_ids,
 )
+from .base import NormalizedEnvelope
 from .factory import get_adapter
 
 
@@ -96,62 +98,7 @@ def _is_revision_older(rev1: str, rev2: str) -> bool:
         return str(rev1) < str(rev2)
 
 
-def sync_source(
-    db: Session,
-    user: User,
-    source: str,
-    config: Settings | None = None,
-    idempotency_key: str | None = None,
-) -> dict[str, Any]:
-    require_permission(user, "integrations.manage")
-
-    src = (source or "").strip().lower()
-    if src not in {"lms", "website"}:
-        raise APIError("VALIDATION_ERROR", f"Неизвестный источник интеграции: '{source}'. Допустимые: 'lms', 'website'")
-
-    cfg = config or get_settings()
-
-    saved = None
-    if idempotency_key:
-        saved, replay = begin_command(
-            db,
-            user,
-            f"integrations.sync:{src}",
-            idempotency_key,
-            {"source": src},
-        )
-        if replay is not None:
-            return replay
-
-    adapter = get_adapter(src, cfg)
-    envelopes = adapter.fetch_updates()
-
-    if getattr(adapter, "last_error", None):
-        err_item = IntegrationInbox(
-            id=new_id(),
-            source=src,
-            entity_type="sync_error",
-            external_id=f"sync_error_{uuid4().hex[:12]}",
-            source_revision=str(int(utcnow().timestamp())),
-            status="error",
-            error_message=adapter.last_error,
-            payload={"error": adapter.last_error, "base_url": getattr(adapter, "base_url", None)},
-            received_at=utcnow(),
-        )
-        db.add(err_item)
-        db.flush()
-        res = {
-            "status": "error",
-            "source": src,
-            "error_message": adapter.last_error,
-            "received_count": 0,
-            "processed_count": 0,
-            "pending_count": 0,
-            "skipped_count": 0,
-            "quarantined_count": 0,
-        }
-        return finish_command(db, saved, res, None) if saved else res
-
+def ingest_envelopes(db: Session, envelopes: list[NormalizedEnvelope]) -> dict[str, int]:
     received_count = len(envelopes)
     processed_count = 0
     pending_count = 0
@@ -207,7 +154,13 @@ def sync_source(
                     as_of_dt = aware(env.effective_at) if hasattr(env, "effective_at") and env.effective_at else utcnow()
 
                 metric_code = env.payload.get("metric_code", "")
-                val = float(env.payload.get("value", 0.0))
+                raw_val = env.payload.get("value")
+                try:
+                    val = float(raw_val) if raw_val is not None else 0.0
+                    if not math.isfinite(val):
+                        val = 0.0
+                except (ValueError, TypeError):
+                    val = 0.0
                 unit = str(env.payload.get("unit", ""))
 
                 metric = db.scalar(
@@ -311,6 +264,85 @@ def sync_source(
                     item.matched_organization_id = matched_org.id
             item.status = "pending"
             pending_count += 1
+        else:
+            item.status = "processed"
+            item.processed_at = utcnow()
+            processed_count += 1
+
+    return {
+        "received_count": received_count,
+        "processed_count": processed_count,
+        "pending_count": pending_count,
+        "skipped_count": skipped_count,
+        "quarantined_count": quarantined_count,
+    }
+
+
+def sync_source(
+    db: Session,
+    user: User,
+    source: str,
+    config: Settings | None = None,
+    idempotency_key: str | None = None,
+) -> dict[str, Any]:
+    require_permission(user, "integrations.manage")
+
+    src = (source or "").strip().lower()
+    if src not in {"lms", "website"}:
+        raise APIError("VALIDATION_ERROR", f"Неизвестный источник интеграции: '{source}'. Допустимые: 'lms', 'website'")
+
+    cfg = config or get_settings()
+
+    saved = None
+    if idempotency_key:
+        saved, replay = begin_command(
+            db,
+            user,
+            f"integrations.sync:{src}",
+            idempotency_key,
+            {"source": src},
+        )
+        if replay is not None:
+            return replay
+
+    adapter = get_adapter(src, cfg)
+    envelopes = adapter.fetch_updates()
+
+    if getattr(adapter, "last_error", None):
+        err_item = IntegrationInbox(
+            id=new_id(),
+            source=src,
+            entity_type="sync_error",
+            external_id=f"sync_error_{uuid4().hex[:12]}",
+            source_revision=str(int(utcnow().timestamp())),
+            status="error",
+            error_message=adapter.last_error,
+            payload={"error": adapter.last_error, "base_url": getattr(adapter, "base_url", None)},
+            received_at=utcnow(),
+        )
+        db.add(err_item)
+        db.flush()
+        res = {
+            "status": "error",
+            "source": src,
+            "error_message": adapter.last_error,
+            "received_count": 0,
+            "processed_count": 0,
+            "pending_count": 0,
+            "skipped_count": 0,
+            "quarantined_count": 0,
+        }
+        if saved:
+            return finish_command(db, saved, res, None)
+        db.commit()
+        return res
+
+    counts = ingest_envelopes(db, envelopes)
+    received_count = counts["received_count"]
+    processed_count = counts["processed_count"]
+    pending_count = counts["pending_count"]
+    skipped_count = counts["skipped_count"]
+    quarantined_count = counts["quarantined_count"]
 
     result = {
         "source": src,
@@ -329,6 +361,166 @@ def sync_source(
         return finish_command(db, saved, result, None)
     db.commit()
     return result
+
+
+def normalize_webhook_payload(source: str, data: Any) -> list[NormalizedEnvelope]:
+    if isinstance(data, list):
+        raw_items = data
+    elif isinstance(data, dict):
+        if "items" in data and isinstance(data["items"], list):
+            raw_items = data["items"]
+        else:
+            raw_items = [data]
+    else:
+        raise APIError("VALIDATION_ERROR", "Тело вебхука должно быть JSON объектом или массивом.", status=400)
+
+    now = datetime.now(timezone.utc)
+    envelopes: list[NormalizedEnvelope] = []
+
+    for item in raw_items:
+        if not isinstance(item, dict):
+            continue
+
+        schema_version = str(item.get("schema_version") or "1.0")
+        src = str(item.get("source") or source).strip().lower()
+        operation = str(item.get("operation") or "upsert")
+
+        # Determine entity_type
+        entity_type = (
+            item.get("entity_type")
+            or item.get("type")
+            or (item.get("payload", {}).get("entity_type") if isinstance(item.get("payload"), dict) else None)
+        )
+        if not entity_type:
+            if src == "lms":
+                if (
+                    "metric_code" in item
+                    or "value" in item
+                    or (isinstance(item.get("payload"), dict) and "metric_code" in item["payload"])
+                ):
+                    entity_type = "learning_metric"
+                elif "learner_name" in item or "full_name" in item or "order_id" in item:
+                    entity_type = "learner"
+                else:
+                    entity_type = "learning_metric"
+            elif src == "website":
+                entity_type = "application"
+            else:
+                entity_type = "event"
+        entity_type = str(entity_type)
+
+        # Determine external_id (or source_record_id)
+        external_id = (
+            item.get("external_id")
+            or item.get("source_record_id")
+            or item.get("id")
+            or (item.get("payload", {}).get("external_id") if isinstance(item.get("payload"), dict) else None)
+            or (item.get("payload", {}).get("source_record_id") if isinstance(item.get("payload"), dict) else None)
+            or (item.get("payload", {}).get("id") if isinstance(item.get("payload"), dict) else None)
+        )
+
+        # Source revision
+        source_revision = (
+            item.get("source_revision")
+            or item.get("revision")
+            or item.get("version")
+            or (item.get("payload", {}).get("source_revision") if isinstance(item.get("payload"), dict) else None)
+            or (item.get("payload", {}).get("revision") if isinstance(item.get("payload"), dict) else None)
+            or "1"
+        )
+        source_revision = str(source_revision)
+
+        # Payload dictionary
+        if "payload" in item and isinstance(item["payload"], dict):
+            payload = dict(item["payload"])
+        else:
+            envelope_keys = {
+                "schema_version",
+                "source",
+                "entity_type",
+                "type",
+                "external_id",
+                "source_record_id",
+                "id",
+                "source_revision",
+                "revision",
+                "version",
+                "operation",
+                "effective_at",
+                "received_at",
+            }
+            payload = {k: v for k, v in item.items() if k not in envelope_keys}
+            if not payload:
+                payload = dict(item)
+
+        # Learning metric alias mappings
+        if entity_type == "learning_metric":
+            if "org_id" in payload and "organization_id" not in payload:
+                payload["organization_id"] = payload["org_id"]
+            if "prog_id" in payload and "program_id" not in payload:
+                payload["program_id"] = payload["prog_id"]
+            if "prog_slug" in payload and "program_name" not in payload and "program_id" not in payload:
+                payload["program_id"] = payload["prog_slug"]
+
+            if not external_id:
+                o = payload.get("organization_id") or payload.get("org_id") or "org"
+                p = payload.get("program_id") or payload.get("prog_id") or "prog"
+                m = payload.get("metric_code") or "metric"
+                external_id = f"metric-{o}-{p}-{m}"
+
+        if not external_id:
+            external_id = f"{src}-{uuid4().hex[:12]}"
+
+        # Effective at timestamp
+        eff = item.get("effective_at") or (payload.get("as_of") if isinstance(payload, dict) else None)
+        if isinstance(eff, str):
+            try:
+                effective_dt = datetime.fromisoformat(eff)
+                if effective_dt.tzinfo is None:
+                    effective_dt = effective_dt.replace(tzinfo=timezone.utc)
+            except Exception:
+                effective_dt = now
+        elif isinstance(eff, datetime):
+            effective_dt = eff if eff.tzinfo is not None else eff.replace(tzinfo=timezone.utc)
+        else:
+            effective_dt = now
+
+        env = NormalizedEnvelope(
+            schema_version=schema_version,
+            source=src,
+            entity_type=entity_type,
+            external_id=str(external_id),
+            source_revision=str(source_revision),
+            operation=operation,
+            effective_at=effective_dt,
+            received_at=now,
+            payload=payload,
+        )
+        envelopes.append(env)
+
+    return envelopes
+
+
+def process_webhook(db: Session, source: str, raw_payload: Any) -> dict[str, Any]:
+    src = (source or "").strip().lower()
+    envelopes = normalize_webhook_payload(src, raw_payload)
+    counts = ingest_envelopes(db, envelopes)
+    db.commit()
+
+    processed_total = counts["processed_count"] + counts["pending_count"] + counts["quarantined_count"]
+    return {
+        "status": "ok",
+        "source": src,
+        "processed": processed_total,
+        "skipped": counts["skipped_count"],
+        "received": counts["received_count"],
+        "processed_count": counts["processed_count"],
+        "pending_count": counts["pending_count"],
+        "quarantined_count": counts["quarantined_count"],
+        "skipped_count": counts["skipped_count"],
+        "received_count": counts["received_count"],
+    }
+
 
 
 def list_inbox_items(

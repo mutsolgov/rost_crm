@@ -8,9 +8,9 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from .errors import APIError
-from .models import (AccessPolicyState, Attachment, BackgroundJob, CommandResult, Comment, Contract, Direction,
-                     IntegrationInbox, Interaction, InteractionEvent, License, Organization, OrganizationAccess,
-                     OrganizationContact, Product, Program, ProgramProduct, ReportRow,
+from .models import (AccessPolicyState, Attachment, BackgroundJob, CommandResult, Comment, Contract, Delivery,
+                     DeliveryItem, Direction, IntegrationInbox, Interaction, InteractionEvent, License, Organization,
+                     OrganizationAccess, OrganizationContact, Product, Program, ProgramProduct, ReportRow,
                      ReportRun, StateVisit, TransactionalOutbox, User, new_id, utcnow)
 from .workflow import (STATES, SUBJECT_REQUIRED_STATES, TERMINAL_STATES,
                       WORKFLOW_REGISTRY, allowed_transitions, get_states,
@@ -341,6 +341,44 @@ def attachment_dict(att):
     }
 
 
+def delivery_item_dict(item: DeliveryItem) -> dict:
+    return {
+        "id": item.id,
+        "delivery_id": item.delivery_id,
+        "item_kind": item.item_kind,
+        "title": item.title,
+        "attachment_id": item.attachment_id,
+        "license_id": item.license_id,
+        "material_version": item.material_version,
+        "created_at": iso(item.created_at),
+    }
+
+
+def delivery_dict(db: Session, delivery: Delivery) -> dict:
+    items = list(db.scalars(
+        select(DeliveryItem).where(DeliveryItem.delivery_id == delivery.id).order_by(DeliveryItem.created_at)
+    ))
+    recorded_by_user = db.get(User, delivery.recorded_by)
+    contact = db.get(OrganizationContact, delivery.recipient_contact_id) if delivery.recipient_contact_id else None
+    return {
+        "id": delivery.id,
+        "organization_id": delivery.organization_id,
+        "interaction_id": delivery.interaction_id,
+        "status": delivery.status,
+        "channel": delivery.channel,
+        "sent_at": iso(delivery.sent_at),
+        "confirmed_at": iso(delivery.confirmed_at),
+        "recipient_contact_id": delivery.recipient_contact_id,
+        "recipient_contact_name": contact.full_name if contact else None,
+        "recorded_by": delivery.recorded_by,
+        "recorded_by_name": recorded_by_user.name if recorded_by_user else None,
+        "comment": delivery.comment,
+        "created_at": iso(delivery.created_at),
+        "revision": delivery.revision,
+        "items": [delivery_item_dict(it) for it in items],
+    }
+
+
 def interaction_dict(db, item, attachments=None, lookup=None):
     if lookup:
         org = lookup["orgs"].get(item.organization_id)
@@ -446,6 +484,8 @@ def detail(db, user, interaction_id):
     result["comments"] = [comment_dict(c) for c in db.scalars(select(Comment).where(
         Comment.interaction_id == item.id).order_by(Comment.created_at, Comment.id))]
     result["attachments"] = attachments
+    result["deliveries"] = [delivery_dict(db, d) for d in db.scalars(select(Delivery).where(
+        Delivery.interaction_id == item.id).order_by(Delivery.created_at.desc()))]
     return result
 
 
@@ -703,6 +743,98 @@ def update_interaction(db, user, interaction_id, body, key):
     return finish_command(db, saved, interaction_dict(db, item), item.id)
 
 
+def get_interaction_deliveries(db: Session, user, interaction_id: str) -> list[dict]:
+    item = scoped_interaction(db, user, interaction_id)
+    deliveries = list(db.scalars(
+        select(Delivery).where(Delivery.interaction_id == item.id).order_by(Delivery.created_at.desc())
+    ))
+    return [delivery_dict(db, d) for d in deliveries]
+
+
+def create_delivery(db: Session, user, interaction_id: str, body, key: str | None = None) -> dict:
+    item = scoped_interaction(db, user, interaction_id)
+    user_perms = permissions(user)
+    if (
+        not ({"interactions.edit", "interactions.transition", "interactions.write"} & set(user_perms))
+        and user.role not in ("administrator", "admin")
+    ):
+        raise APIError("FORBIDDEN", "Недостаточно прав для фиксации выдачи ПО.", 403)
+    if item.closed_at:
+        raise APIError("VALIDATION_ERROR", "Нельзя регистрировать поставку для закрытого взаимодействия.")
+
+    payload_data = body.model_dump() if hasattr(body, "model_dump") else dict(body)
+    saved, replay = None, None
+    if key:
+        saved, replay = begin_command(db, user, f"delivery:{item.id}", key, payload_data)
+        if replay is not None:
+            return replay
+
+    if payload_data.get("license_id"):
+        lic = db.get(License, payload_data["license_id"])
+        if not lic or lic.organization_id != item.organization_id:
+            raise APIError("VALIDATION_ERROR", "Лицензия не принадлежит организации взаимодействия.")
+    if payload_data.get("recipient_contact_id"):
+        cnt = db.get(OrganizationContact, payload_data["recipient_contact_id"])
+        if not cnt or cnt.organization_id != item.organization_id:
+            raise APIError("VALIDATION_ERROR", "Контакт не принадлежит организации взаимодействия.")
+
+    now = utcnow()
+    if payload_data.get("expected_revision") is not None:
+        cas(db, item, payload_data["expected_revision"], updated_at=now)
+    else:
+        item.revision += 1
+        item.updated_at = now
+
+    deliv_id = new_id()
+    deliv = Delivery(
+        id=deliv_id,
+        organization_id=item.organization_id,
+        interaction_id=item.id,
+        status="confirmed",
+        channel=payload_data.get("channel") or "email",
+        sent_at=now,
+        confirmed_at=now,
+        recipient_contact_id=payload_data.get("recipient_contact_id") or item.contact_id,
+        recorded_by=user.id,
+        comment=payload_data.get("comment"),
+        created_at=now,
+        revision=1,
+    )
+    db.add(deliv)
+
+    deliv_item = DeliveryItem(
+        id=new_id(),
+        delivery_id=deliv_id,
+        item_kind=payload_data.get("item_kind") or "license",
+        title=payload_data["title"],
+        license_id=payload_data.get("license_id") or item.license_id,
+        material_version=payload_data.get("material_version"),
+        created_at=now,
+    )
+    db.add(deliv_item)
+    db.flush()
+
+    append_event(
+        db,
+        item,
+        user,
+        "delivery_recorded",
+        now,
+        delivery_id=deliv.id,
+        title=deliv_item.title,
+        channel=deliv.channel,
+        item_kind=deliv_item.item_kind,
+        material_version=deliv_item.material_version,
+        status=deliv.status,
+    )
+
+    result = delivery_dict(db, deliv)
+    if key and saved:
+        return finish_command(db, saved, result, item.id)
+    db.commit()
+    return result
+
+
 def catalogs(db, user):
     org_ids = visible_organization_ids(db, user)
     orgs = list(db.scalars(select(Organization).where(Organization.id.in_(org_ids)).order_by(Organization.name)))
@@ -768,14 +900,17 @@ def catalogs(db, user):
     }
 
 
-def validate_filters(db, user, organization_ids=(), program_ids=(), product_ids=(), owner_ids=()):
+def validate_filters(db, user, organization_ids=(), program_ids=(), product_ids=(), owner_ids=(), direction_ids=(), state_ids=()):
     if organization_ids and not set(organization_ids) <= visible_organization_ids(db, user):
         raise APIError("VALIDATION_ERROR", "Фильтр содержит недоступную организацию.")
-    for ids, model in ((program_ids, Program), (product_ids, Product), (owner_ids, User)):
+    for ids, model in ((program_ids, Program), (product_ids, Product), (owner_ids, User), (direction_ids, Direction)):
         if ids:
             existing = set(db.scalars(select(model.id).where(model.id.in_(ids))))
             if set(ids) != existing:
                 raise APIError("VALIDATION_ERROR", "Фильтр содержит неизвестное значение.")
+    if state_ids:
+        if any(s not in STATES for s in state_ids):
+            raise APIError("VALIDATION_ERROR", "Фильтр содержит неизвестный этап.")
 
 
 def list_interactions(db, user, q=None, organization_id=None, program_id=None, product_id=None,
@@ -878,7 +1013,7 @@ def dashboard(db, user):
 
 def snapshot(db, user, body):
     require_permission(user, "reports.read")
-    validate_filters(db, user, body.organization_ids, body.program_ids, body.product_ids, body.owner_ids)
+    validate_filters(db, user, body.organization_ids, body.program_ids, body.product_ids, body.owner_ids, getattr(body, "direction_ids", ()), getattr(body, "state_ids", ()))
     now = utcnow()
     cutoff = body.knowledge_cutoff or now
     where_clauses = [scope_clause(user)]
@@ -890,6 +1025,10 @@ def snapshot(db, user, body):
         where_clauses.append(Interaction.product_id.in_(body.product_ids))
     if body.owner_ids:
         where_clauses.append(Interaction.owner_id.in_(body.owner_ids))
+    dir_prog_ids = None
+    if getattr(body, "direction_ids", None):
+        dir_prog_ids = set(db.scalars(select(Program.id).where(Program.direction_id.in_(body.direction_ids))))
+        where_clauses.append(Interaction.program_id.in_(dir_prog_ids) if dir_prog_ids else false())
 
     visible_ids = list(db.scalars(select(Interaction.id).where(*where_clauses)))
     if len(visible_ids) > 5000:
@@ -911,6 +1050,10 @@ def snapshot(db, user, body):
                ("product_id", body.product_ids), ("owner_id", body.owner_ids))
     for interaction_id, data in sorted(latest.items()):
         if interaction_id not in created or any(values and data.get(field) not in values for field, values in filters):
+            continue
+        if dir_prog_ids is not None and data.get("program_id") not in dir_prog_ids:
+            continue
+        if getattr(body, "state_ids", None) and data.get("state") not in body.state_ids:
             continue
         hist_owner = data.get("owner_id")
         if getattr(body, "historical_owner_id", None) and hist_owner != body.historical_owner_id:
@@ -944,7 +1087,7 @@ def snapshot(db, user, body):
 
 def activity(db, user, body):
     require_permission(user, "reports.read")
-    validate_filters(db, user, body.organization_ids, body.program_ids, body.product_ids, body.owner_ids)
+    validate_filters(db, user, body.organization_ids, body.program_ids, body.product_ids, body.owner_ids, getattr(body, "direction_ids", ()), getattr(body, "state_ids", ()))
     now = utcnow()
     cutoff = aware(body.knowledge_cutoff or now)
     start, end = aware(body.from_date), aware(body.to_date)
@@ -957,6 +1100,10 @@ def activity(db, user, body):
         where_clauses.append(Interaction.product_id.in_(body.product_ids))
     if body.owner_ids:
         where_clauses.append(Interaction.owner_id.in_(body.owner_ids))
+    dir_prog_ids = None
+    if getattr(body, "direction_ids", None):
+        dir_prog_ids = set(db.scalars(select(Program.id).where(Program.direction_id.in_(body.direction_ids))))
+        where_clauses.append(Interaction.program_id.in_(dir_prog_ids) if dir_prog_ids else false())
 
     visible_ids = list(db.scalars(select(Interaction.id).where(*where_clauses)))
     if len(visible_ids) > 5000:
@@ -1005,8 +1152,12 @@ def activity(db, user, body):
         snap = (trans.payload or {}).get("snapshot") or {}
         if any(values and snap.get(field) not in values for field, values in filters):
             continue
+        if dir_prog_ids is not None and snap.get("program_id") and snap.get("program_id") not in dir_prog_ids:
+            continue
         from_st = (trans.payload or {}).get("from_state")
         to_st = (trans.payload or {}).get("to_state")
+        if getattr(body, "state_ids", None) and to_st not in body.state_ids:
+            continue
 
         inter = db.get(Interaction, trans.interaction_id)
         title = (inter.title if inter else None) or (snap.get("title") or "")
@@ -1067,7 +1218,7 @@ def activity(db, user, body):
 
 def created_report(db, user, body):
     require_permission(user, "reports.read")
-    validate_filters(db, user, body.organization_ids, body.program_ids, body.product_ids, body.owner_ids)
+    validate_filters(db, user, body.organization_ids, body.program_ids, body.product_ids, body.owner_ids, getattr(body, "direction_ids", ()), getattr(body, "state_ids", ()))
     now = utcnow()
     cutoff = aware(body.knowledge_cutoff or now)
     start, end = aware(body.from_date), aware(body.to_date)
@@ -1080,6 +1231,10 @@ def created_report(db, user, body):
         where_clauses.append(Interaction.product_id.in_(body.product_ids))
     if body.owner_ids:
         where_clauses.append(Interaction.owner_id.in_(body.owner_ids))
+    dir_prog_ids = None
+    if getattr(body, "direction_ids", None):
+        dir_prog_ids = set(db.scalars(select(Program.id).where(Program.direction_id.in_(body.direction_ids))))
+        where_clauses.append(Interaction.program_id.in_(dir_prog_ids) if dir_prog_ids else false())
 
     visible_ids = list(db.scalars(select(Interaction.id).where(*where_clauses)))
     if len(visible_ids) > 5000:
@@ -1101,6 +1256,11 @@ def created_report(db, user, body):
     for ev in events:
         snap = (ev.payload or {}).get("snapshot") or {}
         if any(values and snap.get(field) not in values for field, values in filters):
+            continue
+        if dir_prog_ids is not None and snap.get("program_id") and snap.get("program_id") not in dir_prog_ids:
+            continue
+        st = snap.get("state") or (ev.payload or {}).get("to_state") or (ev.payload or {}).get("state")
+        if getattr(body, "state_ids", None) and st not in body.state_ids:
             continue
         rows.append({
             "interaction_id": ev.interaction_id,

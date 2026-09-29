@@ -67,9 +67,11 @@ class SnapshotRequest(Body):
     as_of_inclusive: bool = True
     historical_owner_id: str | None = None
     organization_ids: list[str] = Field(default_factory=list, max_length=500)
+    direction_ids: list[str] = Field(default_factory=list, max_length=500)
     program_ids: list[str] = Field(default_factory=list, max_length=500)
     product_ids: list[str] = Field(default_factory=list, max_length=500)
     owner_ids: list[str] = Field(default_factory=list, max_length=500)
+    state_ids: list[str] = Field(default_factory=list, max_length=500)
     selected_columns: list[str] | None = None
 
     @field_validator("as_of", "knowledge_cutoff")
@@ -91,9 +93,11 @@ class ActivityRequest(Body):
     knowledge_cutoff: datetime | None = None
     historical_owner_id: str | None = None
     organization_ids: list[str] = Field(default_factory=list, max_length=500)
+    direction_ids: list[str] = Field(default_factory=list, max_length=500)
     program_ids: list[str] = Field(default_factory=list, max_length=500)
     product_ids: list[str] = Field(default_factory=list, max_length=500)
     owner_ids: list[str] = Field(default_factory=list, max_length=500)
+    state_ids: list[str] = Field(default_factory=list, max_length=500)
     selected_columns: list[str] | None = None
 
     model_config = ConfigDict(extra="forbid", str_strip_whitespace=True, populate_by_name=True)
@@ -111,9 +115,11 @@ class CreatedReportRequest(Body):
     to_date: datetime = Field(alias="to")
     knowledge_cutoff: datetime | None = None
     organization_ids: list[str] = Field(default_factory=list, max_length=500)
+    direction_ids: list[str] = Field(default_factory=list, max_length=500)
     owner_ids: list[str] = Field(default_factory=list, max_length=500)
     program_ids: list[str] = Field(default_factory=list, max_length=500)
     product_ids: list[str] = Field(default_factory=list, max_length=500)
+    state_ids: list[str] = Field(default_factory=list, max_length=500)
     selected_columns: list[str] | None = None
 
     model_config = ConfigDict(extra="forbid", str_strip_whitespace=True, populate_by_name=True)
@@ -159,5 +165,16 @@ class WorkflowVersionCreate(Body):
     name: str = Field(min_length=1, max_length=255)
     description: str | None = None
     definition: dict = Field(default_factory=dict)
+
+
+class DeliveryCreate(Body):
+    title: str = Field(min_length=1, max_length=250)
+    item_kind: Literal["material", "document", "license"] = "license"
+    material_version: str | None = Field(default=None, max_length=120)
+    channel: str = Field(default="email", max_length=40)
+    recipient_contact_id: str | None = Field(default=None, max_length=64)
+    license_id: str | None = Field(default=None, max_length=64)
+    comment: str | None = Field(default=None, max_length=5000)
+    expected_revision: int | None = Field(default=None, ge=1)
 
 

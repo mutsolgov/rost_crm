@@ -10,6 +10,8 @@ import type {
   WorkflowMigrateCommitPayload,
   WorkflowVersionInfo,
   Workflow,
+  DeliveryRecord,
+  CreateDeliveryPayload,
 } from './types';
 
 export class ApiError extends Error {
@@ -281,6 +283,22 @@ export class ApiClient {
 
   async publishWorkflowVersion(version: number): Promise<any> {
     return this.post<any>(`/workflow/versions/${encodeURIComponent(version)}/publish`, {});
+  }
+
+  async getDeliveries(interactionId: string): Promise<DeliveryRecord[]> {
+    return this.get<DeliveryRecord[]>(`/interactions/${encodeURIComponent(interactionId)}/deliveries`);
+  }
+
+  async createDelivery(
+    interactionId: string,
+    body: CreateDeliveryPayload,
+    key: string = makeMutationKey(),
+  ): Promise<DeliveryRecord> {
+    return this.post<DeliveryRecord>(
+      `/interactions/${encodeURIComponent(interactionId)}/deliveries`,
+      body,
+      key,
+    );
   }
 }
 

@@ -4,6 +4,7 @@ import email
 import email.message
 import email.policy
 import hashlib
+import hmac
 import json
 import os
 from contextlib import asynccontextmanager
@@ -15,7 +16,7 @@ from sqlalchemy import select, text
 from sqlalchemy.orm import Session, sessionmaker
 
 from .auth import current_user
-from .config import Settings, get_settings
+from .config import Settings, get_settings, get_webhook_secret
 from .db import get_db, get_engine
 from .errors import APIError, install_error_handlers
 from .files import (
@@ -32,6 +33,7 @@ from .integrations.service import (
     list_inbox_items,
     process_lms_payments_json,
     process_lms_learners_file,
+    process_webhook,
     reconcile_application,
     sync_source,
 )
@@ -42,6 +44,7 @@ from .schemas import (
     AssignmentCommand,
     CommentCommand,
     CreatedReportRequest,
+    DeliveryCreate,
     InteractionCreate,
     InteractionUpdate,
     JobSnapshotRequest,
@@ -60,6 +63,7 @@ from .services import (
     catalogs,
     check_authz_epoch,
     commit_workflow_migration,
+    create_delivery,
     create_interaction,
     created_report,
     dashboard,
@@ -68,6 +72,7 @@ from .services import (
     finish_command,
     get_background_job_scoped,
     get_frozen_report_rows,
+    get_interaction_deliveries,
     iso,
     list_interactions,
     preview_workflow_migration,
@@ -503,6 +508,24 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     ):
         return assign(db, user, interaction_id, body, idempotency_key)
 
+    @app.get("/api/v1/interactions/{interaction_id}/deliveries", tags=["deliveries"])
+    def get_deliveries_endpoint(
+        interaction_id: str,
+        db: Session = Depends(get_db),
+        user: User = Depends(current_user),
+    ):
+        return get_interaction_deliveries(db, user, interaction_id)
+
+    @app.post("/api/v1/interactions/{interaction_id}/deliveries", status_code=201, tags=["deliveries"])
+    def post_delivery_endpoint(
+        interaction_id: str,
+        body: DeliveryCreate,
+        idempotency_key: str | None = Header(None, alias="Idempotency-Key"),
+        db: Session = Depends(get_db),
+        user: User = Depends(current_user),
+    ):
+        return create_delivery(db, user, interaction_id, body, idempotency_key)
+
     @app.get("/api/v1/dashboard", tags=["dashboard"])
     def get_dashboard(db: Session = Depends(get_db), user: User = Depends(current_user)):
         return dashboard(db, user)
@@ -750,8 +773,6 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             raise APIError("VALIDATION_ERROR", f"Неподдерживаемый формат экспорта '{format}'. Допустимы: xlsx, pdf, json, csv.", 422)
 
         job = get_background_job_scoped(db, user, job_id)
-        if user.role != "administrator" and job.requester_id != user.id:
-            raise APIError("NOT_FOUND", "Фоновая задача не найдена.", 404)
 
         if not check_authz_epoch(db, job.authz_epoch):
             raise APIError("REPORT_SCOPE_CHANGED", "Область видимости пользователя изменилась.", 403)
@@ -930,6 +951,51 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         user: User = Depends(current_user),
     ):
         return get_learning_metrics_summary(db, user, organization_id=organization_id, program_id=program_id)
+
+    @app.post("/api/v1/webhooks/{source}", tags=["webhooks"])
+    async def webhook_endpoint(
+        source: str,
+        request: Request,
+        db: Session = Depends(get_db),
+        config: Settings = Depends(get_settings),
+    ):
+        src = (source or "").strip().lower()
+        if src not in {"lms", "website"}:
+            raise APIError("VALIDATION_ERROR", f"Неподдерживаемый источник вебхука: '{source}'. Допустимые: 'lms', 'website'", status=400)
+
+        secret = get_webhook_secret(src, config)
+        body_bytes = await request.body()
+
+        # Check authentication headers
+        sig_header = request.headers.get("x-signature-sha256") or request.headers.get("x-hub-signature-256")
+        secret_header = request.headers.get("x-webhook-secret")
+
+        authenticated = False
+
+        if secret_header:
+            if hmac.compare_digest(secret_header.strip(), secret):
+                authenticated = True
+
+        if not authenticated and sig_header:
+            cleaned_sig = sig_header.strip()
+            if cleaned_sig.lower().startswith("sha256="):
+                cleaned_sig = cleaned_sig[7:].strip()
+            expected_hex = hmac.new(secret.encode("utf-8"), body_bytes, hashlib.sha256).hexdigest()
+            if hmac.compare_digest(cleaned_sig.lower(), expected_hex.lower()):
+                authenticated = True
+
+        if not authenticated:
+            raise APIError("UNAUTHORIZED", "Invalid webhook signature or secret", status=401)
+
+        if not body_bytes or not body_bytes.strip():
+            raise APIError("VALIDATION_ERROR", "Empty webhook payload", status=400)
+
+        try:
+            payload_data = json.loads(body_bytes.decode("utf-8"))
+        except Exception as exc:
+            raise APIError("VALIDATION_ERROR", f"Invalid JSON payload: {exc}", status=400)
+
+        return process_webhook(db, src, payload_data)
 
     return app
 

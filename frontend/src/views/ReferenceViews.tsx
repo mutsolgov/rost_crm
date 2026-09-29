@@ -26,6 +26,168 @@ export function getInitialTab(role?: string | null): HelpTab {
   return 'errors';
 }
 
+export type DemoErrorCode = "400" | "401" | "403" | "404" | "409" | "422" | "413" | "quarantine" | "500" | "502" | "503" | "504";
+
+export interface SimulatedErrorSpec {
+  statusText: string;
+  envelope: {
+    error: {
+      code: string;
+      message: string;
+      request_id: string;
+      details: Record<string, any>;
+    };
+  };
+  remediation: string;
+}
+
+export const SIMULATED_ERRORS: Record<DemoErrorCode, SimulatedErrorSpec> = {
+  "400": {
+    statusText: "HTTP 400 Bad Request: Невалидный синтаксис запроса или неверный формат параметров.",
+    envelope: {
+      error: {
+        code: "BAD_REQUEST",
+        message: "Синтаксис запроса некорректен или переданы недопустимые параметры.",
+        request_id: "req-sim-400-demo",
+        details: { invalid_field: "format", reason: "Malformed payload structure" },
+      },
+    },
+    remediation: "Проверьте формат введённых данных и корректность структуры отправляемых параметров.",
+  },
+  "401": {
+    statusText: "HTTP 401 Unauthorized: Отсутствие или истечение срока действия JWT-токена.",
+    envelope: {
+      error: {
+        code: "UNAUTHORIZED",
+        message: "Токен сессии отсутствует, просрочен или не прошел проверку подписи.",
+        request_id: "req-sim-401-demo",
+        details: { auth_scheme: "Bearer", reason: "Token expired" },
+      },
+    },
+    remediation: "Сессия истекла. Авторизуйтесь заново в системе (токен хранится исключительно in-memory, ввод сохранен).",
+  },
+  "403": {
+    statusText: "HTTP 403 Forbidden: Попытка выполнения действия вне ролевых полномочий.",
+    envelope: {
+      error: {
+        code: "FORBIDDEN",
+        message: "У текущей роли недостаточно полномочий для выполнения данной операции.",
+        request_id: "req-sim-403-demo",
+        details: { required_role: "admin | supervisor", current_role: "manager" },
+      },
+    },
+    remediation: "Обратитесь к администратору или руководителю для расширения прав доступа или назначения задачи.",
+  },
+  "404": {
+    statusText: "HTTP 404 Not Found: Zero-Oracle сокрытие при обращении к чужому объекту (152-ФЗ).",
+    envelope: {
+      error: {
+        code: "NOT_FOUND",
+        message: "Запрашиваемый ресурс не найден в области видимости текущего пользователя.",
+        request_id: "req-sim-404-demo",
+        details: { resource_type: "interaction", scope_clause: "owner_isolation_enforced" },
+      },
+    },
+    remediation: "Политика Zero-Oracle (152-ФЗ / ФСТЭК №117): сервер скрывает факт существования чужих данных. Проверьте правильность ID или запросите переназначение у руководителя.",
+  },
+  "409": {
+    statusText: "HTTP 409 Conflict: CAS revision mismatch. Карточка была изменена другим пользователем. Введенные данные сохранены.",
+    envelope: {
+      error: {
+        code: "REVISION_CONFLICT",
+        message: "Карточка была изменена другим пользователем. Ожидаемая ревизия устарела.",
+        request_id: "req-sim-409-demo",
+        details: { expected_revision: 2, current_revision: 3 },
+      },
+    },
+    remediation: "Откройте карточку в соседней вкладке, ознакомьтесь с правками коллеги, скорректируйте данные и повторите сохранение. Введённый текст не сброшен.",
+  },
+  "422": {
+    statusText: "HTTP 422 Unprocessable Entity: Для перехода на этап «Передача материалов» требуется связка программы и продукта.",
+    envelope: {
+      error: {
+        code: "VALIDATION_ERROR",
+        message: "Нарушение инварианта бизнес-логики процесса.",
+        request_id: "req-sim-422-demo",
+        details: { stage: "materials_transfer", missing_fields: ["program_id", "product_id"] },
+      },
+    },
+    remediation: "В модальном окне параметров свяжите валидную совместимую пару «программа + продукт» перед осуществлением перехода.",
+  },
+  "413": {
+    statusText: "HTTP 413 Payload Too Large: Прикрепляемый файл превышает лимит 25 МБ.",
+    envelope: {
+      error: {
+        code: "FILE_TOO_LARGE",
+        message: "Размер загружаемого вложения превышает допустимый предел 25 МБ.",
+        request_id: "req-sim-413-demo",
+        details: { max_bytes: 26214400, actual_bytes: 31457280 },
+      },
+    },
+    remediation: "Сожмите PDF или разбейте архив на тома размером до 25 МБ перед повторной отправкой.",
+  },
+  "quarantine": {
+    statusText: "HTTP 422 File Quarantine: Формат файла заблокирован антивирусным шлюзом (обнаружен исполняемый код).",
+    envelope: {
+      error: {
+        code: "FILE_TYPE_NOT_ALLOWED",
+        message: "Файл отклонен шлюзом валидации: недопустимый MIME-тип или опасные magic bytes.",
+        request_id: "req-sim-quarantine-demo",
+        details: { detected_magic: "MZ executable header", allowed_formats: ["png", "jpeg", "pdf", "zip", "gzip", "rar", "doc", "docx", "xls", "xlsx"] },
+      },
+    },
+    remediation: "Загружайте только легитимные файлы из 10 разрешённых форматов без маскировки исполняемых бинарных файлов.",
+  },
+  "500": {
+    statusText: "HTTP 500 Internal Server Error: Внутренний сбой сервера обработки запроса.",
+    envelope: {
+      error: {
+        code: "INTERNAL_SERVER_ERROR",
+        message: "Произошла непредвиденная ошибка на стороне сервера.",
+        request_id: "req-sim-500-demo",
+        details: { subsystem: "core_engine", retryable: true },
+      },
+    },
+    remediation: "Повторите попытку через несколько секунд. При сохранении ошибки передайте request_id дежурному администратору.",
+  },
+  "502": {
+    statusText: "HTTP 502 Bad Gateway: Некорректный ответ внешнего сервиса интеграции (LMS Zion / Сайт).",
+    envelope: {
+      error: {
+        code: "BAD_GATEWAY",
+        message: "Внешний шлюз интеграции вернул некорректный ответ.",
+        request_id: "req-sim-502-demo",
+        details: { upstream_service: "rtkb.zion-lms.ru", http_status: 502 },
+      },
+    },
+    remediation: "Внешний сервис временно недоступен или вернул поврежденный ответ. Пакет помещен в очередь сверки (Inbox), повторите синхронизацию позже.",
+  },
+  "503": {
+    statusText: "HTTP 503 Service Unavailable: Сервер временно недоступен (техническое обслуживание).",
+    envelope: {
+      error: {
+        code: "SERVICE_UNAVAILABLE",
+        message: "Сервис временно перегружен или находится на регламентном обслуживании.",
+        request_id: "req-sim-503-demo",
+        details: { retry_after_seconds: 30 },
+      },
+    },
+    remediation: "Сервер выполняет регламентные работы или находится под пиковой нагрузкой. Подождите 30 секунд и повторите отправку.",
+  },
+  "504": {
+    statusText: "HTTP 504 Gateway Timeout: Превышен таймаут ожидания ответа внешнего интеграционного шлюза.",
+    envelope: {
+      error: {
+        code: "GATEWAY_TIMEOUT",
+        message: "Превышено максимальное время ожидания ответа от внешнего источника.",
+        request_id: "req-sim-504-demo",
+        details: { timeout_seconds: 15, target_endpoint: "https://rtkb.zion-lms.ru/api/sync" },
+      },
+    },
+    remediation: "Внешний источник не ответил вовремя. Запрос переведен в асинхронную обработку. Ваши данные в форме сохранены.",
+  },
+};
+
 export function HelpPage() {
   const { me } = useAuth();
   const role = me?.role;
@@ -43,22 +205,19 @@ export function HelpPage() {
   // AC21 Interactive Form Input Preservation Tester State
   const [demoTitle, setDemoTitle] = useState('Взаимодействие с МГТУ по программе «Сетевые технологии»');
   const [demoComment, setDemoComment] = useState('Направлен запрос на корректировку договора перед подписанием.');
-  const [demoErrorType, setDemoErrorType] = useState<'409' | '422' | '413' | 'quarantine'>('409');
+  const [demoErrorType, setDemoErrorType] = useState<DemoErrorCode | '409' | '422' | '413' | 'quarantine'>('409');
   const [demoSimulatedError, setDemoSimulatedError] = useState<string | null>(null);
   const [demoPreserveSuccess, setDemoPreserveSuccess] = useState(false);
+  const [demoEnvelope, setDemoEnvelope] = useState<any | null>(null);
+  const [demoRemediation, setDemoRemediation] = useState<string | null>(null);
 
   function handleTriggerDemoError(e: React.FormEvent) {
     e.preventDefault();
     setDemoPreserveSuccess(true);
-    if (demoErrorType === '409') {
-      setDemoSimulatedError('HTTP 409 Conflict: CAS revision mismatch. Карточка была изменена другим пользователем. Введенные данные сохранены.');
-    } else if (demoErrorType === '422') {
-      setDemoSimulatedError('HTTP 422 Unprocessable Entity: Для перехода на этап «Передача материалов» требуется связка программы и продукта.');
-    } else if (demoErrorType === '413') {
-      setDemoSimulatedError('HTTP 413 Payload Too Large: Прикрепляемый файл превышает лимит 25 МБ.');
-    } else {
-      setDemoSimulatedError('HTTP 422 File Quarantine: Формат файла заблокирован антивирусным шлюзом (обнаружен исполняемый код).');
-    }
+    const spec = SIMULATED_ERRORS[demoErrorType as DemoErrorCode] || SIMULATED_ERRORS['409'];
+    setDemoSimulatedError(spec.statusText);
+    setDemoEnvelope(spec.envelope);
+    setDemoRemediation(spec.remediation);
   }
 
   return (
@@ -838,10 +997,18 @@ export function HelpPage() {
                     value={demoErrorType}
                     onChange={(e) => setDemoErrorType(e.target.value as any)}
                   >
+                    <option value="400">400 Bad Request (Синтаксис / параметры)</option>
+                    <option value="401">401 Unauthorized (JWT-токен)</option>
+                    <option value="403">403 Forbidden (Ролевые права)</option>
+                    <option value="404">404 Not Found (Zero-Oracle сокрытие)</option>
                     <option value="409">409 Conflict (CAS Mismatch)</option>
                     <option value="422">422 Unprocessable (Бизнес-правила)</option>
                     <option value="413">413 Payload Too Large (Файл &gt; 25 МБ)</option>
                     <option value="quarantine">422 File Quarantine (Magic Bytes)</option>
+                    <option value="500">500 Internal Server Error (Сбой сервера)</option>
+                    <option value="502">502 Bad Gateway (Шлюз LMS / Сайт)</option>
+                    <option value="503">503 Service Unavailable (Обслуживание)</option>
+                    <option value="504">504 Gateway Timeout (Таймаут шлюза)</option>
                   </select>
                 </div>
 
@@ -861,6 +1028,27 @@ export function HelpPage() {
                     <small>Сервер отклонил операцию. Пользовательские поля не сброшены.</small>
                   </div>
                 </div>
+
+                {demoRemediation && (
+                  <div className="action-hint-box" style={{ marginBottom: '8px' }}>
+                    <Icon name="help" size={16} />
+                    <div>
+                      <strong>Рекомендация по исправлению:</strong>
+                      <span> {demoRemediation}</span>
+                    </div>
+                  </div>
+                )}
+
+                {demoEnvelope && (
+                  <details style={{ marginBottom: '8px', background: '#fff', border: '1px solid var(--rtk-color-border)', borderRadius: 'var(--rtk-radius-md)', padding: '10px 14px' }}>
+                    <summary style={{ cursor: 'pointer', fontWeight: 600, fontSize: '11px', color: 'var(--rtk-color-primary)' }}>
+                      Канонический ответ API (Envelope JSON)
+                    </summary>
+                    <pre style={{ margin: '8px 0 0', padding: '10px', background: '#1e1b2e', color: '#a5f3fc', borderRadius: '6px', fontSize: '11px', overflowX: 'auto' }}>
+                      {JSON.stringify(demoEnvelope, null, 2)}
+                    </pre>
+                  </details>
+                )}
 
                 {demoPreserveSuccess && (
                   <div className="success-alert">

@@ -250,6 +250,7 @@ function ColumnSelector({
 interface SnapshotFilters {
   asOf: string;
   organizationId: string;
+  programId: string;
   ownerId: string;
   selectedColumns: string[];
 }
@@ -258,6 +259,7 @@ interface ActivityFilters {
   fromDate: string;
   toDate: string;
   organizationId: string;
+  programId: string;
   historicalOwnerId: string;
   selectedColumns: string[];
 }
@@ -266,6 +268,7 @@ interface CreatedFilters {
   fromDate: string;
   toDate: string;
   organizationId: string;
+  programId: string;
   ownerId: string;
   selectedColumns: string[];
 }
@@ -284,6 +287,7 @@ export function Reports({
   const [snapshotFilters, setSnapshotFilters] = useState<SnapshotFilters>({
     asOf: isoNow(),
     organizationId: '',
+    programId: '',
     ownerId: '',
     selectedColumns: SNAPSHOT_COLUMNS.map(c => c.key),
   });
@@ -292,6 +296,7 @@ export function Reports({
     fromDate: isoDaysAgo(30),
     toDate: isoNow(),
     organizationId: '',
+    programId: '',
     historicalOwnerId: '',
     selectedColumns: ACTIVITY_COLUMNS.map(c => c.key),
   });
@@ -300,6 +305,7 @@ export function Reports({
     fromDate: isoDaysAgo(30),
     toDate: isoNow(),
     organizationId: '',
+    programId: '',
     ownerId: '',
     selectedColumns: CREATED_COLUMNS.map(c => c.key),
   });
@@ -318,7 +324,7 @@ export function Reports({
     knowledge_cutoff: new Date().toISOString(),
     as_of_inclusive: true,
     organization_ids: snapshotFilters.organizationId ? [snapshotFilters.organizationId] : [],
-    program_ids: [],
+    program_ids: snapshotFilters.programId ? [snapshotFilters.programId] : [],
     product_ids: [],
     owner_ids: snapshotFilters.ownerId ? [snapshotFilters.ownerId] : [],
     selected_columns: snapshotFilters.selectedColumns,
@@ -330,7 +336,7 @@ export function Reports({
     knowledge_cutoff: new Date().toISOString(),
     organization_ids: activityFilters.organizationId ? [activityFilters.organizationId] : [],
     historical_owner_id: activityFilters.historicalOwnerId || undefined,
-    program_ids: [],
+    program_ids: activityFilters.programId ? [activityFilters.programId] : [],
     product_ids: [],
     owner_ids: [],
     selected_columns: activityFilters.selectedColumns,
@@ -342,7 +348,7 @@ export function Reports({
     knowledge_cutoff: new Date().toISOString(),
     organization_ids: createdFilters.organizationId ? [createdFilters.organizationId] : [],
     owner_ids: createdFilters.ownerId ? [createdFilters.ownerId] : [],
-    program_ids: [],
+    program_ids: createdFilters.programId ? [createdFilters.programId] : [],
     product_ids: [],
     selected_columns: createdFilters.selectedColumns,
   });
@@ -373,7 +379,7 @@ export function Reports({
     }
   }
 
-  async function handleExport(format: 'xlsx' | 'pdf' | 'json') {
+  async function handleExport(format: 'xlsx' | 'pdf' | 'csv' | 'json') {
     setExporting(true);
     setError(null);
     try {
@@ -507,6 +513,18 @@ export function Reports({
                   </select>
                 </label>
                 <label className="field">
+                  <span>Программа</span>
+                  <select
+                    value={snapshotFilters.programId}
+                    onChange={e => setSnapshotFilters(prev => ({ ...prev, programId: e.target.value }))}
+                  >
+                    <option value="">Все программы</option>
+                    {catalogs.programs.map(item => (
+                      <option key={item.id} value={item.id}>{item.name}</option>
+                    ))}
+                  </select>
+                </label>
+                <label className="field">
                   <span>Ответственный</span>
                   <select
                     value={snapshotFilters.ownerId}
@@ -560,6 +578,18 @@ export function Reports({
                   </select>
                 </label>
                 <label className="field">
+                  <span>Программа</span>
+                  <select
+                    value={activityFilters.programId}
+                    onChange={e => setActivityFilters(prev => ({ ...prev, programId: e.target.value }))}
+                  >
+                    <option value="">Все программы</option>
+                    {catalogs.programs.map(item => (
+                      <option key={item.id} value={item.id}>{item.name}</option>
+                    ))}
+                  </select>
+                </label>
+                <label className="field">
                   <span>Исторический ответственный</span>
                   <select
                     value={activityFilters.historicalOwnerId}
@@ -608,6 +638,18 @@ export function Reports({
                   >
                     <option value="">Все доступные организации</option>
                     {catalogs.organizations.map(item => (
+                      <option key={item.id} value={item.id}>{item.name}</option>
+                    ))}
+                  </select>
+                </label>
+                <label className="field">
+                  <span>Программа</span>
+                  <select
+                    value={createdFilters.programId}
+                    onChange={e => setCreatedFilters(prev => ({ ...prev, programId: e.target.value }))}
+                  >
+                    <option value="">Все программы</option>
+                    {catalogs.programs.map(item => (
                       <option key={item.id} value={item.id}>{item.name}</option>
                     ))}
                   </select>
@@ -678,6 +720,14 @@ export function Reports({
                 title="Скачать отчёт в формате векторного PDF с колонтитулами Ростелеком"
               >
                 <Icon name="download" size={16} />Скачать PDF
+              </Button>
+              <Button
+                variant="secondary"
+                disabled={exporting}
+                onClick={() => handleExport('csv')}
+                title="Скачать отчёт в формате CSV с поддержкой Excel (UTF-8 BOM)"
+              >
+                <Icon name="download" size={16} />Скачать CSV
               </Button>
               <Button
                 variant="secondary"
@@ -849,7 +899,7 @@ export function Reports({
         <div className="panel empty-report">
           <Icon name="chart" size={32} />
           <h2>Параметры отчёта настроены</h2>
-          <p>Нажмите «Построить отчёт», чтобы рассчитать данные и открыть экспорт в XLSX, PDF и JSON.</p>
+          <p>Нажмите «Построить отчёт», чтобы рассчитать данные и открыть экспорт в XLSX, PDF, CSV и JSON.</p>
         </div>
       )}
 

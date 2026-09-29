@@ -1,10 +1,10 @@
-import { useState, useRef } from 'react';
+import { useState, useRef, useEffect } from 'react';
 import type { FormEvent } from 'react';
 import type { ApiClient } from '../api';
 import { ApiError, makeMutationKey, messageOf } from '../api';
 import { useResource } from '../hooks';
 import { Avatar, Button, ErrorAlert, Icon, Loading, Modal, PageHeader, StageBadge, eventNames, formatDate } from '../ui';
-import type { Attachment, Catalogs, Interaction, InteractionDetail, InteractionUpdatePayload, Transition, User, Workflow } from '../types';
+import type { Attachment, Catalogs, CreateDeliveryPayload, DeliveryRecord, Interaction, InteractionDetail, InteractionUpdatePayload, Transition, User, Workflow } from '../types';
 import { WorkflowGraphView } from './WorkflowGraphView';
 
 const ALLOWED_EXTENSIONS = new Set([
@@ -320,6 +320,124 @@ export function TransitionCommentModal({
   );
 }
 
+export function PreviewModal({
+  attachment,
+  previewUrl,
+  onClose,
+}: {
+  attachment: Attachment;
+  previewUrl: string;
+  onClose: () => void;
+}) {
+  const ext = attachment.file_name.split('.').pop()?.toLowerCase() || '';
+  const isPdf = ext === 'pdf' || attachment.content_type === 'application/pdf';
+
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') onClose();
+    };
+    const prevOverflow = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    document.addEventListener('keydown', handleKeyDown);
+    return () => {
+      document.body.style.overflow = prevOverflow;
+      document.removeEventListener('keydown', handleKeyDown);
+    };
+  }, [onClose]);
+
+  return (
+    <div
+      className="modal-backdrop"
+      onMouseDown={(e) => {
+        if (e.target === e.currentTarget) onClose();
+      }}
+    >
+      <div
+        role="dialog"
+        aria-modal="true"
+        aria-label={`Предпросмотр: ${attachment.file_name}`}
+        className="modal modal-wide"
+        style={{
+          width: isPdf ? 'min(980px, 95vw)' : 'min(860px, 95vw)',
+          maxWidth: '95vw',
+          maxHeight: 'calc(100vh - 32px)',
+          display: 'flex',
+          flexDirection: 'column',
+          boxShadow: 'var(--rtk-shadow-modal, 0 20px 48px rgba(16, 24, 40, 0.2))',
+        }}
+      >
+        <div className="modal-heading" style={{ flexShrink: 0 }}>
+          <div>
+            <h2>Предпросмотр файла</h2>
+            <p>{attachment.file_name} ({formatFileSize(attachment.file_size)})</p>
+          </div>
+          <button className="icon-button" aria-label="Закрыть" onClick={onClose}>
+            <Icon name="close" />
+          </button>
+        </div>
+        <div
+          className="modal-body"
+          style={{
+            flex: 1,
+            overflow: 'auto',
+            padding: '16px',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            background: isPdf ? '#FFFFFF' : '#1A1D24',
+            borderRadius: '0 0 12px 12px',
+            minHeight: isPdf ? '80vh' : 'auto',
+          }}
+        >
+          {isPdf ? (
+            <iframe
+              src={previewUrl}
+              title={attachment.file_name}
+              style={{
+                width: '100%',
+                height: '80vh',
+                border: 'none',
+                borderRadius: '4px',
+                display: 'block',
+              }}
+            />
+          ) : (
+            <img
+              src={previewUrl}
+              alt={attachment.file_name}
+              style={{
+                maxWidth: '100%',
+                maxHeight: '75vh',
+                objectFit: 'contain',
+                borderRadius: '4px',
+                display: 'block',
+              }}
+            />
+          )}
+        </div>
+        <div
+          className="modal-actions"
+          style={{
+            flexShrink: 0,
+            display: 'flex',
+            justifyContent: 'space-between',
+            alignItems: 'center',
+            padding: '12px 24px',
+            background: '#FBFBFC',
+            borderTop: '1px solid #EFEDF3',
+          }}
+        >
+          <div style={{ fontSize: '12px', color: '#667085' }}>
+            Безопасный просмотр без принудительного сохранения на диск
+          </div>
+          <Button variant="ghost" onClick={onClose}>
+            Закрыть
+          </Button>
+        </div>
+      </div>
+    </div>
+  );
+}
 
 export function DeleteAttachmentModal({
   attachment,
@@ -361,6 +479,173 @@ export function DeleteAttachmentModal({
           {busy ? 'Удаление…' : 'Удалить вложение'}
         </Button>
       </div>
+    </Modal>
+  );
+}
+
+interface RegisterDeliveryModalProps {
+  api: ApiClient;
+  interaction: InteractionDetail;
+  catalogs: Catalogs;
+  onClose: () => void;
+  onSaved: (delivery: DeliveryRecord) => void;
+}
+
+function RegisterDeliveryModal({
+  api,
+  interaction,
+  catalogs,
+  onClose,
+  onSaved,
+}: RegisterDeliveryModalProps) {
+  const orgContacts = (catalogs.contacts || []).filter(c => c.organization_id === interaction.organization_id);
+  const orgLicenses = (catalogs.licenses || []).filter(l => l.organization_id === interaction.organization_id);
+
+  const defaultTitle = interaction.product_name
+    ? `Дистрибутив ${interaction.product_name}`
+    : 'Дистрибутив ПО и лицензии';
+
+  const [title, setTitle] = useState(defaultTitle);
+  const [materialVersion, setMaterialVersion] = useState('');
+  const [channel, setChannel] = useState('email');
+  const [recipientContactId, setRecipientContactId] = useState(interaction.contact_id || '');
+  const [licenseId, setLicenseId] = useState(interaction.license_id || '');
+  const [comment, setComment] = useState('');
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<unknown>(null);
+
+  async function handleSubmit(e: FormEvent) {
+    e.preventDefault();
+    if (!title.trim()) {
+      setError(new Error('Укажите наименование пакета ПО.'));
+      return;
+    }
+    setSaving(true);
+    setError(null);
+    try {
+      const payload: CreateDeliveryPayload = {
+        title: title.trim(),
+        item_kind: 'license',
+        channel,
+        material_version: materialVersion.trim() || undefined,
+        recipient_contact_id: recipientContactId || undefined,
+        license_id: licenseId || undefined,
+        comment: comment.trim() || undefined,
+        expected_revision: interaction.revision,
+      };
+      const res = await api.createDelivery(interaction.id, payload, makeMutationKey());
+      onSaved(res);
+      onClose();
+    } catch (err) {
+      setError(err);
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <Modal
+      title="Фиксация выдачи ПО и лицензий"
+      subtitle={`Организация: ${interaction.organization_name}`}
+      onClose={onClose}
+      busy={saving}
+      wide
+    >
+      <form onSubmit={handleSubmit}>
+        <div className="modal-body">
+          <ErrorAlert error={error} />
+          <div className="form-grid">
+            <label className="field span-2">
+              <span>Наименование пакета ПО / лицензии <b>*</b></span>
+              <input
+                value={title}
+                onChange={e => setTitle(e.target.value)}
+                placeholder="например, Дистрибутив ОС Роса и лицензионные ключи"
+                required
+                maxLength={250}
+              />
+            </label>
+
+            <label className="field">
+              <span>Версия ПО / дистрибутива</span>
+              <input
+                value={materialVersion}
+                onChange={e => setMaterialVersion(e.target.value)}
+                placeholder="например, v2.4.1"
+                maxLength={120}
+              />
+            </label>
+
+            <label className="field">
+              <span>Канал передачи <b>*</b></span>
+              <select value={channel} onChange={e => setChannel(e.target.value)} required>
+                <option value="email">Электронная почта (Email)</option>
+                <option value="portal">Партнёрский портал</option>
+                <option value="courier">Передача курьером / нарочно</option>
+                <option value="direct">Защищённый канал / прямая ссылка</option>
+              </select>
+            </label>
+
+            <label className="field">
+              <span>Контактное лицо получателя</span>
+              <select
+                value={recipientContactId}
+                onChange={e => setRecipientContactId(e.target.value)}
+              >
+                <option value="">Не указано (по умолчанию)</option>
+                {orgContacts.map(c => (
+                  <option key={c.id} value={c.id}>
+                    {c.full_name}{c.position ? ` (${c.position})` : ''}
+                  </option>
+                ))}
+              </select>
+            </label>
+
+            <label className="field">
+              <span>Лицензия ПО</span>
+              <select
+                value={licenseId}
+                onChange={e => setLicenseId(e.target.value)}
+              >
+                <option value="">Без привязки к лицензии</option>
+                {orgLicenses.map(l => {
+                  const prod = catalogs.products.find(p => p.id === l.product_id);
+                  const prodName = prod ? `${prod.name} (${prod.vendor})` : l.product_id;
+                  const termStr = l.term_years ? `${l.term_years} г.` : 'бессрочно';
+                  return (
+                    <option key={l.id} value={l.id}>
+                      {prodName} — статус: {l.transfer_status}, срок: {termStr}
+                    </option>
+                  );
+                })}
+              </select>
+            </label>
+
+            <label className="field span-2">
+              <span>Примечание к выдаче</span>
+              <textarea
+                value={comment}
+                onChange={e => setComment(e.target.value)}
+                placeholder="Реквизиты сопроводительного письма, номер накладной или комментарий"
+                maxLength={5000}
+                rows={3}
+              />
+            </label>
+          </div>
+        </div>
+        <div className="modal-actions">
+          <Button variant="secondary" type="button" onClick={onClose} disabled={saving}>
+            Отмена
+          </Button>
+          <Button type="submit" disabled={saving}>
+            {saving ? (
+              <><span className="spinner small" />Сохраняем…</>
+            ) : (
+              <><Icon name="check" size={17} />Зафиксировать выдачу</>
+            )}
+          </Button>
+        </div>
+      </form>
     </Modal>
   );
 }
@@ -435,13 +720,36 @@ export function InteractionPage({ id, api, catalogs, workflow, me, revision, onC
   const [uploadSuccess, setUploadSuccess] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
+  const [previewModalTarget, setPreviewModalTarget] = useState<{ attachment: Attachment; previewUrl: string; cleanup: () => void } | null>(null);
   const [deleteAttachmentTarget, setDeleteAttachmentTarget] = useState<Attachment | null>(null);
   const [deleting, setDeleting] = useState(false);
   const [deleteError, setDeleteError] = useState<unknown>(null);
   const [historyTab, setHistoryTab] = useState<'all' | 'comments' | 'stages'>('all');
 
+  useEffect(() => {
+    return () => {
+      if (previewModalTarget) {
+        previewModalTarget.cleanup();
+      }
+    };
+  }, [previewModalTarget]);
+
+  const [delivRevision, setDelivRevision] = useState(0);
+  const deliveriesResource = useResource<DeliveryRecord[]>(
+    () => api.getDeliveries(id),
+    [api, id, revision, delivRevision]
+  );
+  const [createDeliveryOpen, setCreateDeliveryOpen] = useState(false);
+
   const item = resource.data;
   const attachmentsList = attachmentsResource.data || item?.attachments || [];
+  const deliveriesList = deliveriesResource.data || item?.deliveries || [];
+
+  function handleDeliverySaved(newDeliv: DeliveryRecord) {
+    setDelivRevision(v => v + 1);
+    setNotice(`Выдача ПО «${newDeliv.items?.[0]?.title || 'Поставка'}» успешно зафиксирована.`);
+    onChanged();
+  }
 
   async function handleFileUpload(file: File) {
     setUploadError(null);
@@ -485,6 +793,30 @@ export function InteractionPage({ id, api, catalogs, workflow, me, revision, onC
   }
 
   async function handleOpenPreview(att: Attachment) {
+    setError(null);
+    try {
+      const { blobUrl, cleanup } = await api.previewAttachmentBlob(
+        `/interactions/${encodeURIComponent(id)}/attachments/${encodeURIComponent(att.id)}/download?disposition=inline`
+      );
+      setPreviewModalTarget({ attachment: att, previewUrl: blobUrl, cleanup });
+    } catch (err) {
+      try {
+        await handleOpenPreviewInTab(att);
+      } catch {
+        setError(err);
+      }
+    }
+  }
+
+  function handleClosePreview() {
+    if (previewModalTarget) {
+      previewModalTarget.cleanup();
+      setPreviewModalTarget(null);
+    }
+  }
+
+  // Fallback tab viewer: safely manages popup blockers and tab lifecycle
+  async function handleOpenPreviewInTab(att: Attachment) {
     setError(null);
     const targetWindow = window.open('about:blank', '_blank');
     if (!targetWindow || targetWindow.closed) {
@@ -655,7 +987,9 @@ export function InteractionPage({ id, api, catalogs, workflow, me, revision, onC
       type: event.type,
       isComment: event.type === 'comment_added' || event.type === 'comment',
       title: eventNames[event.type] || event.type,
-      text: event.comment || (event.to_state ? 'Этап: ' + (workflow?.states?.find(state => state.code === event.to_state)?.name || event.to_state) : (event.file_name ? `Файл: ${event.file_name}` : '')),
+      text: event.type === 'delivery_recorded'
+        ? `Выдано ПО: ${(event as any).title || 'Пакет ПО'}${(event as any).material_version ? ` (версия ${(event as any).material_version})` : ''} · Канал: ${(event as any).channel || 'email'}`
+        : event.comment || (event.to_state ? 'Этап: ' + (workflow?.states?.find(state => state.code === event.to_state)?.name || event.to_state) : (event.file_name ? `Файл: ${event.file_name}` : '')),
       meta: `${event.actor_name} · ${formatDate(event.effective_at)}`,
     })),
     ...standaloneComments.map(entry => ({
@@ -920,6 +1254,83 @@ export function InteractionPage({ id, api, catalogs, workflow, me, revision, onC
       )}
     </section>
 
+    {/* Секция «Выдача ПО и лицензий (Поставки)» */}
+    <section className="panel deliveries-section" style={{ padding: '22px' }}>
+      <div className="panel-heading">
+        <div>
+          <span className="eyebrow">ПОСТАВКА И ЛИЦЕНЗИРОВАНИЕ</span>
+          <h2>Выдача ПО и лицензий (Поставки)</h2>
+          <p>Реестр передачи дистрибутивов, ключей и лицензионных пакетов организации</p>
+        </div>
+        <div style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
+          <span className="quiet-badge">{deliveriesList.length} {deliveriesList.length === 1 ? 'поставка' : deliveriesList.length < 5 ? 'поставки' : 'поставок'}</span>
+          {!isClosed && (
+            <Button
+              variant="secondary"
+              onClick={() => setCreateDeliveryOpen(true)}
+              disabled={busy}
+            >
+              <Icon name="check" size={16} />Зафиксировать выдачу ПО
+            </Button>
+          )}
+        </div>
+      </div>
+
+      {deliveriesList.length > 0 ? (
+        <div className="file-list" style={{ marginTop: '12px' }}>
+          {deliveriesList.map(deliv => {
+            const firstItem = deliv.items?.[0];
+            const channelLabels: Record<string, string> = {
+              email: 'Email',
+              portal: 'Партнёрский портал',
+              courier: 'Курьер',
+              direct: 'Защищённый канал',
+            };
+            const channelLabel = channelLabels[deliv.channel] || deliv.channel;
+
+            return (
+              <div key={deliv.id} className="file-item">
+                <div className="file-item-left">
+                  <span className="format-badge format-xls" style={{ background: '#E0EAFF', color: '#3538CD' }}>
+                    ПО
+                  </span>
+                  <div className="file-meta">
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                      <strong>{firstItem?.title || 'Пакет ПО'}</strong>
+                      {firstItem?.material_version && (
+                        <span className="stage-badge tone-purple" style={{ fontSize: '11px', padding: '2px 6px' }}>
+                          {firstItem.material_version}
+                        </span>
+                      )}
+                    </div>
+                    <small>
+                      Канал: <strong>{channelLabel}</strong> · Получатель: {deliv.recipient_contact_name || 'Контакт вуза'} · {formatDate(deliv.confirmed_at || deliv.sent_at || deliv.created_at)}
+                      {deliv.recorded_by_name ? ` · Зафиксировал ${deliv.recorded_by_name}` : ''}
+                    </small>
+                    {deliv.comment && (
+                      <small style={{ color: '#475467', marginTop: '2px' }}>
+                        «{deliv.comment}»
+                      </small>
+                    )}
+                  </div>
+                </div>
+                <div className="file-actions" style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+                  <span className="stage-badge tone-green" style={{ fontSize: '12px' }}>
+                    <i />
+                    Подтверждено
+                  </span>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      ) : (
+        <p className="empty-inline" style={{ marginTop: '12px' }}>
+          Выдача ПО пока не регистрировалась.
+        </p>
+      )}
+    </section>
+
     {/* Интерактивный граф жизненного цикла карточки */}
     <WorkflowGraphView currentState={item.state} />
 
@@ -1007,6 +1418,14 @@ export function InteractionPage({ id, api, catalogs, workflow, me, revision, onC
     )}
 
 
+    {previewModalTarget && (
+      <PreviewModal
+        attachment={previewModalTarget.attachment}
+        previewUrl={previewModalTarget.previewUrl}
+        onClose={handleClosePreview}
+      />
+    )}
+
     {deleteAttachmentTarget && (
       <DeleteAttachmentModal
         attachment={deleteAttachmentTarget}
@@ -1014,6 +1433,16 @@ export function InteractionPage({ id, api, catalogs, workflow, me, revision, onC
         error={deleteError}
         onClose={() => setDeleteAttachmentTarget(null)}
         onConfirm={handleDeleteAttachment}
+      />
+    )}
+
+    {createDeliveryOpen && item && (
+      <RegisterDeliveryModal
+        api={api}
+        interaction={item}
+        catalogs={catalogs}
+        onClose={() => setCreateDeliveryOpen(false)}
+        onSaved={handleDeliverySaved}
       />
     )}
   </>;

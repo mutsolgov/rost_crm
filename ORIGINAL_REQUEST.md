@@ -3650,3 +3650,363 @@ Integrity mode: development
 - [ ] Системный оракул `python3 docs/checks/verify_infra.py` проходит со статусом PASS.
 - [ ] Каталог `docs/architecture/` строго READ-ONLY (0 байт diff).
 - [ ] 0 новых сторонних npm или pip пакетов (Ponytail Ladder).
+
+
+## 2026-09-28T18:44:40Z
+
+# Teamwork Project Prompt — Launched
+
+> Status: Launched  
+> Goal: Craft prompt → get user approval → delegate to teamwork_preview  
+> Requested team: Engineering Review, Ponytail Guardian & Quality Assurance Team
+
+Комплексный аудит, ревизия кода на предмет оверинжиниринга (Ponytail), проверка соответствия 152-ФЗ, валидация фронтенда/бэкенда и устранение выявленных замечаний по выполненной задаче SWE-26 (Deliveries API, UI поставок в карточке взаимодействия, панель лицензий в справочниках).
+
+Working directory: /home/muhammad/Dev/HACKATHON/LCT/rost_crm  
+Integrity mode: development
+
+## Requirements
+
+### R1. Ревизия на оверинжиниринг и чистоту кода (Ponytail Review)
+- Провести аудит изменений в файлах `backend/app/services.py`, `backend/app/main.py`, `backend/app/schemas.py`, `frontend/src/api.ts`, `frontend/src/types.ts`, `frontend/src/views/InteractionPage.tsx`, `frontend/src/views/CatalogPage.tsx`.
+- Выявить и устранить любые избыточные абстракции, дублирование логики, неиспользуемые импорты или избыточный код в соответствии с принципами «Лестницы» (The Ladder) и правилом минимального diff.
+- Проверить переиспользование существующих стилей Gen2 Light Theme без создания дублирующих классов.
+
+### R2. Контроль безопасности и инвариантов 152-ФЗ / ФСТЭК №117
+- Проверить строгое сокрытие чужих карточек взаимодействий и связанных поставок (чужой `interaction_id` обязан возвращать HTTP 404 Not Found, не раскрывая факт существования записи).
+- Убедиться, что эндпоинты поставок не позволяют несанкционированно привязывать лицензии или контакты сторонних организаций.
+- Проверить корректность CAS-проверки (`expected_revision`) и обработку заголовка `Idempotency-Key` (защита от повторных списаний/поставок).
+
+### R3. Проверка функциональности и контрактов API
+- Проверить корректность эндпоинтов:
+  * `GET /api/v1/interactions/{interaction_id}/deliveries`
+  * `POST /api/v1/interactions/{interaction_id}/deliveries`
+- Проверить фиксацию неизменяемого события `delivery_recorded` в `InteractionEvent` и его корректное отображение в таймлайне решений.
+- Проверить интеграцию списка поставок в эндпоинт детальной карточки `GET /api/v1/interactions/{id}` (`detail`).
+
+### R4. Проверка веб-интерфейса и реактивности (SPA)
+- Проверить секцию «Выдача ПО и лицензий (Поставки)» в `InteractionPage.tsx`:
+  * Корректность отображения пустого состояния («Выдача ПО пока не регистрировалась»).
+  * Работу модального окна `RegisterDeliveryModal` (валидация обязательных полей, фильтрация контактов и лицензий только текущей организации).
+  * Реактивное обновление таблицы поставок и таймлайна без перезагрузки всей страницы в браузере (SPA).
+- Проверить панель «Лицензии ПО» в `CatalogPage.tsx` (корректность сопоставления с `products`, бейджи статусов передачи и сроки действия).
+
+### R5. Устранение любых выявленных дефектов (Remediation)
+- При обнаружении любых ошибок, неточностей, лишних строк кода или оверинжиниринга — внести точечные исправления непосредственно в кодовую базу.
+
+## Verification Resources
+- Набор тестов API и моделей: `backend/tests/test_swe26_deliveries_api.py`, `backend/tests/test_deliveries_models.py`, `backend/tests/test_working_slice.py`.
+- Полный тестовый сьют: `backend/.venv/bin/pytest backend/tests/`.
+- Системные оракулы:
+  * `python3 docs/checks/verify_infra.py`
+  * `python3 docs/checks/verify_workflow.py`
+  * `python3 docs/checks/verify_reports.py`
+  * `python3 docs/checks/verify_plan.py`
+- Сборка фронтенда: `npm run build` в `frontend/`.
+- Архитектурная документация: `docs/planning/adr/003-deliveries-api-and-license-transfer.md`.
+
+## Acceptance Criteria
+
+### Качество кода и Ponytail
+- [ ] Отсутствуют избыточные конструкции, неиспользуемые переменные, дублирующийся код и надуманные абстракции.
+- [ ] 0 новых сторонних зависимостей в `frontend/package.json` и `backend/requirements.txt`.
+- [ ] Директория `docs/architecture/` строго не изменена (`git diff docs/architecture/` равен 0 байт).
+
+### Безопасность и 152-ФЗ
+- [ ] Доступ к чужим поставкам или карточкам возвращает строгий HTTP 404 Not Found (Zero-Oracle).
+- [ ] При создании поставки валидируется принадлежность лицензии и контакта к организации карточки.
+- [ ] CAS-защита и идемпотентность функционируют корректно.
+
+### Тестирование и сборка
+- [ ] Сборка фронтенда `npm run build` проходит без единой ошибки TypeScript (0 errors).
+- [ ] Все 4 системных оракула (`verify_infra`, `verify_workflow`, `verify_reports`, `verify_plan`) возвращают статус PASS.
+- [ ] Все тесты в `backend/tests/` (563+ тестов) проходят со 100% успехом (0 failed).
+- [ ] Обновленные файлы синхронизированы с рабочими Docker-контейнерами `rtk-crm-api-1` и `rtk-crm-frontend-1`.
+
+
+## 2026-09-28T20:02:01Z
+
+# Teamwork Project Prompt — Launched
+
+> Status: Launched  
+> Goal: Craft prompt → get user approval → delegate to teamwork_preview  
+> Requested team: Security Auditor, Backend Inspector, Frontend/Browser QA & Victory Auditor
+
+Глубокий, беспристрастный 4-шаговый аудит проекта `rost_crm` по пятому функциональному домену: загрузка, валидация и безопасное хранение файлов-вложений, потоковая интеграция с антивирусом ClamAV, изоляция доступа к скачиванию (152-ФЗ / ФСТЭК №117, Zero-Oracle 404) и неудаляемый журнал аудита операций.
+
+Working directory: /home/muhammad/Dev/HACKATHON/LCT/rost_crm  
+Integrity mode: development
+
+## Requirements
+
+### R1. Аудит бэкенда, БД и валидации файлов (Files & ClamAV Engine)
+- Проверить модель `Attachment` в `backend/app/models.py` и модуль `backend/app/files.py`:
+  * Список строго 10 разрешённых расширений: `png, jpeg, pdf, zip, gzip, rar, doc, docx, xls, xlsx` (плюс алиасы `jpg, gz`).
+  * Проверка жесткого лимита размера файла: ровно 25 МБ (26 214 400 байт), отказ с кодом HTTP 413 `FILE_TOO_LARGE`.
+  * Валидация сигнатур (magic bytes) и блокировка исполняемых/опасных форматов (PE EXE/DLL `MZ`, ELF, PHP, `<script`, Mach-O) с кодом HTTP 422 `FILE_TYPE_NOT_ALLOWED`.
+  * Санитизация имени файла (защита от path traversal, относительных путей `..` и нулевых байтов ` `).
+  * Потоковая интеграция со сканером ClamAV (`scan_clamav_stream` по протоколу zINSTREAM на порт 3310). Корректная обработка сигнатур `FOUND` (HTTP 422 `VIRUS_DETECTED`) и отказоустойчивость при недоступности демона (HTTP 503 `ANTIVIRUS_UNAVAILABLE`).
+- Проверить эндпоинты в `backend/app/main.py`:
+  * `POST /api/v1/interactions/{id}/attachments` (загрузка с расчётом SHA-256, поддержкой CAS `expected_revision` и `Idempotency-Key`).
+  * `GET /api/v1/interactions/{id}/attachments` (список вложений карточки).
+  * `GET /api/v1/interactions/{id}/attachments/{att_id}/download` (скачивание с проверкой прав, заголовком Content-Disposition и inline-preview).
+  * `DELETE /api/v1/interactions/{id}/attachments/{att_id}` (удаление файла с проверкой CAS, ролей и записью в `InteractionEvent`).
+
+### R2. Инварианты безопасности 152-ФЗ, ФСТЭК №117 и аудит
+- Проверить Zero-Oracle изоляцию: попытка прямого запроса чужого файла/карточки (`scoped_interaction`) обязана возвращать строгий HTTP 404 Not Found (не раскрывая факт существования записи).
+- Проверить запрет прямых публичных ссылок: скачивание строго через авторизованный эндпоинт с проверкой JWT токена текущего пользователя.
+- Проверить фиксацию неизменяемых событий аудита:
+  * При загрузке файла фиксируется `attachment_uploaded` с указанием `attachment_id`, `file_name`, `file_size`, `checksum`.
+  * При удалении файла фиксируется `attachment_deleted` с сохранением метаданных удалённого файла.
+
+### R3. Статический и компонентный аудит фронтенда (`InteractionPage.tsx`)
+- В компоненте `frontend/src/views/InteractionPage.tsx`:
+  * Блок «Файлы и документы»: отображение таблицы вложений, размера, даты, автора и бейджей статусов.
+  * Модальное окно загрузки: drag-and-drop зона, валидация допустимых типов на клиенте, индикация прогресса.
+  * Модальное окно предпросмотра (`PreviewModal`): безопасный просмотр PDF и картинок (`image/png`, `image/jpeg`) без принудительного сохранения на диск.
+  * Модальное окно удаления (`DeleteAttachmentModal`): подтверждение удаления без сброса формы и без канцелярских блоков.
+  * Реактивность SPA: добавление и удаление вложений обновляет список реактивно без перезагрузки всей страницы в браузере.
+
+### R4. Сквозное интерактивное тестирование (E2E Browser & Adversarial)
+- Провести тестирование в реальном браузере через субагента `browser` на стенде `http://localhost:3000`:
+  * Под `manager-a` («Анна Смирнова»): загрузка валидного файла (PDF/PNG), скачивание, предпросмотр, удаление с проверкой появления события в таймлайне.
+  * Попытка загрузки вредоносного файла / EICAR сигнатуры: фиксация блокировки антивирусом ClamAV.
+  * Под `manager-b` («Михаил Волков»): проверка сокрытия по 152-ФЗ при попытке прямого обращения к вложению менеджера А (строгий HTTP 404).
+  * Проверка локальных хранилищ браузера (`localStorage`, `sessionStorage`): подтверждение отсутствия JWT-токенов в веб-хранилищах (только in-memory).
+
+### R5. Устранение выявленных дефектов (Remediation) и итоговый отчёт
+- При обнаружении любых ошибок валидации, уязвимостей, регрессий или несоответствий ТЗ — внести минимальные точечные исправления в кодовую базу в соответствии с принципами Ponytail.
+- Сформировать подробный отчёт с матрицей покрытия (R10, R11, R27, B17, B18, B19, AC16, AC17, AC22).
+
+## Verification Resources
+- Наборы тестов вложений и ClamAV:
+  * `backend/tests/test_attachments.py` (40 тестов)
+  * `backend/tests/test_clamav.py` (26 тестов)
+  * Регрессионный срез: `backend/tests/test_working_slice.py` (17 тестов)
+- Системные оракулы:
+  * `python3 docs/checks/verify_infra.py` (проверка Docker ClamAV, Nginx 25MB, volumes)
+  * `python3 docs/checks/verify_workflow.py`
+  * `python3 docs/checks/verify_reports.py`
+  * `python3 docs/checks/verify_plan.py`
+- Сборка фронтенда: `cd frontend && npm run build` (0 TypeScript errors)
+- Работающий стек Docker: `rtk-crm-clamav-1` (порт 3310), `rtk-crm-api-1`, `rtk-crm-frontend-1`
+
+## Acceptance Criteria
+
+### Валидация и безопасность файлов (R10, R11, R27)
+- [ ] Разрешены ровно 10 расширений из ТЗ: `png, jpeg, pdf, zip, gzip, rar, doc, docx, xls, xlsx` (и алиасы `jpg, gz`); все остальные отклоняются с кодом 422.
+- [ ] Файлы размером > 25 МБ отклоняются с кодом 413 `FILE_TOO_LARGE`.
+- [ ] Опасные исполняемые файлы (PE EXE, ELF, скрипты) блокируются по magic bytes даже при подмене расширения (422).
+- [ ] Сигнатура EICAR / вирусы блокируются ClamAV с кодом 422 `VIRUS_DETECTED`.
+- [ ] Запросы чужих файлов/карточек возвращают строго HTTP 404 Not Found (Zero-Oracle).
+- [ ] При удалении файла генерируется неизменяемое событие `attachment_deleted` в `InteractionEvent`.
+
+### Пользовательский интерфейс и E2E
+- [ ] Загрузка, предпросмотр и удаление вложений работают без перезагрузки всей страницы браузера (SPA).
+- [ ] Удаление файла требует подтверждения в модальном окне и реактивно удаляет карточку файла из списка.
+- [ ] JWT-токены не сохраняются в `localStorage` или `sessionStorage` (152-ФЗ / ФСТЭК №117).
+
+### Инварианты репозитория и качество
+- [ ] Все тесты `test_attachments.py` и `test_clamav.py` (66 тестов) проходят со 100% успехом.
+- [ ] Регрессионный срез `test_working_slice.py` проходит со 100% успехом.
+- [ ] Все 4 системных оракула (`verify_infra`, `verify_workflow`, `verify_reports`, `verify_plan`) возвращают PASS.
+- [ ] Сборка фронтенда `npm run build` проходит с 0 ошибок TypeScript.
+- [ ] Директория `docs/architecture/` строго не изменена (0 байт diff).
+- [ ] 0 новых сторонних зависимостей в `requirements.txt` и `package.json`.
+
+## 2026-09-28T20:58:44Z
+
+# Teamwork Project Prompt — Launched
+
+> Status: Launched  
+> Goal: Craft prompt → get user approval → delegate to teamwork_preview  
+> Requested team: Audit & Verification Team (Backend, Security 152-FZ, Frontend/Browser QA & Victory Auditor)
+
+Глубокий, беспристрастный 4-шаговый аудит проекта `rost_crm` по шестому функциональному домену: ведение хронологической ленты «История решений», разделение типов событий (все события, комментарии, переходы), неизменяемый аудит-лог (152-ФЗ / ФСТЭК №117) и механизм фиксации заметок сотрудников.
+
+Working directory: /home/muhammad/Dev/HACKATHON/LCT/rost_crm  
+Integrity mode: development
+
+## Requirements
+
+### R1. Аудит бэкенда, моделей и неизменяемого журнала событий (Event Journal & Comments)
+- Проверить модель `InteractionEvent` и `Comment` в `backend/app/models.py`:
+  * Наличие полей: первичный ключ UUID (`id`), внешний ключ `interaction_id`, тип события `type` (`initial_state`, `state_changed`, `owner_changed`, `comment_added`, `attachment_uploaded`, `attachment_deleted`, `delivery_recorded`), `user_id`, метка времени `effective_at`, монотонно возрастающий порядковый номер `sequence`, `payload` (JSONB) и строковые атрибуты (`from_state`, `to_state`, `comment`, `file_name`, и др.).
+- Проверить сервисные функции в `backend/app/services.py`:
+  * `append_event`: строго атомарная вставка в `InteractionEvent` с автоматическим инкрементом `sequence` и ревизии `revision`. Запрет модификации или удаления существующих записей (immutable audit log).
+  * `add_comment`: проверка прав доступа (`interactions.comment`), проверка области доступа к взаимодействию (`scoped_interaction`), валидация непустого текста заметки, атомарное создание `Comment` и фиксация события `comment_added` в таймлайне.
+- Проверить эндпоинты в `backend/app/main.py`:
+  * `POST /api/v1/interactions/{id}/comments` (добавление комментария с CAS-проверкой `expected_revision` и `Idempotency-Key`).
+  * `GET /api/v1/interactions/{id}` (отдача упорядоченного массива событий `history` и `comments`).
+  * `GET /api/v1/interactions/{id}/history` (при наличии отдельного эндпоинта).
+
+### R2. Инварианты безопасности 152-ФЗ, ФСТЭК №117 и ролевая изоляция
+- Zero-Oracle сокрытие: запрос чужих событий, карточек или комментариев (`scoped_interaction`) обязан возвращать строгий HTTP 404 Not Found (не раскрывая факт существования карточки).
+- Неизменяемость истории: отсутствие эндпоинтов или методов `UPDATE` / `DELETE` для сущностей `InteractionEvent` и `Comment`.
+- Защита от подделки авторства: поле `user_id` заполняется строго из проверенного JWT-токена сессии текущего пользователя.
+
+### R3. Статический и компонентный аудит фронтенда (`InteractionPage.tsx`)
+- В компоненте `frontend/src/views/InteractionPage.tsx`:
+  * Блок «История решений» (`События и комментарии`):
+    - Вкладки фильтрации: **«Все»**, **«Комментарии»**, **«Этапы workflow»**.
+    - Корректность динамических счетчиков событий на кнопках вкладок.
+    - Корректность фильтрации: во вкладке «Комментарии» отображаются только текстовые заметки (`comment_added` / `comment`), во вкладке «Этапы workflow» — переходы этапов и смена ответственного, во вкладке «Все» — полная хронология.
+  * Панель добавления комментария (`side-panel`):
+    - Текстовое поле ввода заметок с ограничением по символам (5000) и плейсхолдером.
+    - Блокировка кнопки «Добавить комментарий» при пустом вводе или в процессе отправки (`busy`).
+    - Очистка текстового поля после успешной отправки.
+    - Реактивное обновление ленты и счетчиков вкладок без перезагрузки всей страницы браузера (SPA).
+
+### R4. Сквозное интерактивное тестирование в браузере (E2E Browser Testing)
+- Провести тестирование в реальном браузере через субагента `browser` на стенде `http://localhost:3000`:
+  * Под `manager-a` («Анна Смирнова»):
+    - Открыть карточку своего взаимодействия.
+    - Переключить вкладку таймлайна на «Комментарии» — убедиться, что отображаются только заметки.
+    - Добавить новый комментарий (например, «Аудит этапа 6: проверка добавления заметки менеджером») — проверить мгновенное появление в списке и очистку формы.
+    - Переключить на «Этапы workflow» — убедиться, что добавленный текстовый комментарий не отображается в этой вкладке.
+    - Переключить на «Все» — убедиться, что комментарий отображается в общей хронологии с указанием автора, даты и времени.
+    - Выполнить переход по этапу (с обязательным комментарием, если требуется) или загрузить тестовый файл — убедиться в появлении соответствующей записи в ленте событий.
+  * Проверка локальных хранилищ браузера (`localStorage`, `sessionStorage`): подтверждение отсутствия JWT-токенов в веб-хранилищах (только in-memory).
+
+### R5. Устранение выявленных дефектов (Remediation) и итоговый отчёт
+- При обнаружении любых ошибок фильтрации, верстки, сброса форм или нарушения принципов 152-ФЗ — внести минимальные точечные исправления в соответствии с принципами Ponytail.
+- Сформировать подробный отчёт с матрицей покрытия (R05, R09, R14, R27, B04, B09, B20, AC08, AC22).
+
+## Verification Resources
+- Набор тестов таймлайна, комментариев и событий:
+  * `backend/tests/test_swe24_timeline_tabs_and_attachment_cleanup.py` (4 теста)
+  * `backend/tests/test_working_slice.py` (17 тестов)
+- Системные оракулы:
+  * `python3 docs/checks/verify_infra.py`
+  * `python3 docs/checks/verify_workflow.py`
+  * `python3 docs/checks/verify_reports.py`
+  * `python3 docs/checks/verify_plan.py`
+- Сборка фронтенда: `cd frontend && npm run build` (0 TypeScript errors)
+- Контейнеры: `rtk-crm-api-1`, `rtk-crm-frontend-1`
+
+## Acceptance Criteria
+
+### Хронология и неизменяемость (R05, R09, R14, R27)
+- [ ] Все события (`state_changed`, `owner_changed`, `comment_added`, `attachment_uploaded`, `attachment_deleted`, `delivery_recorded`) фиксируются в неизменяемом журнале `InteractionEvent` с последовательным `sequence`.
+- [ ] Отсутствуют методы изменения или удаления событий истории (immutable audit log).
+- [ ] Попытка запроса чужих событий или комментариев возвращает строго HTTP 404 Not Found (Zero-Oracle).
+- [ ] Переход на этапы с требованием комментария (отмена, возврат) отклоняется без указания комментария.
+
+### Пользовательский интерфейс и E2E (B20, AC08, AC22)
+- [ ] Вкладки ленты решений («Все», «Комментарии», «Этапы workflow») корректно фильтруют записи и отображают точные счетчики.
+- [ ] Форма комментария валидирует непустой ввод, блокирует кнопку при отправке и очищает поле после сохранения.
+- [ ] Добавление комментария и переходы этапов обновляют ленту реактивно без перезагрузки всей страницы браузера (SPA).
+- [ ] JWT-токены не сохраняются в `localStorage` или `sessionStorage` (152-ФЗ / ФСТЭК №117).
+
+### Инварианты репозитория и качество
+- [ ] Все тесты `test_swe24_timeline_tabs_and_attachment_cleanup.py` и `test_working_slice.py` проходят со 100% успехом.
+- [ ] Все 4 системных оракула возвращают PASS.
+- [ ] Сборка фронтенда `npm run build` проходит с 0 ошибок TypeScript.
+- [ ] Директория `docs/architecture/` строго не изменена (0 байт diff).
+- [ ] 0 новых сторонних зависимостей в `requirements.txt` и `package.json`.
+
+
+
+## 2026-09-29T01:27:59Z
+
+# Teamwork Project Prompt — Launched
+
+> Status: Launched  
+> Goal: Craft prompt → get user approval → delegate to teamwork_preview  
+> Requested team: Ведущий системный архитектор, DevSecOps-инженер, Руководитель команды приёмки, Victory Auditor
+
+Финальный, исчерпывающий и бескомпромиссный аудит и верификация всего проекта «ИТ Школа Ростелекома — CRM» (rost_crm) по Этапу 10: «Финальная интеграция, DevSecOps, Нагрузочные испытания (B31), Аудит ИБ (B33) и Верификация конкурсного комплекта сдачи (B39/B40)» в строгом соответствии с ТЗ (разделы 4, 6, 7, 8, 10), 149-ФЗ, 152-ФЗ, Приказом ФСТЭК № 117 и философией Ponytail.
+
+Working directory: /home/muhammad/Dev/HACKATHON/LCT/rost_crm  
+Integrity mode: development
+
+## Requirements
+
+### R1. Инфраструктурный аудит и DevSecOps (B32, B33, ТЗ разд. 4, 6)
+- Проверить состояние Docker Compose стека (`docker compose ps`):
+  * Все 6 контейнеров (`rtk-crm-frontend-1`, `rtk-crm-api-1`, `rtk-crm-keycloak-1`, `rtk-crm-clamav-1`, `rtk-crm-postgres-1`, `rtk-crm-redis-1`) находятся в состоянии Up (healthy).
+- Проверить сетевую изоляцию:
+  * Сеть `backend_net` имеет директиву `internal: true`. Контейнеры СУБД, Redis и ClamAV не имеют открытых наружу портов в глобальную сеть.
+- Проверить конфигурацию Nginx (`deploy/nginx.conf`):
+  * Лимит тела запроса: `client_max_body_size 25m;`.
+  * Сжатие Gzip для текстовых ответов от 1024 байт.
+  * Сквозной заголовок `X-Request-ID` и заголовки безопасности (CSP, `X-Content-Type-Options: nosniff`, `X-Frame-Options: SAMEORIGIN`).
+- Проверить пробы жизнеспособности:
+  * `http://localhost:3000/health/live` -> 200 OK.
+  * `http://localhost:3000/health/ready` -> 200 OK (`{"status":"ok","database":"ok"}`).
+- Проверить чистоту Git-репозитория от секретов:
+  * В `.env.example` и коде отсутствуют реальные боевые пароли и ключи.
+- Проверить запуск от non-root:
+  * Контейнеры запускаются от непривилегированного пользователя `appuser:10001` и `nginx`.
+
+### R2. Нагрузочные испытания и бенчмарки (B31, R18, R19, AC30)
+- Верифицировать нагрузочные испытания и отчёт `docs/benchmarks/load-test-report.md`:
+  * 50 активных пользователей (конкурентные сессии): p95 < 500 мс (фактически зафиксировано ~48 мс, 0% ошибок при 10 000 req).
+  * 10 одновременных тяжелых отчётов (Snapshot / Activity): среднее время генерации < 2 с (фактически ~312 мс).
+  * Потоковое антивирусное сканирование: пропускная способность > 50 МБ/с без зависания очередей.
+
+### R3. Проверка конкурсного комплекта сдачи (B39, B40, ТЗ раздел 10)
+- Подтвердить наличие, комплектность и валидность всех 4 артефактов сдачи:
+  1. **Репозиторий:** чистый код, оформленный `README.md` с бейджами, C4-архитектурой, инструкциями быстрого старта и демонстрационными учётными записями.
+  2. **Презентация проекта:**
+     - `docs/Презентация_CRM_ИТ_Школа_Ростелеком.pdf` (12 слайдов A4 Landscape в фирменном стиле Rostelecom Gen2 Light/Dark).
+     - `docs/Презентация_CRM_ИТ_Школа_Ростелеком.html` (интерактивная HTML-версия).
+  3. **Прототип и инструкция развёртывания:**
+     - `docs/PROTOTYPE_DEPLOYMENT_GUIDE.md` (руководство запуска на VPS, Cloudflare Tunnel HTTPS, учетные данные ролей, 6-шаговый пользовательский сценарий).
+  4. **Сопроводительная документация и пояснительная записка:**
+     - `docs/Пояснительная_записка_и_сопроводительная_документация_CRM_ИТ_Школа_Ростелеком.pdf` (29 страниц, титульный лист, C4, ArchiMate 3.1, методы D01–D16, User Guide, Admin Guide, реестр библиотек, нагрузочный отчёт).
+     - `docs/Пояснительная_записка_и_сопроводительная_документация_CRM_ИТ_Школа_Ростелеком.docx` (редактируемый файл Word).
+     - `docs/Пояснительная_записка_и_сопроводительная_документация_CRM_ИТ_Школа_Ростелеком.md` (Markdown-исходник).
+     - Архитектурные модели Archi: `docs/architecture/rtk-crm.archimate.xml` и `rost_crm_architecture.archimate`.
+
+### R4. Контрольные независимые прогоны тестов и оракулов
+- Запустить 4 системных оракула:
+  * `python3 docs/checks/verify_infra.py`
+  * `python3 docs/checks/verify_workflow.py`
+  * `python3 docs/checks/verify_reports.py`
+  * `python3 docs/checks/verify_plan.py`
+  Все оракулы обязаны вернуть PASS.
+- Запустить полный набор тестов Pytest:
+  * `backend/.venv/bin/pytest backend/tests/ -q` (все тесты обязаны пройти со статусом PASSED, 0 failed).
+- Запустить сборку фронтенда:
+  * `cd frontend && npm run build` (0 ошибок TypeScript).
+
+### R5. Финальный протокол сдачи (Victory Audit)
+- Независимый аудитор победы формирует итоговый протокол приёмки всей CRM-системы (Этапы 1–10).
+- Зафиксировать вердикт VICTORY CONFIRMED в `.agents/teamwork/victory_auditor_d10/audit_report.md` и `.agents/teamwork/handoff.md`.
+
+## Verification Resources
+- Набор системных оракулов: `docs/checks/verify_*.py`
+- Полный каталог тестов: `backend/tests/` (125+ тестов)
+- Нагрузочный отчёт: `docs/benchmarks/load-test-report.md`
+- Комплект сдачи: каталоги `docs/` и `deploy/`
+- Живой стек: `docker compose ps` на `localhost:3000` и `127.0.0.1:8000`
+
+## Acceptance Criteria
+
+### Инфраструктура и DevSecOps (B32, B33)
+- [ ] Все 6 контейнеров находятся в статусе Up (healthy).
+- [ ] Сеть `backend_net` изолирована (`internal: true`), СУБД/Redis/ClamAV закрыты от внешнего мира.
+- [ ] Nginx обеспечивает лимит 25 МБ, Gzip, X-Request-ID, security headers.
+- [ ] Пробы `/health/live` и `/health/ready` возвращают 200 OK.
+- [ ] Контейнеры запускаются от non-root (`appuser:10001`, `nginx`).
+
+### Нагрузочные испытания (B31, R18, R19, AC30)
+- [ ] p95 время отклика при 50 параллельных сессиях < 500 мс.
+- [ ] Время генерации тяжелых отчётов (Snapshot/Activity) < 2 с.
+- [ ] Пропускная способность ClamAV потока > 50 МБ/с.
+
+### Комплект конкурсной сдачи (B39, B40, ТЗ разд. 10)
+- [ ] Репозиторий и `README.md` содержат актуальные инструкции, бейджи и учётные записи.
+- [ ] Презентация проекта доступна в форматах PDF (12 слайдов Landscape) и HTML.
+- [ ] Руководство развёртывания `docs/PROTOTYPE_DEPLOYMENT_GUIDE.md` проверено и актуально.
+- [ ] Пояснительная записка доступна в PDF (29 страниц), DOCX, MD, архитектурные модели Archi валидны.
+
+### Репозиторные инварианты и тесты
+- [ ] Все тесты `backend/tests/` проходят на 100% (0 failed).
+- [ ] Все 4 системных оракула возвращают PASS.
+- [ ] Сборка фронтенда `npm run build` проходит с 0 ошибок TypeScript.
+- [ ] Директория `docs/architecture/` строго не изменена (0 байт diff).
+- [ ] 0 новых сторонних зависимостей в `requirements.txt` и `package.json`.
+- [ ] Итоговый вердикт независимого аудитора: VICTORY CONFIRMED.
+

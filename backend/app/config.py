@@ -27,6 +27,9 @@ class Settings:
     clamav_timeout: float = 10.0
     redis_url: str = "redis://redis:6379/0"
     background_worker_enabled: bool = False
+    lms_webhook_secret: str = "rtk-lms-webhook-secret"
+    website_webhook_secret: str = "rtk-website-webhook-secret"
+    webhook_secret: str = "rtk-default-webhook-secret"
 
     def validate(self):
         if self.auth_mode not in {"demo", "oidc"}:
@@ -99,4 +102,18 @@ def get_settings() -> Settings:
         clamav_timeout=clamav_timeout,
         redis_url=redis_url,
         background_worker_enabled=background_worker_enabled,
+        lms_webhook_secret=os.getenv("LMS_WEBHOOK_SECRET") or os.getenv("WEBHOOK_SECRET") or "rtk-lms-webhook-secret",
+        website_webhook_secret=os.getenv("WEBSITE_WEBHOOK_SECRET") or os.getenv("WEBHOOK_SECRET") or "rtk-website-webhook-secret",
+        webhook_secret=os.getenv("WEBHOOK_SECRET") or "rtk-default-webhook-secret",
     )
+
+
+def get_webhook_secret(source: str, config: Settings | None = None) -> str:
+    cfg = config or get_settings()
+    src = (source or "").strip().lower()
+    if src == "lms":
+        return os.getenv("LMS_WEBHOOK_SECRET") or getattr(cfg, "lms_webhook_secret", None) or os.getenv("WEBHOOK_SECRET") or "rtk-lms-webhook-secret"
+    elif src == "website":
+        return os.getenv("WEBSITE_WEBHOOK_SECRET") or getattr(cfg, "website_webhook_secret", None) or os.getenv("WEBHOOK_SECRET") or "rtk-website-webhook-secret"
+    return os.getenv("WEBHOOK_SECRET") or getattr(cfg, "webhook_secret", None) or "rtk-default-webhook-secret"
+

@@ -1414,6 +1414,54 @@ export function CatalogPage({
             )}
           </ul>
         </section>
+
+        <section className="panel reference-card" key="Лицензии ПО">
+          <h2>Лицензии ПО</h2>
+          <ul>
+            {(catalogs.licenses || []).length ? (
+              (catalogs.licenses || []).map((lic) => {
+                const prod = (catalogs.products || []).find((p) => p.id === lic.product_id);
+                const prodName = prod ? prod.name : 'ПО';
+                const statusLabel =
+                  lic.transfer_status === 'transferred'
+                    ? 'Передана'
+                    : lic.transfer_status === 'pending'
+                    ? 'Ожидает'
+                    : lic.transfer_status === 'revoked'
+                    ? 'Отозвана'
+                    : lic.transfer_status || 'Черновик';
+                const statusTone =
+                  lic.transfer_status === 'transferred'
+                    ? 'tone-green'
+                    : lic.transfer_status === 'pending'
+                    ? 'tone-orange'
+                    : 'tone-gray';
+                return (
+                  <li
+                    key={lic.id}
+                    style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'space-between',
+                      padding: '6px 0',
+                    }}
+                  >
+                    <span>
+                      <strong>{prodName}</strong>
+                      {lic.term_years ? ` · ${lic.term_years} ${lic.term_years === 1 ? 'год' : lic.term_years < 5 ? 'года' : 'лет'}` : ''}
+                    </span>
+                    <span className={`stage-badge ${statusTone}`} style={{ fontSize: '11px' }}>
+                      <i />
+                      {statusLabel}
+                    </span>
+                  </li>
+                );
+              })
+            ) : (
+              <li>Нет доступных записей</li>
+            )}
+          </ul>
+        </section>
       </div>
 
       {importOpen && api && isPrivileged && (
