@@ -8,8 +8,11 @@
 import os
 import sys
 import base64
+import io
+import shutil
 import subprocess
 from pathlib import Path
+from PIL import Image
 
 WORKSPACE_ROOT = Path("/home/muhammad/Dev/HACKATHON/LCT/rost_crm")
 DOCS_DIR = WORKSPACE_ROOT / "docs"
@@ -29,14 +32,32 @@ def resolve_screenshot(filename: str) -> Path:
 def get_image_b64(path: Path) -> str:
     if not path.exists():
         return ""
-    with open(path, "rb") as f:
-        data = f.read()
-    mime = "image/png"
-    if path.suffix.lower() in [".jpg", ".jpeg"]:
-        mime = "image/jpeg"
-    elif path.suffix.lower() == ".svg":
-        mime = "image/svg+xml"
-    return f"data:{mime};base64,{base64.b64encode(data).decode('ascii')}"
+    if path.suffix.lower() == ".svg":
+        with open(path, "rb") as f:
+            data = f.read()
+        return f"data:image/svg+xml;base64,{base64.b64encode(data).decode('ascii')}"
+
+    try:
+        with Image.open(path) as img:
+            orig_format = img.format or ("JPEG" if path.suffix.lower() in [".jpg", ".jpeg"] else "PNG")
+            if img.width > 650:
+                ratio = 650.0 / float(img.width)
+                new_height = max(1, int(float(img.height) * ratio))
+                img = img.resize((650, new_height), Image.Resampling.LANCZOS)
+
+            buf = io.BytesIO()
+            save_format = "JPEG" if orig_format == "JPEG" else "PNG"
+            if save_format == "JPEG" and img.mode in ("RGBA", "P"):
+                img = img.convert("RGB")
+            img.save(buf, format=save_format)
+            data = buf.getvalue()
+            mime = "image/jpeg" if save_format == "JPEG" else "image/png"
+            return f"data:{mime};base64,{base64.b64encode(data).decode('ascii')}"
+    except Exception:
+        with open(path, "rb") as f:
+            data = f.read()
+        mime = "image/jpeg" if path.suffix.lower() in [".jpg", ".jpeg"] else "image/png"
+        return f"data:{mime};base64,{base64.b64encode(data).decode('ascii')}"
 
 def build_master_documentation():
     print(">>> Сборка Мастер-документа: Пояснительная записка и сопроводительная документация...")
@@ -74,6 +95,9 @@ def build_master_documentation():
   .page-break {{
     page-break-before: always;
     break-before: page;
+    clear: both;
+    display: block;
+    height: 1px;
   }}
   .avoid-break {{
     page-break-inside: avoid;
@@ -82,60 +106,59 @@ def build_master_documentation():
   
   /* Стиль титульного листа */
   .title-page {{
-    height: 90vh;
-    display: flex;
-    flex-direction: column;
-    justify-content: space-between;
     text-align: center;
-    padding: 40px 20px;
-    border: 2px solid #7700FF;
-    border-radius: 8px;
-    box-sizing: border-box;
+    padding: 20px;
+    margin: 0 auto;
+    page-break-after: always;
+    break-after: page;
   }}
   .title-header {{
-    font-size: 13pt;
+    font-size: 11pt;
     font-weight: 700;
     text-transform: uppercase;
     color: #475467;
     letter-spacing: 1px;
+    margin-bottom: 20px;
   }}
   .title-main {{
-    margin: 60px 0;
+    margin: 20px 0;
   }}
   .title-system-name {{
-    font-size: 26pt;
+    font-size: 22pt;
     font-weight: 800;
     color: #7700FF;
-    margin-bottom: 15px;
+    margin-bottom: 8px;
     text-transform: uppercase;
   }}
   .title-doc-name {{
-    font-size: 16pt;
+    font-size: 14pt;
     font-weight: 600;
     color: #101828;
-    margin-bottom: 25px;
+    margin-bottom: 14px;
   }}
   .title-subtitle {{
-    font-size: 11pt;
+    font-size: 9.5pt;
     color: #475467;
-    max-width: 650px;
+    max-width: 600px;
     margin: 0 auto;
-    line-height: 1.6;
+    line-height: 1.4;
   }}
   .title-meta {{
     text-align: left;
     background: #F8F9FC;
-    padding: 20px;
+    padding: 12px 16px;
     border-left: 4px solid #7700FF;
     border-radius: 4px;
-    font-size: 10pt;
-    margin: 30px auto;
-    width: 85%;
+    font-size: 8.5pt;
+    margin: 18px auto;
+    width: 88%;
+    line-height: 1.4;
   }}
   .title-footer {{
-    font-size: 10pt;
+    font-size: 9pt;
     color: #667085;
     text-align: center;
+    margin-top: 24px;
   }}
 
   /* Заголовки */
@@ -147,6 +170,10 @@ def build_master_documentation():
     padding-bottom: 6px;
     margin-top: 30px;
     margin-bottom: 16px;
+    page-break-before: always;
+    break-before: page;
+    page-break-after: avoid;
+    break-after: avoid;
   }}
   h2 {{
     color: #101828;
@@ -156,6 +183,8 @@ def build_master_documentation():
     margin-bottom: 12px;
     border-left: 4px solid #FF4F12;
     padding-left: 10px;
+    page-break-after: avoid;
+    break-after: avoid;
   }}
   h3 {{
     color: #344054;
@@ -163,14 +192,21 @@ def build_master_documentation():
     font-weight: 600;
     margin-top: 18px;
     margin-bottom: 8px;
+    page-break-after: avoid;
+    break-after: avoid;
   }}
 
   /* Таблицы */
   table {{
     width: 100%;
     border-collapse: collapse;
+    border: 1px solid #D0D5DD;
     margin: 16px 0;
     font-size: 9.5pt;
+  }}
+  tr {{
+    page-break-inside: avoid;
+    break-inside: avoid;
   }}
   th, td {{
     border: 1px solid #D0D5DD;
@@ -185,6 +221,69 @@ def build_master_documentation():
   }}
   tr:nth-child(even) td {{
     background-color: #F8F9FC;
+  }}
+
+  /* Оглавление */
+  table.toc-table {{
+    width: 100%;
+    border: none !important;
+    border-collapse: collapse;
+    margin: 8px 0;
+  }}
+  table.toc-table tr {{
+    page-break-inside: avoid;
+    break-inside: avoid;
+  }}
+  .toc-title, .toc-page {{
+    border: none !important;
+    border-bottom: 1px dotted #98A2B3 !important;
+    background-color: transparent !important;
+    padding: 1.5px 0 !important;
+    font-size: 8pt !important;
+    line-height: 1.2 !important;
+    vertical-align: bottom;
+  }}
+  .toc-title {{
+    text-align: left;
+    padding-right: 8px !important;
+  }}
+  .toc-page {{
+    text-align: right;
+    width: 35px;
+    white-space: nowrap;
+    font-weight: 500;
+    padding-left: 8px !important;
+  }}
+
+  /* Выделения и врезки как таблицы */
+  table.callout, table.callout-warning, table.callout-success {{
+    width: 100%;
+    border: none !important;
+    border-collapse: collapse;
+    margin: 16px 0;
+    page-break-inside: avoid;
+    break-inside: avoid;
+  }}
+  table.callout tr td {{
+    border: none !important;
+    border-left: 4px solid #7700FF !important;
+    background-color: #F8F9FC !important;
+    padding: 12px 16px;
+    width: 100%;
+  }}
+  table.callout-warning tr td {{
+    border: none !important;
+    border-left: 4px solid #F79009 !important;
+    background-color: #FFFAEB !important;
+    padding: 12px 16px;
+    width: 100%;
+  }}
+  table.callout-success tr td {{
+    border: none !important;
+    border-left: 4px solid #12B76A !important;
+    background-color: #ECFDF3 !important;
+    padding: 12px 16px;
+    width: 100%;
   }}
 
   /* Блоки кода и вырезки */
@@ -208,7 +307,7 @@ def build_master_documentation():
     border-radius: 4px;
   }}
 
-  /* Выделения и врезки */
+  /* Старые классы callout для обратной совместимости */
   .callout {{
     background-color: #F8F9FC;
     border-left: 4px solid #7700FF;
@@ -307,57 +406,176 @@ def build_master_documentation():
 
 <!-- СОДЕРЖАНИЕ -->
 <h1>Содержание</h1>
-<div style="font-size: 10.5pt; line-height: 1.8;">
-  <div class="toc-item"><span><strong>1. Введение и паспорт программного комплекса</strong></span><span>3</span></div>
-  <div class="toc-item"><span>&nbsp;&nbsp;&nbsp;&nbsp;1.1. Назначение системы и бизнес-контекст</span><span>3</span></div>
-  <div class="toc-item"><span>&nbsp;&nbsp;&nbsp;&nbsp;1.2. Проблематика текущего процесса и цели внедрения</span><span>3</span></div>
-  <div class="toc-item"><span>&nbsp;&nbsp;&nbsp;&nbsp;1.3. Ролевая модель и ключевые пользователи</span><span>4</span></div>
-  
-  <div class="toc-item"><span><strong>2. Функциональная и компонентная архитектура (Archi & C4)</strong></span><span>5</span></div>
-  <div class="toc-item"><span>&nbsp;&nbsp;&nbsp;&nbsp;2.1. Контекстная архитектура (C4 Context)</span><span>5</span></div>
-  <div class="toc-item"><span>&nbsp;&nbsp;&nbsp;&nbsp;2.2. Контейнерная архитектура (C4 Container)</span><span>6</span></div>
-  <div class="toc-item"><span>&nbsp;&nbsp;&nbsp;&nbsp;2.3. Компонентная структура бэкенда (C4 Component)</span><span>7</span></div>
-  <div class="toc-item"><span>&nbsp;&nbsp;&nbsp;&nbsp;2.4. Архитектурная модель в среде Archi (The Open Group ArchiMate 3.1)</span><span>8</span></div>
-  <div class="toc-item"><span>&nbsp;&nbsp;&nbsp;&nbsp;2.5. Сетевая топология и контуры доверия</span><span>9</span></div>
-
-  <div class="toc-item"><span><strong>3. Методы обработки данных, условия и ограничения (D01–D16)</strong></span><span>10</span></div>
-  <div class="toc-item"><span>&nbsp;&nbsp;&nbsp;&nbsp;3.1. Двухфазный импорт каталогов (D01–D04)</span><span>10</span></div>
-  <div class="toc-item"><span>&nbsp;&nbsp;&nbsp;&nbsp;3.2. Воронка жизненного цикла и правила переходов (D05–D06)</span><span>11</span></div>
-  <div class="toc-item"><span>&nbsp;&nbsp;&nbsp;&nbsp;3.3. Аналитический движок отчётов и защита от инъекций (D07–D09)</span><span>12</span></div>
-  <div class="toc-item"><span>&nbsp;&nbsp;&nbsp;&nbsp;3.4. Интеграционный шлюз LMS и Сайта, отказоустойчивость AC21 (D10–D11)</span><span>14</span></div>
-  <div class="toc-item"><span>&nbsp;&nbsp;&nbsp;&nbsp;3.5. Инварианты информационной безопасности (152-ФЗ, ФСТЭК №117)</span><span>15</span></div>
-
-  <div class="toc-item"><span><strong>4. Руководство пользователя (User Guide)</strong></span><span>17</span></div>
-  <div class="toc-item"><span>&nbsp;&nbsp;&nbsp;&nbsp;4.1. Вход в систему и ролевая навигация</span><span>17</span></div>
-  <div class="toc-item"><span>&nbsp;&nbsp;&nbsp;&nbsp;4.2. Рабочий обзор (Dashboard)</span><span>18</span></div>
-  <div class="toc-item"><span>&nbsp;&nbsp;&nbsp;&nbsp;4.3. Реестр и поиск взаимодействий</span><span>19</span></div>
-  <div class="toc-item"><span>&nbsp;&nbsp;&nbsp;&nbsp;4.4. Карточка взаимодействия: воронка, параметры, документооборот</span><span>20</span></div>
-  <div class="toc-item"><span>&nbsp;&nbsp;&nbsp;&nbsp;4.5. Каталоги организаций и назначение кураторов</span><span>22</span></div>
-  <div class="toc-item"><span>&nbsp;&nbsp;&nbsp;&nbsp;4.6. Построение аналитических отчётов и экспорт (XLSX, PDF, CSV)</span><span>23</span></div>
-  <div class="toc-item"><span>&nbsp;&nbsp;&nbsp;&nbsp;4.7. Справочный центр и симулятор сбоев (AC21 Fault Simulator)</span><span>24</span></div>
-
-  <div class="toc-item"><span><strong>5. Руководство системного администратора (Admin Guide)</strong></span><span>25</span></div>
-  <div class="toc-item"><span>&nbsp;&nbsp;&nbsp;&nbsp;5.1. Управление доступом, ролями и сессиями в Keycloak</span><span>25</span></div>
-  <div class="toc-item"><span>&nbsp;&nbsp;&nbsp;&nbsp;5.2. Мониторинг интеграций и журнала вебхуков</span><span>26</span></div>
-  <div class="toc-item"><span>&nbsp;&nbsp;&nbsp;&nbsp;5.3. Диагностика здоровья сервисов (/health/live, /health/ready)</span><span>27</span></div>
-  <div class="toc-item"><span>&nbsp;&nbsp;&nbsp;&nbsp;5.4. Регламент резервного копирования и восстановления данных</span><span>28</span></div>
-
-  <div class="toc-item"><span><strong>6. Инструкция по сборке, компиляции и установке</strong></span><span>29</span></div>
-  <div class="toc-item"><span>&nbsp;&nbsp;&nbsp;&nbsp;6.1. Системные требования к серверам</span><span>29</span></div>
-  <div class="toc-item"><span>&nbsp;&nbsp;&nbsp;&nbsp;6.2. Пошаговое развёртывание в Docker Compose</span><span>29</span></div>
-  <div class="toc-item"><span>&nbsp;&nbsp;&nbsp;&nbsp;6.3. Инициализация и сидирование демонстрационных данных</span><span>30</span></div>
-  <div class="toc-item"><span>&nbsp;&nbsp;&nbsp;&nbsp;6.4. Настройка Nginx, SSL/TLS и публикация стенда</span><span>31</span></div>
-
-  <div class="toc-item"><span><strong>7. Реестр использованных сторонних библиотек и компонентов</strong></span><span>32</span></div>
-  <div class="toc-item"><span>&nbsp;&nbsp;&nbsp;&nbsp;7.1. Спецификация серверных зависимостей (Python Backend)</span><span>32</span></div>
-  <div class="toc-item"><span>&nbsp;&nbsp;&nbsp;&nbsp;7.2. Спецификация клиентских зависимостей (React Frontend)</span><span>33</span></div>
-  <div class="toc-item"><span>&nbsp;&nbsp;&nbsp;&nbsp;7.3. Лицензионный аудит и импортозамещение</span><span>34</span></div>
-
-  <div class="toc-item"><span><strong>8. Результаты тестирования, нагрузочные испытания и оракулы</strong></span><span>35</span></div>
-  <div class="toc-item"><span>&nbsp;&nbsp;&nbsp;&nbsp;8.1. Сводные результаты прогона тестов (686/686 Passed)</span><span>35</span></div>
-  <div class="toc-item"><span>&nbsp;&nbsp;&nbsp;&nbsp;8.2. Результаты 4 системных оракулов верификации</span><span>36</span></div>
-  <div class="toc-item"><span>&nbsp;&nbsp;&nbsp;&nbsp;8.3. Нагрузочный бенчмарк (50 concurrent users, 10 параллельных отчётов)</span><span>37</span></div>
-</div>
+<table class="toc-table" width="100%" border="0" cellspacing="0" cellpadding="0" style="width: 100%; border: none; border-collapse: collapse;">
+  <tr>
+    <td class="toc-title"><strong>1. Введение и паспорт программного комплекса</strong></td>
+    <td class="toc-page">3</td>
+  </tr>
+  <tr>
+    <td class="toc-title">&nbsp;&nbsp;&nbsp;&nbsp;1.1. Назначение системы и бизнес-контекст</td>
+    <td class="toc-page">3</td>
+  </tr>
+  <tr>
+    <td class="toc-title">&nbsp;&nbsp;&nbsp;&nbsp;1.2. Проблематика текущего процесса и цели внедрения</td>
+    <td class="toc-page">3</td>
+  </tr>
+  <tr>
+    <td class="toc-title">&nbsp;&nbsp;&nbsp;&nbsp;1.3. Ролевая модель и ключевые пользователи</td>
+    <td class="toc-page">4</td>
+  </tr>
+  <tr>
+    <td class="toc-title"><strong>2. Функциональная и компонентная архитектура (Archi &amp; C4)</strong></td>
+    <td class="toc-page">5</td>
+  </tr>
+  <tr>
+    <td class="toc-title">&nbsp;&nbsp;&nbsp;&nbsp;2.1. Контекстная архитектура (C4 Context)</td>
+    <td class="toc-page">5</td>
+  </tr>
+  <tr>
+    <td class="toc-title">&nbsp;&nbsp;&nbsp;&nbsp;2.2. Контейнерная архитектура (C4 Container)</td>
+    <td class="toc-page">6</td>
+  </tr>
+  <tr>
+    <td class="toc-title">&nbsp;&nbsp;&nbsp;&nbsp;2.3. Компонентная структура бэкенда (C4 Component)</td>
+    <td class="toc-page">7</td>
+  </tr>
+  <tr>
+    <td class="toc-title">&nbsp;&nbsp;&nbsp;&nbsp;2.4. Архитектурная модель в среде Archi (The Open Group ArchiMate 3.1)</td>
+    <td class="toc-page">8</td>
+  </tr>
+  <tr>
+    <td class="toc-title">&nbsp;&nbsp;&nbsp;&nbsp;2.5. Сетевая топология и контуры доверия</td>
+    <td class="toc-page">9</td>
+  </tr>
+  <tr>
+    <td class="toc-title"><strong>3. Методы обработки данных, условия и ограничения (D01–D16)</strong></td>
+    <td class="toc-page">10</td>
+  </tr>
+  <tr>
+    <td class="toc-title">&nbsp;&nbsp;&nbsp;&nbsp;3.1. Двухфазный импорт каталогов (D01–D04)</td>
+    <td class="toc-page">10</td>
+  </tr>
+  <tr>
+    <td class="toc-title">&nbsp;&nbsp;&nbsp;&nbsp;3.2. Воронка жизненного цикла и правила переходов (D05–D06)</td>
+    <td class="toc-page">11</td>
+  </tr>
+  <tr>
+    <td class="toc-title">&nbsp;&nbsp;&nbsp;&nbsp;3.3. Аналитический движок отчётов и защита от инъекций (D07–D09)</td>
+    <td class="toc-page">12</td>
+  </tr>
+  <tr>
+    <td class="toc-title">&nbsp;&nbsp;&nbsp;&nbsp;3.4. Интеграционный шлюз LMS и Сайта, отказоустойчивость AC21 (D10–D11)</td>
+    <td class="toc-page">14</td>
+  </tr>
+  <tr>
+    <td class="toc-title">&nbsp;&nbsp;&nbsp;&nbsp;3.5. Инварианты информационной безопасности (152-ФЗ, ФСТЭК №117)</td>
+    <td class="toc-page">15</td>
+  </tr>
+  <tr>
+    <td class="toc-title"><strong>4. Руководство пользователя (User Guide)</strong></td>
+    <td class="toc-page">17</td>
+  </tr>
+  <tr>
+    <td class="toc-title">&nbsp;&nbsp;&nbsp;&nbsp;4.1. Вход в систему и ролевая навигация</td>
+    <td class="toc-page">17</td>
+  </tr>
+  <tr>
+    <td class="toc-title">&nbsp;&nbsp;&nbsp;&nbsp;4.2. Рабочий обзор (Dashboard)</td>
+    <td class="toc-page">18</td>
+  </tr>
+  <tr>
+    <td class="toc-title">&nbsp;&nbsp;&nbsp;&nbsp;4.3. Реестр и поиск взаимодействий</td>
+    <td class="toc-page">19</td>
+  </tr>
+  <tr>
+    <td class="toc-title">&nbsp;&nbsp;&nbsp;&nbsp;4.4. Карточка взаимодействия: воронка, параметры, документооборот</td>
+    <td class="toc-page">20</td>
+  </tr>
+  <tr>
+    <td class="toc-title">&nbsp;&nbsp;&nbsp;&nbsp;4.5. Каталоги организаций и назначение кураторов</td>
+    <td class="toc-page">22</td>
+  </tr>
+  <tr>
+    <td class="toc-title">&nbsp;&nbsp;&nbsp;&nbsp;4.6. Построение аналитических отчётов и экспорт (XLSX, PDF, CSV)</td>
+    <td class="toc-page">23</td>
+  </tr>
+  <tr>
+    <td class="toc-title">&nbsp;&nbsp;&nbsp;&nbsp;4.7. Справочный центр и симулятор сбоев (AC21 Fault Simulator)</td>
+    <td class="toc-page">24</td>
+  </tr>
+  <tr>
+    <td class="toc-title"><strong>5. Руководство системного администратора (Admin Guide)</strong></td>
+    <td class="toc-page">25</td>
+  </tr>
+  <tr>
+    <td class="toc-title">&nbsp;&nbsp;&nbsp;&nbsp;5.1. Управление доступом, ролями и сессиями в Keycloak</td>
+    <td class="toc-page">25</td>
+  </tr>
+  <tr>
+    <td class="toc-title">&nbsp;&nbsp;&nbsp;&nbsp;5.2. Мониторинг интеграций и журнала вебхуков</td>
+    <td class="toc-page">26</td>
+  </tr>
+  <tr>
+    <td class="toc-title">&nbsp;&nbsp;&nbsp;&nbsp;5.3. Диагностика здоровья сервисов (/health/live, /health/ready)</td>
+    <td class="toc-page">27</td>
+  </tr>
+  <tr>
+    <td class="toc-title">&nbsp;&nbsp;&nbsp;&nbsp;5.4. Регламент резервного копирования и восстановления данных</td>
+    <td class="toc-page">28</td>
+  </tr>
+  <tr>
+    <td class="toc-title"><strong>6. Инструкция по сборке, компиляции и установке</strong></td>
+    <td class="toc-page">29</td>
+  </tr>
+  <tr>
+    <td class="toc-title">&nbsp;&nbsp;&nbsp;&nbsp;6.1. Системные требования к серверам</td>
+    <td class="toc-page">29</td>
+  </tr>
+  <tr>
+    <td class="toc-title">&nbsp;&nbsp;&nbsp;&nbsp;6.2. Пошаговое развёртывание в Docker Compose</td>
+    <td class="toc-page">29</td>
+  </tr>
+  <tr>
+    <td class="toc-title">&nbsp;&nbsp;&nbsp;&nbsp;6.3. Инициализация и сидирование демонстрационных данных</td>
+    <td class="toc-page">30</td>
+  </tr>
+  <tr>
+    <td class="toc-title">&nbsp;&nbsp;&nbsp;&nbsp;6.4. Настройка Nginx, SSL/TLS и публикация стенда</td>
+    <td class="toc-page">31</td>
+  </tr>
+  <tr>
+    <td class="toc-title"><strong>7. Реестр использованных сторонних библиотек и компонентов</strong></td>
+    <td class="toc-page">32</td>
+  </tr>
+  <tr>
+    <td class="toc-title">&nbsp;&nbsp;&nbsp;&nbsp;7.1. Спецификация серверных зависимостей (Python Backend)</td>
+    <td class="toc-page">32</td>
+  </tr>
+  <tr>
+    <td class="toc-title">&nbsp;&nbsp;&nbsp;&nbsp;7.2. Спецификация клиентских зависимостей (React Frontend)</td>
+    <td class="toc-page">33</td>
+  </tr>
+  <tr>
+    <td class="toc-title">&nbsp;&nbsp;&nbsp;&nbsp;7.3. Лицензионный аудит и импортозамещение</td>
+    <td class="toc-page">34</td>
+  </tr>
+  <tr>
+    <td class="toc-title"><strong>8. Результаты тестирования, нагрузочные испытания и оракулы</strong></td>
+    <td class="toc-page">35</td>
+  </tr>
+  <tr>
+    <td class="toc-title">&nbsp;&nbsp;&nbsp;&nbsp;8.1. Сводные результаты прогона тестов (686/686 Passed)</td>
+    <td class="toc-page">35</td>
+  </tr>
+  <tr>
+    <td class="toc-title">&nbsp;&nbsp;&nbsp;&nbsp;8.2. Результаты 4 системных оракулов верификации</td>
+    <td class="toc-page">36</td>
+  </tr>
+  <tr>
+    <td class="toc-title">&nbsp;&nbsp;&nbsp;&nbsp;8.3. Нагрузочный бенчмарк (50 concurrent users, 10 параллельных отчётов)</td>
+    <td class="toc-page">37</td>
+  </tr>
+</table>
 
 <div class="page-break"></div>
 
@@ -406,7 +624,7 @@ def build_master_documentation():
 <p>
 В соответствии с п. 4 ТЗ в системе реализована строгая ролевая модель, обеспечивающая разграничение полномочий на уровне отдельных записей (Row-Level Security):
 </p>
-<table>
+<table border="1" cellspacing="0" cellpadding="8">
   <tr>
     <th style="width: 25%;">Роль в системе</th>
     <th style="width: 25%;">Целевая аудитория</th>
@@ -444,20 +662,24 @@ def build_master_documentation():
 <p>
 Система спроектирована как независимый программный сервис корпоративного уровня, бесшовно интегрируемый в существующий ИТ-ландшафт ПАО «Ростелеком»:
 </p>
-<div class="callout">
-  <strong>Внешние системы и пользователи:</strong><br>
-  1. <strong>Пользователи (Менеджеры, Руководители, Администраторы)</strong> — взаимодействуют через веб-интерфейс (SPA) по защищённому протоколу HTTPS.<br>
-  2. <strong>Keycloak IdP (Корпоративный сервис аутентификации)</strong> — обеспечивает единый вход (SSO), протокол OpenID Connect (OIDC Authorization Code Flow с защитой PKCE S256).<br>
-  3. <strong>LMS ИТ Школы (Zion LMS)</strong> — передаёт данные об успеваемости, активности слушателей и прохождении курсов через защищённый Webhook API v1.0 с HMAC-SHA256.<br>
-  4. <strong>Официальный веб-сайт ИТ Школы</strong> — передаёт первичные заявки на обучение и запросы на партнёрство от образовательных организаций.<br>
-  5. <strong>Антивирусный шлюз ClamAV Daemon</strong> — потоковая онлайн-проверка всех загружаемых файлов в оперативной памяти до сохранения на диск.
-</div>
+<table class="callout" border="0" cellspacing="0" cellpadding="0" style="width: 100%; border: none; border-collapse: collapse; margin: 16px 0;">
+  <tr>
+    <td style="border: none; border-left: 4px solid #7700FF; background-color: #F8F9FC; width: 100%; padding: 12px 16px;">
+      <strong>Внешние системы и пользователи:</strong><br>
+      1. <strong>Пользователи (Менеджеры, Руководители, Администраторы)</strong> — взаимодействуют через веб-интерфейс (SPA) по защищённому протоколу HTTPS.<br>
+      2. <strong>Keycloak IdP (Корпоративный сервис аутентификации)</strong> — обеспечивает единый вход (SSO), протокол OpenID Connect (OIDC Authorization Code Flow с защитой PKCE S256).<br>
+      3. <strong>LMS ИТ Школы (Zion LMS)</strong> — передаёт данные об успеваемости, активности слушателей и прохождении курсов через защищённый Webhook API v1.0 с HMAC-SHA256.<br>
+      4. <strong>Официальный веб-сайт ИТ Школы</strong> — передаёт первичные заявки на обучение и запросы на партнёрство от образовательных организаций.<br>
+      5. <strong>Антивирусный шлюз ClamAV Daemon</strong> — потоковая онлайн-проверка всех загружаемых файлов в оперативной памяти до сохранения на диск.
+    </td>
+  </tr>
+</table>
 
 <h2>2.2. Контейнерная архитектура (C4 Container)</h2>
 <p>
 Все компоненты комплекса упакованы в легковесные контейнеры стандарта OCI/Docker и управляются через <code>compose.yaml</code> с чётким разделением на изолированные сетевые контуры:
 </p>
-<table>
+<table border="1" cellspacing="0" cellpadding="8">
   <tr>
     <th>Контейнер / Сервис</th>
     <th>Базовый образ / Стек</th>
@@ -540,10 +762,14 @@ def build_master_documentation():
 </p>
 
 <h2>2.5. Сетевая топология и контуры доверия</h2>
-<div class="callout-success">
-  <strong>Принцип нулевого доверия (Zero-Trust Network):</strong><br>
-  Контейнеры СУБД <code>postgres</code>, кэша <code>redis</code> и антивируса <code>clamav</code> подключены исключительно к внутренней изолированной сети <code>backend_net</code> (параметр <code>internal: true</code>). Они не имеют выхода в глобальный интернет и недоступны из пользовательского сегмента сети. Публичный доступ осуществляется исключительно через обратный прокси-сервер Nginx по защищённому протоколу HTTPS.
-</div>
+<table class="callout-success" border="0" cellspacing="0" cellpadding="0" style="width: 100%; border: none; border-collapse: collapse; margin: 16px 0;">
+  <tr>
+    <td style="border: none; border-left: 4px solid #12B76A; background-color: #ECFDF3; width: 100%; padding: 12px 16px;">
+      <strong>Принцип нулевого доверия (Zero-Trust Network):</strong><br>
+      Контейнеры СУБД <code>postgres</code>, кэша <code>redis</code> и антивируса <code>clamav</code> подключены исключительно к внутренней изолированной сети <code>backend_net</code> (параметр <code>internal: true</code>). Они не имеют выхода в глобальный интернет и недоступны из пользовательского сегмента сети. Публичный доступ осуществляется исключительно через обратный прокси-сервер Nginx по защищённому протоколу HTTPS.
+    </td>
+  </tr>
+</table>
 
 <div class="page-break"></div>
 
@@ -557,17 +783,21 @@ def build_master_documentation():
 <p>
 <strong>Архитектурная реализация:</strong> В соответствии с принципами надежности и разумного минимализма парсинг файлов реализован <em>исключительно средствами стандартной библиотеки Python</em> (<code>xml.sax</code>, <code>zipfile</code>, <code>csv</code>, <code>io</code>) без привлечения тяжелых сторонних зависимостей. Это исключает риски уязвимостей разбора XML (XXE, XML Entity Expansion) и снижает потребление памяти при обработке больших реестров.
 </p>
-<div class="callout">
-  <strong>Двухфазный протокол импорта (Two-Phase Commit):</strong><br>
-  • <strong>Фаза 1: Предпросмотр (Preview, <code>POST /api/v1/catalogs/import/preview</code>)</strong> — парсинг структуры, валидация обязательных полей (Название ВУЗа, Вендор, ПО, Номер договора, Срок действия), проверка существования связанных сущностей. Пользователю возвращается сводка: число корректных строк, детальный список ошибок с указанием номеров строк и таблица сопоставления полей.<br>
-  • <strong>Фаза 2: Применение (Commit, <code>POST /api/v1/catalogs/import/commit</code>)</strong> — атомарная запись проверенных данных в транзакции БД с оптимистической блокировкой CAS.
-</div>
+<table class="callout" border="0" cellspacing="0" cellpadding="0" style="width: 100%; border: none; border-collapse: collapse; margin: 16px 0;">
+  <tr>
+    <td style="border: none; border-left: 4px solid #7700FF; background-color: #F8F9FC; width: 100%; padding: 12px 16px;">
+      <strong>Двухфазный протокол импорта (Two-Phase Commit):</strong><br>
+      • <strong>Фаза 1: Предпросмотр (Preview, <code>POST /api/v1/catalogs/import/preview</code>)</strong> — парсинг структуры, валидация обязательных полей (Название ВУЗа, Вендор, ПО, Номер договора, Срок действия), проверка существования связанных сущностей. Пользователю возвращается сводка: число корректных строк, детальный список ошибок с указанием номеров строк и таблица сопоставления полей.<br>
+      • <strong>Фаза 2: Применение (Commit, <code>POST /api/v1/catalogs/import/commit</code>)</strong> — атомарная запись проверенных данных в транзакции БД с оптимистической блокировкой CAS.
+    </td>
+  </tr>
+</table>
 
 <h2>3.2. Воронка жизненного цикла и правила переходов (D05–D06)</h2>
 <p>
 Жизненный цикл сделки включает <strong>15 рабочих состояний и 29 строго валидированных переходов</strong> (соответствуют 14 этапам ТЗ, расширенному этапу актуализации и 2 терминальным состояниям — «Завершено успешно» и «Отменено»).
 </p>
-<table>
+<table border="1" cellspacing="0" cellpadding="8">
   <tr>
     <th>Код статуса</th>
     <th>Наименование этапа (workflow)</th>
@@ -662,10 +892,14 @@ def build_master_documentation():
   <li><strong>Отчёт по активности (Activity, <code>/api/v1/reports/activity</code>)</strong> — агрегирует фактические действия за интервал дат: проведённые встречи, подписанные договоры, переданные лицензии (с защитой от дублирования по AC13);</li>
   <li><strong>Накопительный отчёт (Created, <code>/api/v1/reports/created</code>)</strong> — динамика появления новых взаимодействий по программам и организациям за период.</li>
 </ol>
-<div class="callout">
-  <strong>Чистая генерация форматов (Pure Stdlib XLSX/PDF/CSV):</strong><br>
-  Формирование XLSX осуществляется через генерацию OpenXML спецификации (XML + ZIP) стандартным модулем <code>zipfile</code>. PDF формируется чистым генератором без сторонних бинарных утилит. Все ячейки экранируются от <strong>CSV Formula Injection (CWE-1236)</strong>: значения, начинающиеся с символов <code>=, +, -, @, \t, \r</code>, префиксируются апострофом <code>'</code>.
-</div>
+<table class="callout" border="0" cellspacing="0" cellpadding="0" style="width: 100%; border: none; border-collapse: collapse; margin: 16px 0;">
+  <tr>
+    <td style="border: none; border-left: 4px solid #7700FF; background-color: #F8F9FC; width: 100%; padding: 12px 16px;">
+      <strong>Чистая генерация форматов (Pure Stdlib XLSX/PDF/CSV):</strong><br>
+      Формирование XLSX осуществляется через генерацию OpenXML спецификации (XML + ZIP) стандартным модулем <code>zipfile</code>. PDF формируется чистым генератором без сторонних бинарных утилит. Все ячейки экранируются от <strong>CSV Formula Injection (CWE-1236)</strong>: значения, начинающиеся с символов <code>=, +, -, @, \t, \r</code>, префиксируются апострофом <code>'</code>.
+    </td>
+  </tr>
+</table>
 
 <h2>3.4. Интеграционный шлюз LMS и Сайта, отказоустойчивость AC21 (D10–D11)</h2>
 <p>
@@ -679,13 +913,17 @@ def build_master_documentation():
 </ul>
 
 <h2>3.5. Инварианты информационной безопасности (152-ФЗ, ФСТЭК №117)</h2>
-<div class="callout-warning">
-  <strong>Обязательные требования защищённости информации:</strong><br>
-  1. <strong>Сокрытие существования чужих данных (Zero-Oracle Principle):</strong> попытка несанкционированного обращения менеджера к взаимодействию чужого вуза или куратора возвращает строгий код <code>404 Not Found</code> вместо <code>403 Forbidden</code>, исключая разведку идентификаторов.<br>
-  2. <strong>Хранение токенов strictly in-memory:</strong> JWT токены сессии хранятся исключительно в оперативной памяти JavaScript-контекста. Использование <code>localStorage</code> или <code>sessionStorage</code> категорически запрещено (защита от XSS-кражи токенов).<br>
-  3. <strong>Потоковый антивирусный контроль ClamAV:</strong> файлы сканируются на лету через сокет демона до сохранения на файловую систему. Загрузка вирусных сигнатур (включая тестовый EICAR-Standard) немедленно прерывается с возвратом ошибки карантина.<br>
-  4. <strong>Валидация типов файлов:</strong> проверка по белому списку из 10 расширений ТЗ (<code>png, jpeg, pdf, zip, gzip, rar, doc, docx, xls, xlsx</code>) с валидацией Magic Bytes заголовков. Максимальный размер файла строго ограничен 25 МБ (26 214 400 байт).
-</div>
+<table class="callout-warning" border="0" cellspacing="0" cellpadding="0" style="width: 100%; border: none; border-collapse: collapse; margin: 16px 0;">
+  <tr>
+    <td style="border: none; border-left: 4px solid #F79009; background-color: #FFFAEB; width: 100%; padding: 12px 16px;">
+      <strong>Обязательные требования защищённости информации:</strong><br>
+      1. <strong>Сокрытие существования чужих данных (Zero-Oracle Principle):</strong> попытка несанкционированного обращения менеджера к взаимодействию чужого вуза или куратора возвращает строгий код <code>404 Not Found</code> вместо <code>403 Forbidden</code>, исключая разведку идентификаторов.<br>
+      2. <strong>Хранение токенов strictly in-memory:</strong> JWT токены сессии хранятся исключительно в оперативной памяти JavaScript-контекста. Использование <code>localStorage</code> или <code>sessionStorage</code> категорически запрещено (защита от XSS-кражи токенов).<br>
+      3. <strong>Потоковый антивирусный контроль ClamAV:</strong> файлы сканируются на лету через сокет демона до сохранения на файловую систему. Загрузка вирусных сигнатур (включая тестовый EICAR-Standard) немедленно прерывается с возвратом ошибки карантина.<br>
+      4. <strong>Валидация типов файлов:</strong> проверка по белому списку из 10 расширений ТЗ (<code>png, jpeg, pdf, zip, gzip, rar, doc, docx, xls, xlsx</code>) с валидацией Magic Bytes заголовков. Максимальный размер файла строго ограничен 25 МБ (26 214 400 байт).
+    </td>
+  </tr>
+</table>
 
 <div class="page-break"></div>
 
@@ -802,12 +1040,16 @@ def build_master_documentation():
 </ul>
 
 <h2>5.4. Регламент резервного копирования и восстановления данных</h2>
-<div class="callout">
-  <strong>Резервное копирование БД PostgreSQL:</strong><br>
-  <code>docker compose exec -T postgres pg_dump -U rtk_bootstrap rtk_crm | gzip &gt; backup_crm_$(date +%Y%m%d_%H%M%S).sql.gz</code><br><br>
-  <strong>Резервное копирование файлового хранилища:</strong><br>
-  <code>docker run --rm -v rtk-crm_storage-data:/data -v $(pwd):/backup alpine tar -czf /backup/storage_$(date +%Y%m%d).tar.gz -C /data .</code>
-</div>
+<table class="callout" border="0" cellspacing="0" cellpadding="0" style="width: 100%; border: none; border-collapse: collapse; margin: 16px 0;">
+  <tr>
+    <td style="border: none; border-left: 4px solid #7700FF; background-color: #F8F9FC; width: 100%; padding: 12px 16px;">
+      <strong>Резервное копирование БД PostgreSQL:</strong><br>
+      <code>docker compose exec -T postgres pg_dump -U rtk_bootstrap rtk_crm | gzip &gt; backup_crm_$(date +%Y%m%d_%H%M%S).sql.gz</code><br><br>
+      <strong>Резервное копирование файлового хранилища:</strong><br>
+      <code>docker run --rm -v rtk-crm_storage-data:/data -v $(pwd):/backup alpine tar -czf /backup/storage_$(date +%Y%m%d).tar.gz -C /data .</code>
+    </td>
+  </tr>
+</table>
 
 <div class="page-break"></div>
 
@@ -815,7 +1057,7 @@ def build_master_documentation():
 <h1>6. Инструкция по сборке, компиляции и установке</h1>
 
 <h2>6.1. Системные требования к серверам</h2>
-<table>
+<table border="1" cellspacing="0" cellpadding="8">
   <tr>
     <th style="width: 35%;">Параметр</th>
     <th style="width: 65%;">Минимальные требования</th>
@@ -874,7 +1116,7 @@ docker compose exec api python -m app.seed --seed-demo
 <p>
 <strong>Предустановленные тестовые учётные записи для проверки:</strong>
 </p>
-<table>
+<table border="1" cellspacing="0" cellpadding="8">
   <tr>
     <th>Логин</th>
     <th>Пароль по умолчанию</th>
@@ -927,7 +1169,7 @@ docker compose exec api python -m app.seed --seed-demo
 <p>
 В полном соответствии с принципами <strong>минимизации внешних зависимостей (KISS/YAGNI)</strong> бэкенд содержит строго <strong>6 основных производственных зависимостей</strong>:
 </p>
-<table>
+<table border="1" cellspacing="0" cellpadding="8">
   <tr>
     <th>Библиотека</th>
     <th>Версия</th>
@@ -980,7 +1222,7 @@ docker compose exec api python -m app.seed --seed-demo
 </table>
 
 <h2>7.2. Спецификация клиентских зависимостей (React Frontend)</h2>
-<table>
+<table border="1" cellspacing="0" cellpadding="8">
   <tr>
     <th>Библиотека</th>
     <th>Версия</th>
@@ -1026,10 +1268,14 @@ docker compose exec api python -m app.seed --seed-demo
 </table>
 
 <h2>7.3. Лицензионный аудит и импортозамещение</h2>
-<div class="callout-success">
-  <strong>100% Лицензионная чистота (Open Source Permissive):</strong><br>
-  Все компоненты программного комплекса распространяются под открытыми разрешительными лицензиями (MIT, BSD-3-Clause, Apache-2.0, LGPL-3.0). В проекте <strong>полностью отсутствуют</strong> компоненты с вирусными лицензиями GPLv3/AGPL, а также закрытые проприетарные модули зарубежных вендоров. Решение полностью готово для включения в Единый реестр российских программ для электронных вычислительных машин и баз данных (Минцифры РФ).
-</div>
+<table class="callout-success" border="0" cellspacing="0" cellpadding="0" style="width: 100%; border: none; border-collapse: collapse; margin: 16px 0;">
+  <tr>
+    <td style="border: none; border-left: 4px solid #12B76A; background-color: #ECFDF3; width: 100%; padding: 12px 16px;">
+      <strong>100% Лицензионная чистота (Open Source Permissive):</strong><br>
+      Все компоненты программного комплекса распространяются под открытыми разрешительными лицензиями (MIT, BSD-3-Clause, Apache-2.0, LGPL-3.0). В проекте <strong>полностью отсутствуют</strong> компоненты с вирусными лицензиями GPLv3/AGPL, а также закрытые проприетарные модули зарубежных вендоров. Решение полностью готово для включения в Единый реестр российских программ для электронных вычислительных машин и баз данных (Минцифры РФ).
+    </td>
+  </tr>
+</table>
 
 <div class="page-break"></div>
 
@@ -1075,7 +1321,7 @@ backend/tests/test_challenger_security_2.py .......................... [ 50%]
 <p>
 В соответствии со сценариями приёмки AC30 и задачей плана B31 проведено нагрузочное тестирование комплекса с профилированием задержек:
 </p>
-<table>
+<table border="1" cellspacing="0" cellpadding="8">
   <tr>
     <th>Сценарий нагрузки</th>
     <th>Параметры теста</th>
@@ -1138,6 +1384,11 @@ backend/tests/test_challenger_security_2.py .......................... [ 50%]
     else:
         pdf_path = DOCS_DIR / "Пояснительная_записка_и_сопроводительная_документация_CRM_ИТ_Школа_Ростелеком.pdf"
         print(f"  [OK] PDF успешно создан: {pdf_path} ({pdf_path.stat().st_size // 1024} КБ)")
+        sub_pkg = WORKSPACE_ROOT / "submission_package"
+        sub_pkg.mkdir(parents=True, exist_ok=True)
+        sub_pkg_pdf = sub_pkg / "01_Сопроводительная_документация_CRM_Ростелеком.pdf"
+        shutil.copy2(pdf_path, sub_pkg_pdf)
+        print(f"  [OK] Скопировано в submission_package: {sub_pkg_pdf}")
 
     # Конвертация в DOCX через LibreOffice (через ODT шаг)
     print("  >>> Компиляция DOCX через LibreOffice...")

@@ -36,3 +36,4 @@ backend/.tmp_lo*/
 .tmp_lo*/
 submission_package/.lo_profile_pres/
 .~lock.*
+docs/rendered_docs/

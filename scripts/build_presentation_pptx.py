@@ -74,6 +74,7 @@ def make_para(runs: list, align: str = "l", bullet: bool = False,
     p = ET.Element(f"{{{NS_A}}}p")
     pPr = ET.SubElement(p, f"{{{NS_A}}}pPr", algn=align)
     if bullet:
+        ET.SubElement(pPr, f"{{{NS_A}}}buFont", typeface="Arial")
         ET.SubElement(pPr, f"{{{NS_A}}}buChar", char="•")
     else:
         ET.SubElement(pPr, f"{{{NS_A}}}buNone")
@@ -106,6 +107,9 @@ def set_shape_paragraphs(sp_elem: ET.Element, paragraphs: list):
         ET.SubElement(txBody, f"{{{NS_A}}}bodyPr", rtlCol="0")
         ET.SubElement(txBody, f"{{{NS_A}}}lstStyle")
     else:
+        lstStyle = txBody.find(f"{{{NS_A}}}lstStyle")
+        if lstStyle is not None:
+            lstStyle.clear()
         for p in list(txBody.findall(f"{{{NS_A}}}p")):
             txBody.remove(p)
     for p in paragraphs:
@@ -292,14 +296,15 @@ def patch_slide_8(root: ET.Element, rels: ET.Element):
     # Блок «Уникальность решения» (ID=8)
     sp_uniq = find_shape_by_id(root, 8)
     if sp_uniq is not None:
-        u1 = make_para([("1. Zero-Oracle 404: ", True, 1200, "7700FF"),
-                        ("изоляция данных и сокрытие факта существования записей по 152-ФЗ и ФСТЭК №117;", False, 1200, "101828")])
-        u2 = make_para([("2. CAS-блокировка ревизий: ", True, 1200, "7700FF"),
-                        ("устранение дедлоков и перезаписи данных кураторами (Optimistic Locking);", False, 1200, "101828")], space_before=3)
-        u3 = make_para([("3. Stdlib-first архитектура: ", True, 1200, "7700FF"),
-                        ("нулевой оверинжиниринг, сверхбыстрый экспорт отчётов XLSX/PDF (<350 мс);", False, 1200, "101828")], space_before=3)
-        u4 = make_para([("4. Потоковый ClamAV INSTREAM: ", True, 1200, "7700FF"),
-                        ("проверка файлов на лету без сохранения зловредного кода на диск.", False, 1200, "101828")], space_before=3)
+        set_shape_geometry(sp_uniq, cx=5150000, cy=1500000)
+        u1 = make_para([("1. Zero-Oracle 404: ", True, 1050, "7700FF"),
+                        ("изоляция данных и сокрытие факта существования записей по 152\u2011ФЗ и ФСТЭК №117;", False, 1050, "101828")])
+        u2 = make_para([("2. CAS-блокировка ревизий: ", True, 1050, "7700FF"),
+                        ("устранение дедлоков и перезаписи данных кураторами (Optimistic\u00a0Locking);", False, 1050, "101828")], space_before=3)
+        u3 = make_para([("3. Stdlib-first архитектура: ", True, 1050, "7700FF"),
+                        ("нулевой оверинжиниринг, сверхбыстрый экспорт отчётов XLSX/PDF (<350 мс);", False, 1050, "101828")], space_before=3)
+        u4 = make_para([("4. Потоковый ClamAV INSTREAM: ", True, 1050, "7700FF"),
+                        ("проверка файлов на лету без сохранения зловредного кода на диск.", False, 1050, "101828")], space_before=3)
         set_shape_paragraphs(sp_uniq, [u1, u2, u3, u4])
 
 
@@ -438,7 +443,7 @@ def patch_slide_10(root: ET.Element, rels: ET.Element):
     sp_h_b = find_shape_by_id(root, 37)
     if sp_h_b is not None:
         text = "Сплочённая команда «Ezdel» с подтверждённым опытом совместной разработки отказоустойчивых корпоративных сервисов и побед в профильных всероссийских ИТ-соревнованиях. Синергия глубокой экспертизы в кибербезопасности, высоких стандартов надёжности и современной продуктовой веб-разработки."
-        set_shape_paragraphs(sp_h_b, [make_para([(text, False, 1200, "101828")])])
+        set_shape_paragraphs(sp_h_b, [make_para([(text, False, 1100, "101828")])])
 
     # Блок 02 — Вызовы (заголовок ID=44, тело ID=43)
     sp_c_t = find_shape_by_id(root, 44)
@@ -446,12 +451,12 @@ def patch_slide_10(root: ET.Element, rels: ET.Element):
         set_shape_paragraphs(sp_c_t, [make_para([("Ключевые инженерные вызовы и решения:", True, 1500, "101828")])])
     sp_c_b = find_shape_by_id(root, 43)
     if sp_c_b is not None:
-        c1 = make_para([("152-ФЗ и защита от утечки метаданных: ", True, 1150, "7700FF"),
-                        ("Внедрён архитектурный паттерн Zero-Oracle 404 (сокрытие факта существования чужих карточек и файлов).", False, 1150, "101828")], bullet=True)
-        c2 = make_para([("Конкурентные правки кураторов: ", True, 1150, "7700FF"),
-                        ("Optimistic Concurrency Control (CAS) с проверкой expected_revision и заголовком Idempotency-Key (0 дедлоков).", False, 1150, "101828")], bullet=True, space_before=4)
-        c3 = make_para([("«Грязные» импортируемые каталоги: ", True, 1150, "7700FF"),
-                        ("Двухфазный потоковый валидатор на stdlib (xml.sax + zipfile) с сухим прогоном и атомарным коммитом.", False, 1150, "101828")], bullet=True, space_before=4)
+        c1 = make_para([("152-ФЗ и защита от утечки метаданных: ", True, 1100, "7700FF"),
+                        ("Внедрён архитектурный паттерн Zero-Oracle 404 (сокрытие факта существования чужих карточек и файлов).", False, 1100, "101828")], bullet=True)
+        c2 = make_para([("Конкурентные правки кураторов: ", True, 1100, "7700FF"),
+                        ("Optimistic Concurrency Control (CAS) с проверкой expected_revision и заголовком Idempotency-Key (0 дедлоков).", False, 1100, "101828")], bullet=True, space_before=4)
+        c3 = make_para([("«Грязные» импортируемые каталоги: ", True, 1100, "7700FF"),
+                        ("Двухфазный потоковый валидатор на stdlib (xml.sax + zipfile) с сухим прогоном и атомарным коммитом.", False, 1100, "101828")], bullet=True, space_before=4)
         set_shape_paragraphs(sp_c_b, [c1, c2, c3])
 
     # Блок 03 — Мотивация (заголовок ID=41, тело ID=40)
@@ -574,20 +579,20 @@ def patch_slide_13(root: ET.Element, rels: ET.Element):
     # Левая колонка — C4 Container (ID=3)
     sp_left = find_shape_by_id(root, 3)
     if sp_left is not None:
-        set_shape_geometry(sp_left, x=521133, y=1300000, cx=5400000, cy=4900000)
-        p1 = make_para([("Архитектура C4 Container & Компоненты:", True, 1350, "7700FF")])
-        p2 = make_para([("1. Edge-контур: ", True, 1100, "101828"),
-                        ("Nginx Reverse Proxy (SSL/TLS, rate-limiting, сжатие, SPA-роутинг).", False, 1100, "101828")], space_before=4)
-        p3 = make_para([("2. Frontend SPA: ", True, 1100, "101828"),
-                        ("React 19 + TypeScript + Vite + Tailwind CSS + in-memory JWT (защита от кражи токенов по 152-ФЗ).", False, 1100, "101828")], space_before=4)
-        p4 = make_para([("3. Core Application: ", True, 1100, "101828"),
-                        ("FastAPI (Python 3.12, Async SQLAlchemy 2.0, CAS-контроллер ревизий, Stdlib-first подход).", False, 1100, "101828")], space_before=4)
-        p5 = make_para([("4. Инфраструктура: ", True, 1100, "101828"),
-                        ("PostgreSQL 16 (изолированная docker-сеть), Redis 7 (сессии/кэш), Keycloak 26 OIDC (SSO).", False, 1100, "101828")], space_before=4)
-        p6 = make_para([("5. Фоновые воркеры: ", True, 1100, "101828"),
-                        ("Асинхронный генератор тяжёлых аналитических срезов и отчётов с нулевой блокировкой event-loop.", False, 1100, "101828")], space_before=4)
-        p7 = make_para([("6. Антивирусная защита: ", True, 1100, "101828"),
-                        ("ClamAV Daemon с потоковым сканированием через сокет INSTREAM до записи файла на диск.", False, 1100, "101828")], space_before=4)
+        set_shape_geometry(sp_left, x=500000, y=1300000, cx=5550000, cy=4900000)
+        p1 = make_para([("Архитектура C4 Container & Компоненты:", True, 1300, "7700FF")])
+        p2 = make_para([("1. Edge-контур: ", True, 1050, "101828"),
+                        ("Nginx Reverse Proxy (SSL/TLS, rate-limiting, сжатие, SPA\u2011роутинг).", False, 1050, "101828")], space_before=4)
+        p3 = make_para([("2. Frontend SPA: ", True, 1050, "101828"),
+                        ("React 19 + TypeScript + Vite + Tailwind CSS + in-memory JWT (защита от кражи токенов по 152\u2011ФЗ).", False, 1050, "101828")], space_before=4)
+        p4 = make_para([("3. Core Application: ", True, 1050, "101828"),
+                        ("FastAPI (Python 3.12, Async SQLAlchemy 2.0, CAS-контроллер ревизий, Stdlib-first подход).", False, 1050, "101828")], space_before=4)
+        p5 = make_para([("4. Инфраструктура: ", True, 1050, "101828"),
+                        ("PostgreSQL 16 (изолированная docker-сеть), Redis\u00a07 (сессии/кэш), Keycloak 26 OIDC (SSO).", False, 1050, "101828")], space_before=4)
+        p6 = make_para([("5. Фоновые воркеры: ", True, 1050, "101828"),
+                        ("Асинхронный генератор тяжёлых аналитических срезов и отчётов с нулевой блокировкой event-loop.", False, 1050, "101828")], space_before=4)
+        p7 = make_para([("6. Антивирусная защита: ", True, 1050, "101828"),
+                        ("ClamAV Daemon с потоковым сканированием через сокет INSTREAM до записи файла на диск.", False, 1050, "101828")], space_before=4)
         set_shape_paragraphs(sp_left, [p1, p2, p3, p4, p5, p6, p7])
 
     # Правая колонка — Инварианты безопасности (добавляем новую фигуру)
@@ -815,27 +820,15 @@ def patch_slide_16(root: ET.Element, rels: ET.Element):
         set_shape_paragraphs(sp_t4, [make_para([("Телеметрия", True, 1300, "7700FF")])])
     sp_b4 = find_shape_by_id(root, 8)
     if sp_b4 is not None:
-        set_shape_geometry(sp_b4, y=2250000, cx=2400000, cy=1300000)
+        set_shape_geometry(sp_b4, y=2250000, cx=2400000, cy=3800000)
         p1 = make_para([("Мониторинг контуров:", True, 1150, "101828")])
         p2 = make_para([("• ", False, 1050, "7700FF"),
                         ("Статус очередей, время синхронизации и аудит интеграций.", False, 1050, "101828")], space_before=4)
-        set_shape_paragraphs(sp_b4, [p1, p2])
-
-    # Внедрение скриншота телеметрии в 4-ю колонку
-    sp_tree = root.find(f".//{{{NS_P}}}spTree")
-    pic = make_pic_element(
-        shape_id=105,
-        shape_name="Скриншот телеметрии администратора",
-        rel_id="rIdPicTelem",
-        x=9250000,
-        y=3750000,
-        cx=2500000,
-        cy=2450000,
-        border_color="E2E5EB",
-        round_rect=True
-    )
-    sp_tree.append(pic)
-    add_relationship(rels, "rIdPicTelem", "image", "../media/screen-10-admin-overview-telemetry.png")
+        p3 = make_para([("• ", False, 1050, "7700FF"),
+                        ("Счётчики очереди: количество ожидающих, обработанных и отклонённых пакетов.", False, 1050, "101828")], space_before=4)
+        p4 = make_para([("• ", False, 1050, "7700FF"),
+                        ("Аудит вебхуков и оперативная диагностика сбоев внешних сервисов (AC21).", False, 1050, "101828")], space_before=4)
+        set_shape_paragraphs(sp_b4, [p1, p2, p3, p4])
 
 
 def patch_slide_17(root: ET.Element, rels: ET.Element):
@@ -862,14 +855,14 @@ def patch_slide_17(root: ET.Element, rels: ET.Element):
     sp_b1 = find_shape_by_id(root, 2)
     if sp_b1 is not None:
         set_shape_geometry(sp_b1, x=700000, y=2350000, cx=3300000, cy=3800000)
-        p1 = make_para([("• ", False, 1050, "7700FF"),
-                        ("p95 отклика = 48.2 мс при нагрузке 50 одновременных пользователей (норматив ТЗ ≤ 1000 мс).", True, 1100, "101828")])
-        p2 = make_para([("• ", False, 1050, "7700FF"),
-                        ("10 одновременных аналитических отчётов без замедления работы интерфейса.", False, 1050, "101828")], space_before=4)
-        p3 = make_para([("• ", False, 1050, "7700FF"),
-                        ("100% покрытие ключевых сценариев регламента (99+ автоматизированных тестов).", False, 1050, "101828")], space_before=4)
-        p4 = make_para([("• ", False, 1050, "7700FF"),
-                        ("0 новых сторонних зависимостей (Stdlib-first архитектура).", False, 1050, "101828")], space_before=4)
+        p1 = make_para([("• ", False, 1000, "7700FF"),
+                        ("p95 отклика = 48.2 мс при нагрузке 50 одновременных пользователей (норматив ТЗ ≤ 1000 мс).", True, 1000, "101828")])
+        p2 = make_para([("• ", False, 1000, "7700FF"),
+                        ("10 одновременных аналитических отчётов без замедления работы интерфейса.", False, 1000, "101828")], space_before=4)
+        p3 = make_para([("• ", False, 1000, "7700FF"),
+                        ("100% покрытие ключевых сценариев регламента (99+ автоматизированных тестов).", False, 1000, "101828")], space_before=4)
+        p4 = make_para([("• ", False, 1000, "7700FF"),
+                        ("0 новых сторонних зависимостей (Stdlib-first архитектура).", False, 1000, "101828")], space_before=4)
         set_shape_paragraphs(sp_b1, [p1, p2, p3, p4])
 
     # Колонка 2: Сравнение с аналогами (заголовок ID=16, тело ID=4)
@@ -880,12 +873,12 @@ def patch_slide_17(root: ET.Element, rels: ET.Element):
     sp_b2 = find_shape_by_id(root, 4)
     if sp_b2 is not None:
         set_shape_geometry(sp_b2, x=4500000, y=2350000, cx=3300000, cy=3800000)
-        p1 = make_para([("• ", False, 1050, "7700FF"),
-                        ("rost_crm: 14-этапный регламент Ростелекома, Zero-Oracle 404, ClamAV INSTREAM, CAS-ревизии, 0 ₽ лицензии.", True, 1100, "101828")])
-        p2 = make_para([("• ", False, 1050, "7700FF"),
-                        ("Bitrix24 / amoCRM: универсальные воронки без специфики вузов, оракулы существования ID, риски дедлоков, платная подписка.", False, 1050, "101828")], space_before=4)
-        p3 = make_para([("• ", False, 1050, "7700FF"),
-                        ("1C:CRM: тяжёлый монолит, медленный веб-клиент, сложная адаптация под регламенты Школы.", False, 1050, "101828")], space_before=4)
+        p1 = make_para([("• ", False, 1000, "7700FF"),
+                        ("rost_crm: 14-этапный регламент Ростелекома, Zero-Oracle 404, ClamAV INSTREAM, CAS-ревизии, 0 ₽ лицензии.", True, 1000, "101828")])
+        p2 = make_para([("• ", False, 1000, "7700FF"),
+                        ("Bitrix24 / amoCRM: универсальные воронки без специфики вузов, оракулы существования ID, риски дедлоков, платная подписка.", False, 1000, "101828")], space_before=4)
+        p3 = make_para([("• ", False, 1000, "7700FF"),
+                        ("1C:CRM: тяжёлый монолит, медленный веб-клиент, сложная адаптация под регламенты Школы.", False, 1000, "101828")], space_before=4)
         set_shape_paragraphs(sp_b2, [p1, p2, p3])
 
     # Колонка 3: Экономический эффект (заголовок ID=17, тело ID=6)
@@ -896,14 +889,14 @@ def patch_slide_17(root: ET.Element, rels: ET.Element):
     sp_b3 = find_shape_by_id(root, 6)
     if sp_b3 is not None:
         set_shape_geometry(sp_b3, x=8400000, y=2350000, cx=3300000, cy=3800000)
-        p1 = make_para([("• ", False, 1050, "FF4F12"),
-                        ("Сокращение трудозатрат кураторов на 65% за счёт автоматизации регламента.", True, 1100, "FF4F12")])
-        p2 = make_para([("• ", False, 1050, "FF4F12"),
-                        ("0 потерь данных при смене ответственных менеджеров.", False, 1050, "101828")], space_before=4)
-        p3 = make_para([("• ", False, 1050, "FF4F12"),
-                        ("Автоматический расчет рейтинга востребованности программ.", False, 1050, "101828")], space_before=4)
-        p4 = make_para([("• ", False, 1050, "FF4F12"),
-                        ("Готовность к развёртыванию на 500+ вузов РФ без увеличения штата сотрудников.", False, 1050, "101828")], space_before=4)
+        p1 = make_para([("• ", False, 1000, "FF4F12"),
+                        ("Сокращение трудозатрат кураторов на 65% за счёт автоматизации регламента.", True, 1000, "FF4F12")])
+        p2 = make_para([("• ", False, 1000, "FF4F12"),
+                        ("0 потерь данных при смене ответственных менеджеров.", False, 1000, "101828")], space_before=4)
+        p3 = make_para([("• ", False, 1000, "FF4F12"),
+                        ("Автоматический расчет рейтинга востребованности программ.", False, 1000, "101828")], space_before=4)
+        p4 = make_para([("• ", False, 1000, "FF4F12"),
+                        ("Готовность к развёртыванию на 500+ вузов РФ без увеличения штата сотрудников.", False, 1000, "101828")], space_before=4)
         set_shape_paragraphs(sp_b3, [p1, p2, p3, p4])
 
 

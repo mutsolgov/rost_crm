@@ -1,0 +1,1016 @@
+<?xml version='1.0' encoding='UTF-8'?>
+<model xmlns="http://www.opengroup.org/xsd/archimate/3.0/" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://www.opengroup.org/xsd/archimate/3.0/ http://www.opengroup.org/xsd/archimate/3.1/archimate3_Diagram.xsd" identifier="id-rost-crm-model">
+  <name xml:lang="ru">ИТ Школа Ростелекома — CRM (Архитектурная модель ArchiMate 3.1)</name>
+  <documentation xml:lang="ru">Комплексная архитектурная модель системы «ИТ Школа Ростелекома — CRM» (rost_crm), разработанная в соответствии со стандартом The Open Group ArchiMate 3.1 Model Exchange File. Охватывает Бизнес-слой (акторы, роли, процессы воронки партнерств, объекты), Слой приложений (SPA, FastAPI ядро, движки воронки, отчетов, файлов, интеграций, шина Keycloak, LMS Zion, Сайт Laravel) и Технологический слой (Linux, Docker, PostgreSQL 16, Python 3.12, Nginx, сетевые периметры DMZ/LAN).</documentation>
+  <elements>
+    <element identifier="id-elem-ba-manager" xsi:type="BusinessActor">
+      <name xml:lang="ru">Менеджер партнерств</name>
+      <documentation xml:lang="ru">Сотрудник ПАО «Ростелеком», ведущий взаимодействия с образовательными организациями.</documentation>
+    </element>
+    <element identifier="id-elem-ba-supervisor" xsi:type="BusinessActor">
+      <name xml:lang="ru">Руководитель направления</name>
+      <documentation xml:lang="ru">Куратор региональной команды менеджеров, контролирующий воронку партнерств и аналитику.</documentation>
+    </element>
+    <element identifier="id-elem-ba-admin" xsi:type="BusinessActor">
+      <name xml:lang="ru">Системный администратор</name>
+      <documentation xml:lang="ru">Администратор платформы, управляющий пользователями, миграциями процессов и сверкой заявок.</documentation>
+    </element>
+    <element identifier="id-elem-ba-unirep" xsi:type="BusinessActor">
+      <name xml:lang="ru">Представитель образовательной организации</name>
+      <documentation xml:lang="ru">Контактное лицо вуза/колледжа: ректор, декан, преподаватель.</documentation>
+    </element>
+    <element identifier="id-elem-br-operator" xsi:type="BusinessRole">
+      <name xml:lang="ru">Оператор воронки партнерств</name>
+      <documentation xml:lang="ru">Роль ведения карточек взаимодействия, согласования и фиксации этапов.</documentation>
+    </element>
+    <element identifier="id-elem-br-curator" xsi:type="BusinessRole">
+      <name xml:lang="ru">Куратор регионального портфеля</name>
+      <documentation xml:lang="ru">Роль распределения вузов и мониторинга аналитики команды.</documentation>
+    </element>
+    <element identifier="id-elem-br-secadmin" xsi:type="BusinessRole">
+      <name xml:lang="ru">Администратор безопасности и конфигурации</name>
+      <documentation xml:lang="ru">Роль управления каталогами, миграции версий workflow и разрешения заявок.</documentation>
+    </element>
+    <element identifier="id-elem-bc-partnership" xsi:type="BusinessCollaboration">
+      <name xml:lang="ru">Сотрудничество в проекте «ИТ Школа»</name>
+      <documentation xml:lang="ru">Совместная деятельность Ростелекома и образовательных организаций.</documentation>
+    </element>
+    <element identifier="id-elem-bp-initiation" xsi:type="BusinessProcess">
+      <name xml:lang="ru">Инициация партнерства</name>
+      <documentation xml:lang="ru">Этапы: 1. Поиск контактов -&gt; 2. Уточнение потребности -&gt; 3. Встреча с вузом.</documentation>
+    </element>
+    <element identifier="id-elem-bp-contracting" xsi:type="BusinessProcess">
+      <name xml:lang="ru">Договорная кампания</name>
+      <documentation xml:lang="ru">Этапы: 4. Обмен документами -&gt; 5. Корректировка -&gt; 6. Подписание документов.</documentation>
+    </element>
+    <element identifier="id-elem-bp-transfer" xsi:type="BusinessProcess">
+      <name xml:lang="ru">Внедрение ПО и передача материалов</name>
+      <documentation xml:lang="ru">Этапы: 7. Передача материалов -&gt; 8. Сопровождение -&gt; 9. Обучение преподавателей.</documentation>
+    </element>
+    <element identifier="id-elem-bp-study" xsi:type="BusinessProcess">
+      <name xml:lang="ru">Учебный процесс и сопровождение</name>
+      <documentation xml:lang="ru">Этапы: 10. Актуализация -&gt; 11. Ведение занятий -&gt; 12. Обновление материалов -&gt; 13. Повышение квалификации.</documentation>
+    </element>
+    <element identifier="id-elem-bp-analytics" xsi:type="BusinessProcess">
+      <name xml:lang="ru">Формирование управленческой аналитики</name>
+      <documentation xml:lang="ru">Построение срезов портфеля на дату (snapshot), динамики активности (activity) и привлечения (created).</documentation>
+    </element>
+    <element identifier="id-elem-bo-interaction" xsi:type="BusinessObject">
+      <name xml:lang="ru">Карточка взаимодействия</name>
+      <documentation xml:lang="ru">Центральная бизнес-сущность сотрудничества по образовательной программе.</documentation>
+    </element>
+    <element identifier="id-elem-bo-contract" xsi:type="BusinessObject">
+      <name xml:lang="ru">Договор о сотрудничестве</name>
+      <documentation xml:lang="ru">Двусторонний юридический договор между Ростелекомом и вузом.</documentation>
+    </element>
+    <element identifier="id-elem-bo-license" xsi:type="BusinessObject">
+      <name xml:lang="ru">Лицензия на ИТ-продукт</name>
+      <documentation xml:lang="ru">Лицензионное соглашение на программные продукты Ростелекома.</documentation>
+    </element>
+    <element identifier="id-elem-bo-contact" xsi:type="BusinessObject">
+      <name xml:lang="ru">Контактные данные представителя</name>
+      <documentation xml:lang="ru">Персональные данные представителя образовательной организации (ФИО, телефон, email).</documentation>
+    </element>
+    <element identifier="id-elem-bo-report" xsi:type="BusinessObject">
+      <name xml:lang="ru">Аналитический отчет</name>
+      <documentation xml:lang="ru">Сводные отчетные материалы в форматах XLSX, PDF и JSON.</documentation>
+    </element>
+    <element identifier="id-elem-ac-crm" xsi:type="ApplicationComponent">
+      <name xml:lang="ru">ИТ Школа Ростелекома — CRM</name>
+      <documentation xml:lang="ru">Централизованная система управления взаимодействиями с вузами.</documentation>
+    </element>
+    <element identifier="id-elem-ac-frontend" xsi:type="ApplicationComponent">
+      <name xml:lang="ru">Single-Page Application (React UI)</name>
+      <documentation xml:lang="ru">Клиентское веб-приложение в дизайн-системе Rostelecom Gen2 Light (React 18, Vite). In-memory JWT.</documentation>
+    </element>
+    <element identifier="id-elem-ac-backend" xsi:type="ApplicationComponent">
+      <name xml:lang="ru">FastAPI Backend Core API</name>
+      <documentation xml:lang="ru">Высокопроизводительное асинхронное ядро бизнес-логики и REST API (Python 3.12+).</documentation>
+    </element>
+    <element identifier="id-elem-ac-workflow" xsi:type="ApplicationComponent">
+      <name xml:lang="ru">Workflow Engine &amp; Migrator</name>
+      <documentation xml:lang="ru">Движок управления 15 статусами воронки, валидации переходов и транзакционной миграции v1 -&gt; v2.</documentation>
+    </element>
+    <element identifier="id-elem-ac-reports" xsi:type="ApplicationComponent">
+      <name xml:lang="ru">Analytical Reports Engine</name>
+      <documentation xml:lang="ru">Модуль расчета срезов и бинарной генерации XLSX (OOXML) и векторных PDF с символикой Ростелекома.</documentation>
+    </element>
+    <element identifier="id-elem-ac-files" xsi:type="ApplicationComponent">
+      <name xml:lang="ru">Secure File Service</name>
+      <documentation xml:lang="ru">Изолированное хранилище 10 форматов ТЗ с валидацией magic bytes, защитой от Path Traversal и SHA-256.</documentation>
+    </element>
+    <element identifier="id-elem-ac-import" xsi:type="ApplicationComponent">
+      <name xml:lang="ru">Two-Phase Import Wizard</name>
+      <documentation xml:lang="ru">Двухфазный мастер пакетного импорта каталогов (Dry-Run Preview и транзакционный Commit).</documentation>
+    </element>
+    <element identifier="id-elem-ac-integrations" xsi:type="ApplicationComponent">
+      <name xml:lang="ru">Integrations Gateway &amp; Reconciliation Inbox</name>
+      <documentation xml:lang="ru">Шлюз адаптеров LMS Zion и Сайта Laravel с очередью сверки коллизий заявок.</documentation>
+    </element>
+    <element identifier="id-elem-ac-audit" xsi:type="ApplicationComponent">
+      <name xml:lang="ru">Audit &amp; Event Sourcing Store</name>
+      <documentation xml:lang="ru">Неизменяемое хранилище событий InteractionEvent с монотонным sequence и полными снимками состояния.</documentation>
+    </element>
+    <element identifier="id-elem-ac-keycloak" xsi:type="ApplicationComponent">
+      <name xml:lang="ru">Keycloak Identity Provider</name>
+      <documentation xml:lang="ru">Корпоративный сервер федеративной аутентификации (OIDC PKCE S256).</documentation>
+    </element>
+    <element identifier="id-elem-ac-lms" xsi:type="ApplicationComponent">
+      <name xml:lang="ru">LMS Zion (rtkb.zion-lms.ru)</name>
+      <documentation xml:lang="ru">Внешняя образовательная платформа (активные потоки, зачисленные студенты).</documentation>
+    </element>
+    <element identifier="id-elem-ac-website" xsi:type="ApplicationComponent">
+      <name xml:lang="ru">Внешний сайт заявок (Laravel)</name>
+      <documentation xml:lang="ru">Публичный портал приема входящих заявок образовательных организаций.</documentation>
+    </element>
+    <element identifier="id-elem-ai-rest" xsi:type="ApplicationInterface">
+      <name xml:lang="ru">REST API v1 Interface (/api/v1/)</name>
+      <documentation xml:lang="ru">Стандартизированный программный интерфейс JSON REST API с CAS и Idempotency-Key.</documentation>
+    </element>
+    <element identifier="id-elem-ai-oidc" xsi:type="ApplicationInterface">
+      <name xml:lang="ru">Keycloak OIDC PKCE S256 Interface</name>
+      <documentation xml:lang="ru">Интерфейс авторизации OAuth2/OIDC.</documentation>
+    </element>
+    <element identifier="id-elem-ai-lms" xsi:type="ApplicationInterface">
+      <name xml:lang="ru">LMS Adapter Interface (DTO v1.0)</name>
+      <documentation xml:lang="ru">Нормализованный интеграционный конверт сбора метрик.</documentation>
+    </element>
+    <element identifier="id-elem-ai-web" xsi:type="ApplicationInterface">
+      <name xml:lang="ru">Website Webhook Interface (DTO v1.0)</name>
+      <documentation xml:lang="ru">Интерфейс приема пакетов заявок с внешнего сайта.</documentation>
+    </element>
+    <element identifier="id-elem-ai-gui" xsi:type="ApplicationInterface">
+      <name xml:lang="ru">Web GUI Interface</name>
+      <documentation xml:lang="ru">Пользовательский интерфейс в веб-браузере.</documentation>
+    </element>
+    <element identifier="id-elem-as-interaction" xsi:type="ApplicationService">
+      <name xml:lang="ru">Сервис управления взаимодействиями</name>
+      <documentation xml:lang="ru">API CRUD карточек, переходы статусов, CAS-обновление ревизий.</documentation>
+    </element>
+    <element identifier="id-elem-as-auth" xsi:type="ApplicationService">
+      <name xml:lang="ru">Сервис контроля доступа и Scope 152-ФЗ</name>
+      <documentation xml:lang="ru">Проверка подписи JWT, расчет scope_clause, скрытие записей через 404 Not Found.</documentation>
+    </element>
+    <element identifier="id-elem-as-reports" xsi:type="ApplicationService">
+      <name xml:lang="ru">Сервис аналитических отчетов</name>
+      <documentation xml:lang="ru">Построение срезов портфеля, генерация XLSX и векторных PDF.</documentation>
+    </element>
+    <element identifier="id-elem-as-files" xsi:type="ApplicationService">
+      <name xml:lang="ru">Сервис безопасного хранения файлов</name>
+      <documentation xml:lang="ru">Фильтрация расширений, проверка magic bytes, потоковая отдача FileResponse.</documentation>
+    </element>
+    <element identifier="id-elem-as-sync" xsi:type="ApplicationService">
+      <name xml:lang="ru">Сервис синхронизации и сверки заявок</name>
+      <documentation xml:lang="ru">Дедупликация DTO v1.0 и ручное сопоставление вузов.</documentation>
+    </element>
+    <element identifier="id-elem-do-interaction" xsi:type="DataObject">
+      <name xml:lang="ru">Сущность Interaction</name>
+      <documentation xml:lang="ru">Модель данных карточки партнерства в реляционной БД.</documentation>
+    </element>
+    <element identifier="id-elem-do-event" xsi:type="DataObject">
+      <name xml:lang="ru">Сущность InteractionEvent</name>
+      <documentation xml:lang="ru">Модель темпорального события с sequence и snapshot.</documentation>
+    </element>
+    <element identifier="id-elem-do-attachment" xsi:type="DataObject">
+      <name xml:lang="ru">Сущность Attachment</name>
+      <documentation xml:lang="ru">Модель метаданных файла с контрольной суммой SHA-256.</documentation>
+    </element>
+    <element identifier="id-elem-do-inbox" xsi:type="DataObject">
+      <name xml:lang="ru">Сущность IntegrationInbox</name>
+      <documentation xml:lang="ru">Модель очереди входящих заявок с композитным ключом дедупликации.</documentation>
+    </element>
+    <element identifier="id-elem-do-metric" xsi:type="DataObject">
+      <name xml:lang="ru">Сущность LearningMetric</name>
+      <documentation xml:lang="ru">Модель образовательных показателей востребованности программ.</documentation>
+    </element>
+    <element identifier="id-elem-do-token" xsi:type="DataObject">
+      <name xml:lang="ru">In-Memory JWT Access Token</name>
+      <documentation xml:lang="ru">Аутентификационный токен, удерживаемый в оперативной памяти JavaScript.</documentation>
+    </element>
+    <element identifier="id-elem-node-app" xsi:type="Node">
+      <name xml:lang="ru">Сервер приложений CRM</name>
+      <documentation xml:lang="ru">Выделенный вычислительный узел хостинга бэкенда и веб-сервера.</documentation>
+    </element>
+    <element identifier="id-elem-node-db" xsi:type="Node">
+      <name xml:lang="ru">Сервер баз данных</name>
+      <documentation xml:lang="ru">Выделенный сервер реляционной СУБД.</documentation>
+    </element>
+    <element identifier="id-elem-dev-client" xsi:type="Device">
+      <name xml:lang="ru">Клиентское рабочее место сотрудника</name>
+      <documentation xml:lang="ru">Рабочая станция / ноутбук пользователя с веб-браузером.</documentation>
+    </element>
+    <element identifier="id-elem-ss-linux" xsi:type="SystemSoftware">
+      <name xml:lang="ru">Linux OS (Ubuntu 22.04 LTS / RHEL 9)</name>
+      <documentation xml:lang="ru">Базовая серверная операционная система с настроенными политиками безопасности.</documentation>
+    </element>
+    <element identifier="id-elem-ss-docker" xsi:type="SystemSoftware">
+      <name xml:lang="ru">Docker Engine &amp; Compose</name>
+      <documentation xml:lang="ru">Среда контейнеризации прикладных сервисов.</documentation>
+    </element>
+    <element identifier="id-elem-ss-python" xsi:type="SystemSoftware">
+      <name xml:lang="ru">Python 3.12+ Runtime</name>
+      <documentation xml:lang="ru">Среда исполнения бэкенда с AnyIO и Uvicorn.</documentation>
+    </element>
+    <element identifier="id-elem-ss-postgres" xsi:type="SystemSoftware">
+      <name xml:lang="ru">PostgreSQL 16 RDBMS</name>
+      <documentation xml:lang="ru">Транзакционная реляционная СУБД с поддержкой ACID.</documentation>
+    </element>
+    <element identifier="id-elem-ss-nginx" xsi:type="SystemSoftware">
+      <name xml:lang="ru">Nginx Web Server / Reverse Proxy</name>
+      <documentation xml:lang="ru">Веб-сервер терминации TLS 1.3, статики SPA и проксирования.</documentation>
+    </element>
+    <element identifier="id-elem-ss-browser" xsi:type="SystemSoftware">
+      <name xml:lang="ru">Modern Web Browser</name>
+      <documentation xml:lang="ru">Браузер с поддержкой стандартов HTML5, ES2022, Web Crypto API.</documentation>
+    </element>
+    <element identifier="id-elem-ss-keycloak" xsi:type="SystemSoftware">
+      <name xml:lang="ru">Keycloak 24+ Server</name>
+      <documentation xml:lang="ru">Сервер управления доступом и аутентификацией.</documentation>
+    </element>
+    <element identifier="id-elem-net-corp" xsi:type="CommunicationNetwork">
+      <name xml:lang="ru">Корпоративная сеть ПАО «Ростелеком»</name>
+      <documentation xml:lang="ru">Защищенный внутренний периметр LAN / IPsec VPN.</documentation>
+    </element>
+    <element identifier="id-elem-net-dmz" xsi:type="CommunicationNetwork">
+      <name xml:lang="ru">Периметр безопасности DMZ</name>
+      <documentation xml:lang="ru">Демилитаризованная зона внешних сетевых интерфейсов.</documentation>
+    </element>
+    <element identifier="id-elem-net-internal" xsi:type="CommunicationNetwork">
+      <name xml:lang="ru">Изолированная сеть контейнеров</name>
+      <documentation xml:lang="ru">Внутренняя сеть взаимодействия бэкенда и СУБД.</documentation>
+    </element>
+    <element identifier="id-elem-art-spa" xsi:type="Artifact">
+      <name xml:lang="ru">Дистрибутив React SPA (Static Bundle)</name>
+      <documentation xml:lang="ru">Скомпилированные статические файлы клиентского интерфейса.</documentation>
+    </element>
+    <element identifier="id-elem-art-backend" xsi:type="Artifact">
+      <name xml:lang="ru">Пакет Backend API Core</name>
+      <documentation xml:lang="ru">Исполняемый дистрибутив FastAPI приложения.</documentation>
+    </element>
+    <element identifier="id-elem-art-storage" xsi:type="Artifact">
+      <name xml:lang="ru">Том хранилища (storage/attachments/)</name>
+      <documentation xml:lang="ru">Изолированный том постоянного хранения проверенных файлов.</documentation>
+    </element>
+    <element identifier="id-elem-art-dbdata" xsi:type="Artifact">
+      <name xml:lang="ru">Файлы данных PostgreSQL</name>
+      <documentation xml:lang="ru">Физические файлы табличных пространств СУБД.</documentation>
+    </element>
+  </elements>
+  <relationships>
+    <relationship identifier="id-rel-01" source="id-elem-ba-manager" target="id-elem-br-operator" xsi:type="Assignment">
+      <name xml:lang="ru">Назначение</name>
+      <documentation xml:lang="ru">Менеджер исполняет роль оператора воронки.</documentation>
+    </relationship>
+    <relationship identifier="id-rel-02" source="id-elem-ba-supervisor" target="id-elem-br-curator" xsi:type="Assignment">
+      <name xml:lang="ru">Назначение</name>
+      <documentation xml:lang="ru">Руководитель исполняет роль куратора портфеля.</documentation>
+    </relationship>
+    <relationship identifier="id-rel-03" source="id-elem-ba-admin" target="id-elem-br-secadmin" xsi:type="Assignment">
+      <name xml:lang="ru">Назначение</name>
+      <documentation xml:lang="ru">Администратор исполняет роль администратора безопасности.</documentation>
+    </relationship>
+    <relationship identifier="id-rel-04" source="id-elem-br-operator" target="id-elem-bp-initiation" xsi:type="Assignment">
+      <name xml:lang="ru">Выполняет</name>
+      <documentation xml:lang="ru">Оператор ведет стадию инициации.</documentation>
+    </relationship>
+    <relationship identifier="id-rel-05" source="id-elem-br-operator" target="id-elem-bp-contracting" xsi:type="Assignment">
+      <name xml:lang="ru">Выполняет</name>
+      <documentation xml:lang="ru">Оператор ведет договорную кампанию.</documentation>
+    </relationship>
+    <relationship identifier="id-rel-06" source="id-elem-br-operator" target="id-elem-bp-transfer" xsi:type="Assignment">
+      <name xml:lang="ru">Выполняет</name>
+      <documentation xml:lang="ru">Оператор организует передачу материалов и ПО.</documentation>
+    </relationship>
+    <relationship identifier="id-rel-07" source="id-elem-br-curator" target="id-elem-bp-analytics" xsi:type="Assignment">
+      <name xml:lang="ru">Контролирует</name>
+      <documentation xml:lang="ru">Куратор анализирует сводные отчеты.</documentation>
+    </relationship>
+    <relationship identifier="id-rel-08" source="id-elem-br-secadmin" target="id-elem-bp-analytics" xsi:type="Assignment">
+      <name xml:lang="ru">Администрирует</name>
+      <documentation xml:lang="ru">Администратор аудирует действия пользователей.</documentation>
+    </relationship>
+    <relationship identifier="id-rel-09" source="id-elem-bp-initiation" target="id-elem-bp-contracting" xsi:type="Triggering">
+      <name xml:lang="ru">Переход к договорам</name>
+      <documentation xml:lang="ru">Успешная встреча инициирует оформление договоров.</documentation>
+    </relationship>
+    <relationship identifier="id-rel-10" source="id-elem-bp-contracting" target="id-elem-bp-transfer" xsi:type="Triggering">
+      <name xml:lang="ru">Переход к внедрению</name>
+      <documentation xml:lang="ru">Подписание договора и лицензии открывает передачу материалов.</documentation>
+    </relationship>
+    <relationship identifier="id-rel-11" source="id-elem-bp-transfer" target="id-elem-bp-study" xsi:type="Triggering">
+      <name xml:lang="ru">Запуск обучения</name>
+      <documentation xml:lang="ru">Передача материалов и обучение педагогов активирует занятия.</documentation>
+    </relationship>
+    <relationship identifier="id-rel-12" source="id-elem-bc-partnership" target="id-elem-ba-manager" xsi:type="Aggregation">
+      <name xml:lang="ru">Участник</name>
+      <documentation xml:lang="ru">Ростелеком представлен менеджером.</documentation>
+    </relationship>
+    <relationship identifier="id-rel-13" source="id-elem-bc-partnership" target="id-elem-ba-unirep" xsi:type="Aggregation">
+      <name xml:lang="ru">Участник</name>
+      <documentation xml:lang="ru">Вуз представлен контактным лицом.</documentation>
+    </relationship>
+    <relationship identifier="id-rel-14" source="id-elem-bp-initiation" target="id-elem-bo-interaction" xsi:type="Access">
+      <name xml:lang="ru">Создание и изменение</name>
+      <documentation xml:lang="ru">Инициация создает карточку взаимодействия.</documentation>
+    </relationship>
+    <relationship identifier="id-rel-15" source="id-elem-bp-contracting" target="id-elem-bo-contract" xsi:type="Access">
+      <name xml:lang="ru">Формирование</name>
+      <documentation xml:lang="ru">Процесс оформляет договор.</documentation>
+    </relationship>
+    <relationship identifier="id-rel-16" source="id-elem-bp-contracting" target="id-elem-bo-license" xsi:type="Access">
+      <name xml:lang="ru">Формирование</name>
+      <documentation xml:lang="ru">Процесс оформляет лицензию.</documentation>
+    </relationship>
+    <relationship identifier="id-rel-17" source="id-elem-bp-initiation" target="id-elem-bo-contact" xsi:type="Access">
+      <name xml:lang="ru">Ввод данных</name>
+      <documentation xml:lang="ru">Процесс фиксирует контактные данные представителя.</documentation>
+    </relationship>
+    <relationship identifier="id-rel-18" source="id-elem-bp-analytics" target="id-elem-bo-report" xsi:type="Access">
+      <name xml:lang="ru">Генерация</name>
+      <documentation xml:lang="ru">Процесс генерирует отчетные срезы.</documentation>
+    </relationship>
+    <relationship identifier="id-rel-19" source="id-elem-ac-crm" target="id-elem-ac-frontend" xsi:type="Composition">
+      <name xml:lang="ru">Содержит</name>
+      <documentation xml:lang="ru">CRM включает клиентское SPA приложение.</documentation>
+    </relationship>
+    <relationship identifier="id-rel-20" source="id-elem-ac-crm" target="id-elem-ac-backend" xsi:type="Composition">
+      <name xml:lang="ru">Содержит</name>
+      <documentation xml:lang="ru">CRM включает ядро FastAPI бэкенда.</documentation>
+    </relationship>
+    <relationship identifier="id-rel-21" source="id-elem-ac-backend" target="id-elem-ac-workflow" xsi:type="Composition">
+      <name xml:lang="ru">Подсистема</name>
+      <documentation xml:lang="ru">Движок воронки и версионирования workflow.</documentation>
+    </relationship>
+    <relationship identifier="id-rel-22" source="id-elem-ac-backend" target="id-elem-ac-reports" xsi:type="Composition">
+      <name xml:lang="ru">Подсистема</name>
+      <documentation xml:lang="ru">Движок аналитических отчетов XLSX/PDF.</documentation>
+    </relationship>
+    <relationship identifier="id-rel-23" source="id-elem-ac-backend" target="id-elem-ac-files" xsi:type="Composition">
+      <name xml:lang="ru">Подсистема</name>
+      <documentation xml:lang="ru">Служба безопасного хранения файлов.</documentation>
+    </relationship>
+    <relationship identifier="id-rel-24" source="id-elem-ac-backend" target="id-elem-ac-import" xsi:type="Composition">
+      <name xml:lang="ru">Подсистема</name>
+      <documentation xml:lang="ru">Мастер двухфазного импорта каталогов.</documentation>
+    </relationship>
+    <relationship identifier="id-rel-25" source="id-elem-ac-backend" target="id-elem-ac-integrations" xsi:type="Composition">
+      <name xml:lang="ru">Подсистема</name>
+      <documentation xml:lang="ru">Шлюз интеграций и очередь сверки коллизий.</documentation>
+    </relationship>
+    <relationship identifier="id-rel-26" source="id-elem-ac-backend" target="id-elem-ac-audit" xsi:type="Composition">
+      <name xml:lang="ru">Подсистема</name>
+      <documentation xml:lang="ru">Служба неизменяемого темпорального аудита.</documentation>
+    </relationship>
+    <relationship identifier="id-rel-27" source="id-elem-ac-backend" target="id-elem-ai-rest" xsi:type="Realization">
+      <name xml:lang="ru">Реализует</name>
+      <documentation xml:lang="ru">Бэкенд предоставляет REST API v1.</documentation>
+    </relationship>
+    <relationship identifier="id-rel-28" source="id-elem-ac-frontend" target="id-elem-ai-gui" xsi:type="Realization">
+      <name xml:lang="ru">Реализует</name>
+      <documentation xml:lang="ru">SPA предоставляет графический интерфейс пользователя.</documentation>
+    </relationship>
+    <relationship identifier="id-rel-29" source="id-elem-ac-keycloak" target="id-elem-ai-oidc" xsi:type="Realization">
+      <name xml:lang="ru">Реализует</name>
+      <documentation xml:lang="ru">Keycloak предоставляет OIDC эндпоинты.</documentation>
+    </relationship>
+    <relationship identifier="id-rel-30" source="id-elem-ac-integrations" target="id-elem-ai-lms" xsi:type="Realization">
+      <name xml:lang="ru">Реализует</name>
+      <documentation xml:lang="ru">Шлюз интеграций принимает пакеты LMS DTO v1.0.</documentation>
+    </relationship>
+    <relationship identifier="id-rel-31" source="id-elem-ac-integrations" target="id-elem-ai-web" xsi:type="Realization">
+      <name xml:lang="ru">Реализует</name>
+      <documentation xml:lang="ru">Шлюз интеграций принимает вебхуки сайта.</documentation>
+    </relationship>
+    <relationship identifier="id-rel-32" source="id-elem-ai-rest" target="id-elem-ac-frontend" xsi:type="Serving">
+      <name xml:lang="ru">Обслуживает</name>
+      <documentation xml:lang="ru">REST API обслуживает фронтенд вызовы.</documentation>
+    </relationship>
+    <relationship identifier="id-rel-33" source="id-elem-ai-oidc" target="id-elem-ac-frontend" xsi:type="Serving">
+      <name xml:lang="ru">Аутентификация</name>
+      <documentation xml:lang="ru">Keycloak аутентифицирует пользователя в SPA.</documentation>
+    </relationship>
+    <relationship identifier="id-rel-34" source="id-elem-ai-oidc" target="id-elem-ac-backend" xsi:type="Serving">
+      <name xml:lang="ru">Валидация</name>
+      <documentation xml:lang="ru">Keycloak поставляет JWKS для валидации токенов бэкендом.</documentation>
+    </relationship>
+    <relationship identifier="id-rel-35" source="id-elem-ac-lms" target="id-elem-ai-lms" xsi:type="Flow">
+      <name xml:lang="ru">Поток метрик</name>
+      <documentation xml:lang="ru">LMS Zion поставляет данные успеваемости и потоков.</documentation>
+    </relationship>
+    <relationship identifier="id-rel-36" source="id-elem-ac-website" target="id-elem-ai-web" xsi:type="Flow">
+      <name xml:lang="ru">Поток заявок</name>
+      <documentation xml:lang="ru">Сайт Laravel поставляет входящие заявки вузов.</documentation>
+    </relationship>
+    <relationship identifier="id-rel-37" source="id-elem-ac-workflow" target="id-elem-as-interaction" xsi:type="Realization">
+      <name xml:lang="ru">Реализует</name>
+      <documentation xml:lang="ru">Движок реализует сервис взаимодействия.</documentation>
+    </relationship>
+    <relationship identifier="id-rel-38" source="id-elem-ac-backend" target="id-elem-as-auth" xsi:type="Realization">
+      <name xml:lang="ru">Реализует</name>
+      <documentation xml:lang="ru">Бэкенд реализует проверку прав и Scope 152-ФЗ.</documentation>
+    </relationship>
+    <relationship identifier="id-rel-39" source="id-elem-ac-reports" target="id-elem-as-reports" xsi:type="Realization">
+      <name xml:lang="ru">Реализует</name>
+      <documentation xml:lang="ru">Модуль отчетов реализует сервис аналитики.</documentation>
+    </relationship>
+    <relationship identifier="id-rel-40" source="id-elem-ac-files" target="id-elem-as-files" xsi:type="Realization">
+      <name xml:lang="ru">Реализует</name>
+      <documentation xml:lang="ru">Файловый сервис реализует защищенное хранение.</documentation>
+    </relationship>
+    <relationship identifier="id-rel-41" source="id-elem-ac-integrations" target="id-elem-as-sync" xsi:type="Realization">
+      <name xml:lang="ru">Реализует</name>
+      <documentation xml:lang="ru">Интеграционный шлюз реализует очередь сверки.</documentation>
+    </relationship>
+    <relationship identifier="id-rel-42" source="id-elem-as-interaction" target="id-elem-bp-initiation" xsi:type="Serving">
+      <name xml:lang="ru">Поддерживает</name>
+      <documentation xml:lang="ru">Сервис поддерживает процесс инициации.</documentation>
+    </relationship>
+    <relationship identifier="id-rel-43" source="id-elem-as-interaction" target="id-elem-bp-contracting" xsi:type="Serving">
+      <name xml:lang="ru">Поддерживает</name>
+      <documentation xml:lang="ru">Сервис поддерживает процесс договоров.</documentation>
+    </relationship>
+    <relationship identifier="id-rel-44" source="id-elem-as-reports" target="id-elem-bp-analytics" xsi:type="Serving">
+      <name xml:lang="ru">Поддерживает</name>
+      <documentation xml:lang="ru">Сервис формирует управленческую аналитику.</documentation>
+    </relationship>
+    <relationship identifier="id-rel-45" source="id-elem-ac-workflow" target="id-elem-do-interaction" xsi:type="Access">
+      <name xml:lang="ru">Чтение и запись</name>
+      <documentation xml:lang="ru">Движок обновляет ревизии карточки.</documentation>
+    </relationship>
+    <relationship identifier="id-rel-46" source="id-elem-ac-audit" target="id-elem-do-event" xsi:type="Access">
+      <name xml:lang="ru">Append-Only запись</name>
+      <documentation xml:lang="ru">Аудит фиксирует неизменяемые события.</documentation>
+    </relationship>
+    <relationship identifier="id-rel-47" source="id-elem-ac-files" target="id-elem-do-attachment" xsi:type="Access">
+      <name xml:lang="ru">Чтение и запись</name>
+      <documentation xml:lang="ru">Файловая служба хранит метаданные и SHA-256.</documentation>
+    </relationship>
+    <relationship identifier="id-rel-48" source="id-elem-ac-integrations" target="id-elem-do-inbox" xsi:type="Access">
+      <name xml:lang="ru">Дедупликация и запись</name>
+      <documentation xml:lang="ru">Очередь сверки нормализует заявки.</documentation>
+    </relationship>
+    <relationship identifier="id-rel-49" source="id-elem-ac-integrations" target="id-elem-do-metric" xsi:type="Access">
+      <name xml:lang="ru">Запись показателей</name>
+      <documentation xml:lang="ru">Шлюз сохраняет учебные метрики.</documentation>
+    </relationship>
+    <relationship identifier="id-rel-50" source="id-elem-ac-frontend" target="id-elem-do-token" xsi:type="Access">
+      <name xml:lang="ru">In-Memory удержание</name>
+      <documentation xml:lang="ru">SPA хранит токен только в памяти.</documentation>
+    </relationship>
+    <relationship identifier="id-rel-51" source="id-elem-dev-client" target="id-elem-ss-browser" xsi:type="Assignment">
+      <name xml:lang="ru">Развернут</name>
+      <documentation xml:lang="ru">Браузер выполняется на клиентском месте.</documentation>
+    </relationship>
+    <relationship identifier="id-rel-52" source="id-elem-node-app" target="id-elem-ss-linux" xsi:type="Assignment">
+      <name xml:lang="ru">Установлена</name>
+      <documentation xml:lang="ru">Linux развернут на сервере приложений.</documentation>
+    </relationship>
+    <relationship identifier="id-rel-53" source="id-elem-node-app" target="id-elem-ss-docker" xsi:type="Assignment">
+      <name xml:lang="ru">Установлен</name>
+      <documentation xml:lang="ru">Docker развернут на сервере приложений.</documentation>
+    </relationship>
+    <relationship identifier="id-rel-54" source="id-elem-node-app" target="id-elem-ss-nginx" xsi:type="Assignment">
+      <name xml:lang="ru">Развернут</name>
+      <documentation xml:lang="ru">Nginx обслуживает внешние запросы.</documentation>
+    </relationship>
+    <relationship identifier="id-rel-55" source="id-elem-node-app" target="id-elem-ss-python" xsi:type="Assignment">
+      <name xml:lang="ru">Развернут</name>
+      <documentation xml:lang="ru">Python исполняет бэкенд.</documentation>
+    </relationship>
+    <relationship identifier="id-rel-56" source="id-elem-node-db" target="id-elem-ss-postgres" xsi:type="Assignment">
+      <name xml:lang="ru">Развернута</name>
+      <documentation xml:lang="ru">PostgreSQL развернута на сервере БД.</documentation>
+    </relationship>
+    <relationship identifier="id-rel-57" source="id-elem-art-spa" target="id-elem-ac-frontend" xsi:type="Realization">
+      <name xml:lang="ru">Воплощает</name>
+      <documentation xml:lang="ru">Дистрибутив SPA реализует фронтенд компонент.</documentation>
+    </relationship>
+    <relationship identifier="id-rel-58" source="id-elem-art-backend" target="id-elem-ac-backend" xsi:type="Realization">
+      <name xml:lang="ru">Воплощает</name>
+      <documentation xml:lang="ru">Пакет бэкенда реализует FastAPI компонент.</documentation>
+    </relationship>
+    <relationship identifier="id-rel-59" source="id-elem-art-storage" target="id-elem-ac-files" xsi:type="Realization">
+      <name xml:lang="ru">Хранилище</name>
+      <documentation xml:lang="ru">Файловый том обеспечивает хранение вложений.</documentation>
+    </relationship>
+    <relationship identifier="id-rel-60" source="id-elem-art-dbdata" target="id-elem-ss-postgres" xsi:type="Association">
+      <name xml:lang="ru">Файлы данных</name>
+      <documentation xml:lang="ru">Табличные пространства СУБД.</documentation>
+    </relationship>
+    <relationship identifier="id-rel-61" source="id-elem-node-app" target="id-elem-net-dmz" xsi:type="Association">
+      <name xml:lang="ru">Сетевое подключение</name>
+      <documentation xml:lang="ru">Сервер приложений подключен к DMZ.</documentation>
+    </relationship>
+    <relationship identifier="id-rel-62" source="id-elem-node-app" target="id-elem-net-internal" xsi:type="Association">
+      <name xml:lang="ru">Сетевое подключение</name>
+      <documentation xml:lang="ru">Сервер приложений подключен к внутренней сети.</documentation>
+    </relationship>
+    <relationship identifier="id-rel-63" source="id-elem-node-db" target="id-elem-net-internal" xsi:type="Association">
+      <name xml:lang="ru">Сетевое подключение</name>
+      <documentation xml:lang="ru">Сервер БД подключен к внутренней сети.</documentation>
+    </relationship>
+    <relationship identifier="id-rel-64" source="id-elem-dev-client" target="id-elem-net-corp" xsi:type="Association">
+      <name xml:lang="ru">Сетевое подключение</name>
+      <documentation xml:lang="ru">Клиентские ПК подключены к корпоративной сети.</documentation>
+    </relationship>
+  </relationships>
+  <views>
+    <diagrams>
+      <view identifier="id-view-1-context" xsi:type="Diagram">
+        <name xml:lang="ru">1. Контекст системы и бизнес-процессы воронки (Context &amp; Business View)</name>
+        <documentation xml:lang="ru">Связь бизнес-акторов, ролей, этапов воронки партнерств и центральной системы CRM.</documentation>
+        <node identifier="v1-n-manager" elementRef="id-elem-ba-manager" xsi:type="Element" x="50" y="50" w="160" h="60">
+          <style>
+            <fillColor r="255" g="255" b="180" a="100" />
+            <lineColor r="100" g="100" b="100" a="100" />
+          </style>
+        </node>
+        <node identifier="v1-n-supervisor" elementRef="id-elem-ba-supervisor" xsi:type="Element" x="250" y="50" w="160" h="60">
+          <style>
+            <fillColor r="255" g="255" b="180" a="100" />
+            <lineColor r="100" g="100" b="100" a="100" />
+          </style>
+        </node>
+        <node identifier="v1-n-admin" elementRef="id-elem-ba-admin" xsi:type="Element" x="450" y="50" w="160" h="60">
+          <style>
+            <fillColor r="255" g="255" b="180" a="100" />
+            <lineColor r="100" g="100" b="100" a="100" />
+          </style>
+        </node>
+        <node identifier="v1-n-unirep" elementRef="id-elem-ba-unirep" xsi:type="Element" x="650" y="50" w="180" h="60">
+          <style>
+            <fillColor r="255" g="255" b="180" a="100" />
+            <lineColor r="100" g="100" b="100" a="100" />
+          </style>
+        </node>
+        <node identifier="v1-n-operator" elementRef="id-elem-br-operator" xsi:type="Element" x="50" y="150" w="160" h="55">
+          <style>
+            <fillColor r="255" g="240" b="160" a="100" />
+            <lineColor r="100" g="100" b="100" a="100" />
+          </style>
+        </node>
+        <node identifier="v1-n-curator" elementRef="id-elem-br-curator" xsi:type="Element" x="250" y="150" w="160" h="55">
+          <style>
+            <fillColor r="255" g="240" b="160" a="100" />
+            <lineColor r="100" g="100" b="100" a="100" />
+          </style>
+        </node>
+        <node identifier="v1-n-secadmin" elementRef="id-elem-br-secadmin" xsi:type="Element" x="450" y="150" w="160" h="55">
+          <style>
+            <fillColor r="255" g="240" b="160" a="100" />
+            <lineColor r="100" g="100" b="100" a="100" />
+          </style>
+        </node>
+        <node identifier="v1-n-bp-init" elementRef="id-elem-bp-initiation" xsi:type="Element" x="50" y="250" w="170" h="65">
+          <style>
+            <fillColor r="255" g="225" b="140" a="100" />
+            <lineColor r="100" g="100" b="100" a="100" />
+          </style>
+        </node>
+        <node identifier="v1-n-bp-cont" elementRef="id-elem-bp-contracting" xsi:type="Element" x="260" y="250" w="170" h="65">
+          <style>
+            <fillColor r="255" g="225" b="140" a="100" />
+            <lineColor r="100" g="100" b="100" a="100" />
+          </style>
+        </node>
+        <node identifier="v1-n-bp-tran" elementRef="id-elem-bp-transfer" xsi:type="Element" x="470" y="250" w="170" h="65">
+          <style>
+            <fillColor r="255" g="225" b="140" a="100" />
+            <lineColor r="100" g="100" b="100" a="100" />
+          </style>
+        </node>
+        <node identifier="v1-n-bp-stud" elementRef="id-elem-bp-study" xsi:type="Element" x="680" y="250" w="170" h="65">
+          <style>
+            <fillColor r="255" g="225" b="140" a="100" />
+            <lineColor r="100" g="100" b="100" a="100" />
+          </style>
+        </node>
+        <node identifier="v1-n-bp-an" elementRef="id-elem-bp-analytics" xsi:type="Element" x="260" y="350" w="170" h="65">
+          <style>
+            <fillColor r="255" g="225" b="140" a="100" />
+            <lineColor r="100" g="100" b="100" a="100" />
+          </style>
+        </node>
+        <node identifier="v1-n-crm" elementRef="id-elem-ac-crm" xsi:type="Element" x="260" y="460" w="380" h="80">
+          <style>
+            <fillColor r="180" g="220" b="255" a="100" />
+            <lineColor r="100" g="100" b="100" a="100" />
+          </style>
+        </node>
+        <node identifier="v1-n-bo-card" elementRef="id-elem-bo-interaction" xsi:type="Element" x="50" y="350" w="170" h="55">
+          <style>
+            <fillColor r="255" g="255" b="200" a="100" />
+            <lineColor r="100" g="100" b="100" a="100" />
+          </style>
+        </node>
+        <node identifier="v1-n-bo-rep" elementRef="id-elem-bo-report" xsi:type="Element" x="470" y="350" w="170" h="55">
+          <style>
+            <fillColor r="255" g="255" b="200" a="100" />
+            <lineColor r="100" g="100" b="100" a="100" />
+          </style>
+        </node>
+        <connection identifier="v1-c-01" relationshipRef="id-rel-01" source="v1-n-manager" target="v1-n-operator" xsi:type="Relationship">
+          <style>
+            <lineColor r="100" g="100" b="100" a="100" />
+          </style>
+        </connection>
+        <connection identifier="v1-c-02" relationshipRef="id-rel-02" source="v1-n-supervisor" target="v1-n-curator" xsi:type="Relationship">
+          <style>
+            <lineColor r="100" g="100" b="100" a="100" />
+          </style>
+        </connection>
+        <connection identifier="v1-c-03" relationshipRef="id-rel-03" source="v1-n-admin" target="v1-n-secadmin" xsi:type="Relationship">
+          <style>
+            <lineColor r="100" g="100" b="100" a="100" />
+          </style>
+        </connection>
+        <connection identifier="v1-c-04" relationshipRef="id-rel-04" source="v1-n-operator" target="v1-n-bp-init" xsi:type="Relationship">
+          <style>
+            <lineColor r="100" g="100" b="100" a="100" />
+          </style>
+        </connection>
+        <connection identifier="v1-c-05" relationshipRef="id-rel-05" source="v1-n-operator" target="v1-n-bp-cont" xsi:type="Relationship">
+          <style>
+            <lineColor r="100" g="100" b="100" a="100" />
+          </style>
+        </connection>
+        <connection identifier="v1-c-06" relationshipRef="id-rel-06" source="v1-n-operator" target="v1-n-bp-tran" xsi:type="Relationship">
+          <style>
+            <lineColor r="100" g="100" b="100" a="100" />
+          </style>
+        </connection>
+        <connection identifier="v1-c-07" relationshipRef="id-rel-07" source="v1-n-curator" target="v1-n-bp-an" xsi:type="Relationship">
+          <style>
+            <lineColor r="100" g="100" b="100" a="100" />
+          </style>
+        </connection>
+        <connection identifier="v1-c-09" relationshipRef="id-rel-09" source="v1-n-bp-init" target="v1-n-bp-cont" xsi:type="Relationship">
+          <style>
+            <lineColor r="100" g="100" b="100" a="100" />
+          </style>
+        </connection>
+        <connection identifier="v1-c-10" relationshipRef="id-rel-10" source="v1-n-bp-cont" target="v1-n-bp-tran" xsi:type="Relationship">
+          <style>
+            <lineColor r="100" g="100" b="100" a="100" />
+          </style>
+        </connection>
+        <connection identifier="v1-c-11" relationshipRef="id-rel-11" source="v1-n-bp-tran" target="v1-n-bp-stud" xsi:type="Relationship">
+          <style>
+            <lineColor r="100" g="100" b="100" a="100" />
+          </style>
+        </connection>
+        <connection identifier="v1-c-14" relationshipRef="id-rel-14" source="v1-n-bp-init" target="v1-n-bo-card" xsi:type="Relationship">
+          <style>
+            <lineColor r="100" g="100" b="100" a="100" />
+          </style>
+        </connection>
+        <connection identifier="v1-c-18" relationshipRef="id-rel-18" source="v1-n-bp-an" target="v1-n-bo-rep" xsi:type="Relationship">
+          <style>
+            <lineColor r="100" g="100" b="100" a="100" />
+          </style>
+        </connection>
+      </view>
+      <view identifier="id-view-2-application" xsi:type="Diagram">
+        <name xml:lang="ru">2. Компонентная структура приложений (Application Component View)</name>
+        <documentation xml:lang="ru">Декомпозиция SPA, FastAPI ядра, движков воронки, отчетов, файлов, адаптеров и сервисов данных.</documentation>
+        <node identifier="v2-n-spa" elementRef="id-elem-ac-frontend" xsi:type="Element" x="50" y="100" w="200" h="70">
+          <style>
+            <fillColor r="180" g="220" b="255" a="100" />
+            <lineColor r="100" g="100" b="100" a="100" />
+          </style>
+        </node>
+        <node identifier="v2-n-ai-rest" elementRef="id-elem-ai-rest" xsi:type="Element" x="320" y="105" w="180" h="50">
+          <style>
+            <fillColor r="190" g="230" b="255" a="100" />
+            <lineColor r="100" g="100" b="100" a="100" />
+          </style>
+        </node>
+        <node identifier="v2-n-backend" elementRef="id-elem-ac-backend" xsi:type="Element" x="560" y="90" w="240" h="90">
+          <style>
+            <fillColor r="160" g="200" b="255" a="100" />
+            <lineColor r="100" g="100" b="100" a="100" />
+          </style>
+        </node>
+        <node identifier="v2-n-keycloak" elementRef="id-elem-ac-keycloak" xsi:type="Element" x="50" y="220" w="190" h="65">
+          <style>
+            <fillColor r="210" g="210" b="255" a="100" />
+            <lineColor r="100" g="100" b="100" a="100" />
+          </style>
+        </node>
+        <node identifier="v2-n-ai-oidc" elementRef="id-elem-ai-oidc" xsi:type="Element" x="50" y="310" w="190" h="45">
+          <style>
+            <fillColor r="220" g="220" b="255" a="100" />
+            <lineColor r="100" g="100" b="100" a="100" />
+          </style>
+        </node>
+        <node identifier="v2-n-wf" elementRef="id-elem-ac-workflow" xsi:type="Element" x="320" y="220" w="180" h="60">
+          <style>
+            <fillColor r="170" g="210" b="255" a="100" />
+            <lineColor r="100" g="100" b="100" a="100" />
+          </style>
+        </node>
+        <node identifier="v2-n-rep" elementRef="id-elem-ac-reports" xsi:type="Element" x="530" y="220" w="180" h="60">
+          <style>
+            <fillColor r="170" g="210" b="255" a="100" />
+            <lineColor r="100" g="100" b="100" a="100" />
+          </style>
+        </node>
+        <node identifier="v2-n-files" elementRef="id-elem-ac-files" xsi:type="Element" x="740" y="220" w="180" h="60">
+          <style>
+            <fillColor r="170" g="210" b="255" a="100" />
+            <lineColor r="100" g="100" b="100" a="100" />
+          </style>
+        </node>
+        <node identifier="v2-n-import" elementRef="id-elem-ac-import" xsi:type="Element" x="320" y="310" w="180" h="60">
+          <style>
+            <fillColor r="170" g="210" b="255" a="100" />
+            <lineColor r="100" g="100" b="100" a="100" />
+          </style>
+        </node>
+        <node identifier="v2-n-int" elementRef="id-elem-ac-integrations" xsi:type="Element" x="530" y="310" w="180" h="60">
+          <style>
+            <fillColor r="170" g="210" b="255" a="100" />
+            <lineColor r="100" g="100" b="100" a="100" />
+          </style>
+        </node>
+        <node identifier="v2-n-audit" elementRef="id-elem-ac-audit" xsi:type="Element" x="740" y="310" w="180" h="60">
+          <style>
+            <fillColor r="170" g="210" b="255" a="100" />
+            <lineColor r="100" g="100" b="100" a="100" />
+          </style>
+        </node>
+        <node identifier="v2-n-lms" elementRef="id-elem-ac-lms" xsi:type="Element" x="430" y="430" w="170" h="60">
+          <style>
+            <fillColor r="220" g="230" b="240" a="100" />
+            <lineColor r="100" g="100" b="100" a="100" />
+          </style>
+        </node>
+        <node identifier="v2-n-web" elementRef="id-elem-ac-website" xsi:type="Element" x="630" y="430" w="170" h="60">
+          <style>
+            <fillColor r="220" g="230" b="240" a="100" />
+            <lineColor r="100" g="100" b="100" a="100" />
+          </style>
+        </node>
+        <node identifier="v2-n-do-card" elementRef="id-elem-do-interaction" xsi:type="Element" x="320" y="520" w="160" h="50">
+          <style>
+            <fillColor r="190" g="240" b="220" a="100" />
+            <lineColor r="100" g="100" b="100" a="100" />
+          </style>
+        </node>
+        <node identifier="v2-n-do-ev" elementRef="id-elem-do-event" xsi:type="Element" x="510" y="520" w="160" h="50">
+          <style>
+            <fillColor r="190" g="240" b="220" a="100" />
+            <lineColor r="100" g="100" b="100" a="100" />
+          </style>
+        </node>
+        <node identifier="v2-n-do-att" elementRef="id-elem-do-attachment" xsi:type="Element" x="700" y="520" w="160" h="50">
+          <style>
+            <fillColor r="190" g="240" b="220" a="100" />
+            <lineColor r="100" g="100" b="100" a="100" />
+          </style>
+        </node>
+        <node identifier="v2-n-do-tok" elementRef="id-elem-do-token" xsi:type="Element" x="50" y="400" w="180" h="50">
+          <style>
+            <fillColor r="190" g="240" b="220" a="100" />
+            <lineColor r="100" g="100" b="100" a="100" />
+          </style>
+        </node>
+        <connection identifier="v2-c-20" relationshipRef="id-rel-20" source="v2-n-backend" target="v2-n-spa" xsi:type="Relationship">
+          <style>
+            <lineColor r="100" g="100" b="100" a="100" />
+          </style>
+        </connection>
+        <connection identifier="v2-c-27" relationshipRef="id-rel-27" source="v2-n-backend" target="v2-n-ai-rest" xsi:type="Relationship">
+          <style>
+            <lineColor r="100" g="100" b="100" a="100" />
+          </style>
+        </connection>
+        <connection identifier="v2-c-32" relationshipRef="id-rel-32" source="v2-n-ai-rest" target="v2-n-spa" xsi:type="Relationship">
+          <style>
+            <lineColor r="100" g="100" b="100" a="100" />
+          </style>
+        </connection>
+        <connection identifier="v2-c-21" relationshipRef="id-rel-21" source="v2-n-backend" target="v2-n-wf" xsi:type="Relationship">
+          <style>
+            <lineColor r="100" g="100" b="100" a="100" />
+          </style>
+        </connection>
+        <connection identifier="v2-c-22" relationshipRef="id-rel-22" source="v2-n-backend" target="v2-n-rep" xsi:type="Relationship">
+          <style>
+            <lineColor r="100" g="100" b="100" a="100" />
+          </style>
+        </connection>
+        <connection identifier="v2-c-23" relationshipRef="id-rel-23" source="v2-n-backend" target="v2-n-files" xsi:type="Relationship">
+          <style>
+            <lineColor r="100" g="100" b="100" a="100" />
+          </style>
+        </connection>
+        <connection identifier="v2-c-24" relationshipRef="id-rel-24" source="v2-n-backend" target="v2-n-import" xsi:type="Relationship">
+          <style>
+            <lineColor r="100" g="100" b="100" a="100" />
+          </style>
+        </connection>
+        <connection identifier="v2-c-25" relationshipRef="id-rel-25" source="v2-n-backend" target="v2-n-int" xsi:type="Relationship">
+          <style>
+            <lineColor r="100" g="100" b="100" a="100" />
+          </style>
+        </connection>
+        <connection identifier="v2-c-26" relationshipRef="id-rel-26" source="v2-n-backend" target="v2-n-audit" xsi:type="Relationship">
+          <style>
+            <lineColor r="100" g="100" b="100" a="100" />
+          </style>
+        </connection>
+        <connection identifier="v2-c-29" relationshipRef="id-rel-29" source="v2-n-keycloak" target="v2-n-ai-oidc" xsi:type="Relationship">
+          <style>
+            <lineColor r="100" g="100" b="100" a="100" />
+          </style>
+        </connection>
+        <connection identifier="v2-c-33" relationshipRef="id-rel-33" source="v2-n-ai-oidc" target="v2-n-spa" xsi:type="Relationship">
+          <style>
+            <lineColor r="100" g="100" b="100" a="100" />
+          </style>
+        </connection>
+        <connection identifier="v2-c-45" relationshipRef="id-rel-45" source="v2-n-wf" target="v2-n-do-card" xsi:type="Relationship">
+          <style>
+            <lineColor r="100" g="100" b="100" a="100" />
+          </style>
+        </connection>
+        <connection identifier="v2-c-46" relationshipRef="id-rel-46" source="v2-n-audit" target="v2-n-do-ev" xsi:type="Relationship">
+          <style>
+            <lineColor r="100" g="100" b="100" a="100" />
+          </style>
+        </connection>
+        <connection identifier="v2-c-47" relationshipRef="id-rel-47" source="v2-n-files" target="v2-n-do-att" xsi:type="Relationship">
+          <style>
+            <lineColor r="100" g="100" b="100" a="100" />
+          </style>
+        </connection>
+        <connection identifier="v2-c-50" relationshipRef="id-rel-50" source="v2-n-spa" target="v2-n-do-tok" xsi:type="Relationship">
+          <style>
+            <lineColor r="100" g="100" b="100" a="100" />
+          </style>
+        </connection>
+      </view>
+      <view identifier="id-view-3-technology" xsi:type="Diagram">
+        <name xml:lang="ru">3. Технологическая инфраструктура и развертывание (Technology Deployment View)</name>
+        <documentation xml:lang="ru">Серверные узлы, операционные системы, Docker контейнеры, СУБД, Nginx и сетевые контуры.</documentation>
+        <node identifier="v3-n-dev" elementRef="id-elem-dev-client" xsi:type="Element" x="50" y="80" w="200" h="70">
+          <style>
+            <fillColor r="210" g="235" b="210" a="100" />
+            <lineColor r="100" g="100" b="100" a="100" />
+          </style>
+        </node>
+        <node identifier="v3-n-browser" elementRef="id-elem-ss-browser" xsi:type="Element" x="50" y="180" w="200" h="60">
+          <style>
+            <fillColor r="200" g="230" b="200" a="100" />
+            <lineColor r="100" g="100" b="100" a="100" />
+          </style>
+        </node>
+        <node identifier="v3-n-art-spa" elementRef="id-elem-art-spa" xsi:type="Element" x="50" y="270" w="200" h="55">
+          <style>
+            <fillColor r="230" g="240" b="230" a="100" />
+            <lineColor r="100" g="100" b="100" a="100" />
+          </style>
+        </node>
+        <node identifier="v3-n-net-corp" elementRef="id-elem-net-corp" xsi:type="Element" x="300" y="80" w="180" h="50">
+          <style>
+            <fillColor r="240" g="240" b="200" a="100" />
+            <lineColor r="100" g="100" b="100" a="100" />
+          </style>
+        </node>
+        <node identifier="v3-n-net-dmz" elementRef="id-elem-net-dmz" xsi:type="Element" x="300" y="150" w="180" h="50">
+          <style>
+            <fillColor r="240" g="220" b="200" a="100" />
+            <lineColor r="100" g="100" b="100" a="100" />
+          </style>
+        </node>
+        <node identifier="v3-n-net-int" elementRef="id-elem-net-internal" xsi:type="Element" x="300" y="220" w="180" h="50">
+          <style>
+            <fillColor r="240" g="200" b="200" a="100" />
+            <lineColor r="100" g="100" b="100" a="100" />
+          </style>
+        </node>
+        <node identifier="v3-n-node-app" elementRef="id-elem-node-app" xsi:type="Element" x="530" y="60" w="250" h="90">
+          <style>
+            <fillColor r="210" g="235" b="210" a="100" />
+            <lineColor r="100" g="100" b="100" a="100" />
+          </style>
+        </node>
+        <node identifier="v3-n-linux-app" elementRef="id-elem-ss-linux" xsi:type="Element" x="530" y="170" w="250" h="60">
+          <style>
+            <fillColor r="200" g="230" b="200" a="100" />
+            <lineColor r="100" g="100" b="100" a="100" />
+          </style>
+        </node>
+        <node identifier="v3-n-docker" elementRef="id-elem-ss-docker" xsi:type="Element" x="530" y="250" w="250" h="60">
+          <style>
+            <fillColor r="200" g="230" b="200" a="100" />
+            <lineColor r="100" g="100" b="100" a="100" />
+          </style>
+        </node>
+        <node identifier="v3-n-nginx" elementRef="id-elem-ss-nginx" xsi:type="Element" x="530" y="330" w="250" h="55">
+          <style>
+            <fillColor r="190" g="225" b="190" a="100" />
+            <lineColor r="100" g="100" b="100" a="100" />
+          </style>
+        </node>
+        <node identifier="v3-n-python" elementRef="id-elem-ss-python" xsi:type="Element" x="530" y="405" w="250" h="55">
+          <style>
+            <fillColor r="190" g="225" b="190" a="100" />
+            <lineColor r="100" g="100" b="100" a="100" />
+          </style>
+        </node>
+        <node identifier="v3-n-art-be" elementRef="id-elem-art-backend" xsi:type="Element" x="530" y="480" w="250" h="55">
+          <style>
+            <fillColor r="230" g="240" b="230" a="100" />
+            <lineColor r="100" g="100" b="100" a="100" />
+          </style>
+        </node>
+        <node identifier="v3-n-node-db" elementRef="id-elem-node-db" xsi:type="Element" x="830" y="60" w="220" h="90">
+          <style>
+            <fillColor r="210" g="235" b="210" a="100" />
+            <lineColor r="100" g="100" b="100" a="100" />
+          </style>
+        </node>
+        <node identifier="v3-n-pg" elementRef="id-elem-ss-postgres" xsi:type="Element" x="830" y="170" w="220" h="60">
+          <style>
+            <fillColor r="190" g="225" b="190" a="100" />
+            <lineColor r="100" g="100" b="100" a="100" />
+          </style>
+        </node>
+        <node identifier="v3-n-dbdata" elementRef="id-elem-art-dbdata" xsi:type="Element" x="830" y="250" w="220" h="55">
+          <style>
+            <fillColor r="230" g="240" b="230" a="100" />
+            <lineColor r="100" g="100" b="100" a="100" />
+          </style>
+        </node>
+        <node identifier="v3-n-storage" elementRef="id-elem-art-storage" xsi:type="Element" x="830" y="330" w="220" h="55">
+          <style>
+            <fillColor r="230" g="240" b="230" a="100" />
+            <lineColor r="100" g="100" b="100" a="100" />
+          </style>
+        </node>
+        <connection identifier="v3-c-51" relationshipRef="id-rel-51" source="v3-n-dev" target="v3-n-browser" xsi:type="Relationship">
+          <style>
+            <lineColor r="100" g="100" b="100" a="100" />
+          </style>
+        </connection>
+        <connection identifier="v3-c-52" relationshipRef="id-rel-52" source="v3-n-node-app" target="v3-n-linux-app" xsi:type="Relationship">
+          <style>
+            <lineColor r="100" g="100" b="100" a="100" />
+          </style>
+        </connection>
+        <connection identifier="v3-c-53" relationshipRef="id-rel-53" source="v3-n-node-app" target="v3-n-docker" xsi:type="Relationship">
+          <style>
+            <lineColor r="100" g="100" b="100" a="100" />
+          </style>
+        </connection>
+        <connection identifier="v3-c-54" relationshipRef="id-rel-54" source="v3-n-node-app" target="v3-n-nginx" xsi:type="Relationship">
+          <style>
+            <lineColor r="100" g="100" b="100" a="100" />
+          </style>
+        </connection>
+        <connection identifier="v3-c-55" relationshipRef="id-rel-55" source="v3-n-node-app" target="v3-n-python" xsi:type="Relationship">
+          <style>
+            <lineColor r="100" g="100" b="100" a="100" />
+          </style>
+        </connection>
+        <connection identifier="v3-c-56" relationshipRef="id-rel-56" source="v3-n-node-db" target="v3-n-pg" xsi:type="Relationship">
+          <style>
+            <lineColor r="100" g="100" b="100" a="100" />
+          </style>
+        </connection>
+        <connection identifier="v3-c-58" relationshipRef="id-rel-58" source="v3-n-art-be" target="v3-n-node-app" xsi:type="Relationship">
+          <style>
+            <lineColor r="100" g="100" b="100" a="100" />
+          </style>
+        </connection>
+        <connection identifier="v3-c-60" relationshipRef="id-rel-60" source="v3-n-dbdata" target="v3-n-pg" xsi:type="Relationship">
+          <style>
+            <lineColor r="100" g="100" b="100" a="100" />
+          </style>
+        </connection>
+        <connection identifier="v3-c-61" relationshipRef="id-rel-61" source="v3-n-node-app" target="v3-n-net-dmz" xsi:type="Relationship">
+          <style>
+            <lineColor r="100" g="100" b="100" a="100" />
+          </style>
+        </connection>
+        <connection identifier="v3-c-62" relationshipRef="id-rel-62" source="v3-n-node-app" target="v3-n-net-int" xsi:type="Relationship">
+          <style>
+            <lineColor r="100" g="100" b="100" a="100" />
+          </style>
+        </connection>
+        <connection identifier="v3-c-63" relationshipRef="id-rel-63" source="v3-n-node-db" target="v3-n-net-int" xsi:type="Relationship">
+          <style>
+            <lineColor r="100" g="100" b="100" a="100" />
+          </style>
+        </connection>
+        <connection identifier="v3-c-64" relationshipRef="id-rel-64" source="v3-n-dev" target="v3-n-net-corp" xsi:type="Relationship">
+          <style>
+            <lineColor r="100" g="100" b="100" a="100" />
+          </style>
+        </connection>
+      </view>
+    </diagrams>
+  </views>
+</model>

@@ -1,0 +1,936 @@
+<?xml version='1.0' encoding='UTF-8'?>
+<model xmlns="http://www.opengroup.org/xsd/archimate/3.0/" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" identifier="id-rtk-crm-target" version="2026-09-19" xsi:schemaLocation="http://www.opengroup.org/xsd/archimate/3.0/ https://www.opengroup.org/xsd/archimate/3.1/archimate3_Diagram.xsd">
+  <name xml:lang="ru">ИТ Школа Ростелекома — целевая архитектура CRM</name>
+  <documentation xml:lang="ru">Проектное решение, 19.09.2026. Основание: исходное ТЗ и docs/architecture/01–06. Модульный монолит для двух разработчиков; два вида: функции/модули и компоненты исполнения. Это целевое состояние, а не утверждение о реализации. A: домен, learning, интеграции, файлы, платформа; B: React, импорт, аналитика и отчёты. PostgreSQL — источник истины jobs/outbox; Redis — восстанавливаемый транспорт. API LMS/Laravel и production S3 выбираются с заказчиком.</documentation>
+  <elements>
+    <element identifier="el-manager" xsi:type="BusinessRole">
+      <name xml:lang="ru">Менеджер</name>
+      <documentation xml:lang="ru">Ведёт доступные учреждения, контакты, взаимодействия, комментарии и документы. Действия требуют permission и текущего scope.</documentation>
+    </element>
+    <element identifier="el-supervisor" xsi:type="BusinessRole">
+      <name xml:lang="ru">Руководитель</name>
+      <documentation xml:lang="ru">Назначает, меняет и снимает ответственных организаций; контролирует команду, процессы и результаты.</documentation>
+    </element>
+    <element identifier="el-admin" xsi:type="BusinessRole">
+      <name xml:lang="ru">Администратор</name>
+      <documentation xml:lang="ru">Управляет правами, конфигурацией, workflow и интеграциями. Техническая роль не даёт автоматического чтения бизнес-данных.</documentation>
+    </element>
+    <element identifier="el-partnership" xsi:type="BusinessFunction">
+      <name xml:lang="ru">Работа с учреждениями</name>
+      <documentation xml:lang="ru">Контакты вузов и школ, встречи, договоры, лицензии, передача, комментарии и вложения. Основные 13 рабочих стадий + сквозной контроль из ТЗ.</documentation>
+    </element>
+    <element identifier="el-education" xsi:type="BusinessFunction">
+      <name xml:lang="ru">Учебное сопровождение</name>
+      <documentation xml:lang="ru">Обучение преподавателей, потоки, учебные периоды, заявки, агрегаты учащихся и реализация программ.</documentation>
+    </element>
+    <element identifier="el-control" xsi:type="BusinessFunction">
+      <name xml:lang="ru">Контроль и отчётность</name>
+      <documentation xml:lang="ru">Текущий контроль, история на дату/за период, выбранные колонки и форматы, диаграммы и сравнение программ.</documentation>
+    </element>
+    <element identifier="el-administration" xsi:type="BusinessFunction">
+      <name xml:lang="ru">Управление доступом и процессами</name>
+      <documentation xml:lang="ru">Назначения учреждения, группы доступа, создание и публикация workflow, отдельная миграция активных карточек.</documentation>
+    </element>
+    <element identifier="el-exchange" xsi:type="BusinessFunction">
+      <name xml:lang="ru">Обмен и загрузка данных</name>
+      <documentation xml:lang="ru">XLS/XLSX preview → commit; JSON pull LMS и сайта Laravel; обработка повторов, конфликтов, ошибок и внешних идентификаторов.</documentation>
+    </element>
+    <element identifier="el-case-service" xsi:type="ApplicationService">
+      <name xml:lang="ru">Ведение взаимодействия</name>
+      <documentation xml:lang="ru">Команды создания, перехода и комментария; CAS revision; идемпотентность; единая AccessPolicy.</documentation>
+    </element>
+    <element identifier="el-learning-service" xsi:type="ApplicationService">
+      <name xml:lang="ru">Учебные данные</name>
+      <documentation xml:lang="ru">Типизированные команды учебных фактов с происхождением и историей. Запись принадлежит модулю learning.</documentation>
+    </element>
+    <element identifier="el-report-service" xsi:type="ApplicationService">
+      <name xml:lang="ru">Отчёты и показатели</name>
+      <documentation xml:lang="ru">Единый frozen dataset на run; XLS/XLSX/PDF/JSON и PNG; повторная проверка доступа при выдаче.</documentation>
+    </element>
+    <element identifier="el-governance-service" xsi:type="ApplicationService">
+      <name xml:lang="ru">Доступ и версии workflow</name>
+      <documentation xml:lang="ru">Гранты, назначения и scope; неизменяемые published versions; preview миграций.</documentation>
+    </element>
+    <element identifier="el-exchange-service" xsi:type="ApplicationService">
+      <name xml:lang="ru">Управляемый импорт и синхронизация</name>
+      <documentation xml:lang="ru">Длительные операции через durable jobs, inbox/outbox, checkpoints, reconciliation и доменные порты.</documentation>
+    </element>
+    <element identifier="el-catalogs" xsi:type="ApplicationComponent">
+      <name xml:lang="ru">catalogs · A</name>
+      <documentation xml:lang="ru">Организации, контакты, направления, программы, вендоры, продукты, договоры, лицензии и передачи. Изменения только через facade.</documentation>
+    </element>
+    <element identifier="el-interactions" xsi:type="ApplicationComponent">
+      <name xml:lang="ru">interactions · A</name>
+      <documentation xml:lang="ru">Aggregate карточки, команды, комментарии, события, посещения стадий, CAS. Отделённые typed facts для истории; никакой сети в DB-транзакции.</documentation>
+    </element>
+    <element identifier="el-learning" xsi:type="ApplicationComponent">
+      <name xml:lang="ru">learning · A</name>
+      <documentation xml:lang="ru">Потоки/заявки/периоды/численность и происхождение фактов. A владеет записью; B читает через согласованные projections для аналитики.</documentation>
+    </element>
+    <element identifier="el-analytics" xsi:type="ApplicationComponent">
+      <name xml:lang="ru">analytics · B</name>
+      <documentation xml:lang="ru">Определения метрик, агрегаты и сравнение программ. Не меняет первичные учебные факты и не изобретает согласование рейтинга.</documentation>
+    </element>
+    <element identifier="el-reports" xsi:type="ApplicationComponent">
+      <name xml:lang="ru">reports · B</name>
+      <documentation xml:lang="ru">Report requests/runs, материализованные строки, выбранные колонки, renderers, audit экспорта.</documentation>
+    </element>
+    <element identifier="el-identity" xsi:type="ApplicationComponent">
+      <name xml:lang="ru">identity · A</name>
+      <documentation xml:lang="ru">Локальные пользователи, команды, назначения учреждения, permissions/grants, AccessPolicy. Keycloak отвечает за аутентификацию.</documentation>
+    </element>
+    <element identifier="el-workflow" xsi:type="ApplicationComponent">
+      <name xml:lang="ru">workflow · A</name>
+      <documentation xml:lang="ru">Редактор графа, guards, draft/published/retired versions. План переноса активных карточек с проверкой revision; без произвольного scripting.</documentation>
+    </element>
+    <element identifier="el-imports" xsi:type="ApplicationComponent">
+      <name xml:lang="ru">imports · B</name>
+      <documentation xml:lang="ru">Разбор XLS/XLSX, маппинг, preview/row plan, commit по доменным командам A, контролируемые частичные ошибки.</documentation>
+    </element>
+    <element identifier="el-integrations" xsi:type="ApplicationComponent">
+      <name xml:lang="ru">integrations · A</name>
+      <documentation xml:lang="ru">LMS и Laravel adapter ports; polling, cursor/inbox, external identities, mapping, retry и reconciliation.</documentation>
+    </element>
+    <element identifier="el-files" xsi:type="ApplicationComponent">
+      <name xml:lang="ru">files · A</name>
+      <documentation xml:lang="ru">StoragePort, attachment metadata, quarantine, scan, links, ACL, authenticated download. Архивы не распаковываются в web-процессе.</documentation>
+    </element>
+    <element identifier="el-spa" xsi:type="ApplicationComponent">
+      <name xml:lang="ru">React SPA · B</name>
+      <documentation xml:lang="ru">Браузерный интерфейс и встроенные руководства. OIDC code + PKCE; токены и cache в памяти; данные и permissions проверяет API.</documentation>
+    </element>
+    <element identifier="el-edge" xsi:type="SystemSoftware">
+      <name xml:lang="ru">HTTPS reverse proxy</name>
+      <documentation xml:lang="ru">Единая публичная точка: TLS, SPA/API routing, limits. Внутренние DB/broker/storage/scanner не публикуются.</documentation>
+    </element>
+    <element identifier="el-api" xsi:type="ApplicationComponent">
+      <name xml:lang="ru">FastAPI HTTP · A/B</name>
+      <documentation xml:lang="ru">Общий backend image, modular monolith. Короткие application commands/queries; одна UnitOfWork; jobs принимаются в PostgreSQL. A composition root, B routers своих модулей.</documentation>
+    </element>
+    <element identifier="el-pg-crm" xsi:type="SystemSoftware">
+      <name xml:lang="ru">PostgreSQL · CRM DB</name>
+      <documentation xml:lang="ru">Источник истины: aggregates, typed facts, ACL, jobs/leases, outbox/inbox, frozen report rows, audit. Отдельная DB/учётная запись от Keycloak.</documentation>
+    </element>
+    <element identifier="el-keycloak" xsi:type="ApplicationComponent">
+      <name xml:lang="ru">Keycloak · OIDC</name>
+      <documentation xml:lang="ru">Идентичность, сессии, realm/client roles и принятая MFA policy. Бизнес-scope хранится в CRM. Production mode без demo accounts.</documentation>
+    </element>
+    <element identifier="el-pg-keycloak" xsi:type="SystemSoftware">
+      <name xml:lang="ru">PostgreSQL · Keycloak DB</name>
+      <documentation xml:lang="ru">Отдельная база и учётная запись Keycloak; может использовать тот же PostgreSQL cluster. DB не является SaaS tenant.</documentation>
+    </element>
+    <element identifier="el-dispatcher" xsi:type="ApplicationComponent">
+      <name xml:lang="ru">Dispatcher / scheduler · A</name>
+      <documentation xml:lang="ru">Из того же backend image. DB leases + SKIP LOCKED; dispatch due jobs/outbox; восстановление после broker outage; единственный effect гарантируется идемпотентностью, не exactly-once доставкой.</documentation>
+    </element>
+    <element identifier="el-redis" xsi:type="SystemSoftware">
+      <name xml:lang="ru">Redis · broker</name>
+      <documentation xml:lang="ru">Только транспорт сигналов. At-least-once delivery; полное состояние и результаты заданий в PostgreSQL, очереди могут быть восстановлены.</documentation>
+    </element>
+    <element identifier="el-worker-ops" xsi:type="ApplicationComponent">
+      <name xml:lang="ru">Workers · imports / integrations / files</name>
+      <documentation xml:lang="ru">Общий backend image, раздельные очереди/лимиты. Lease heartbeat/fencing, retry/backoff, deadlines, progress/cancel; доменные изменения через application facade.</documentation>
+    </element>
+    <element identifier="el-worker-reports" xsi:type="ApplicationComponent">
+      <name xml:lang="ru">Report workers · ≥10 slots</name>
+      <documentation xml:lang="ru">Отдельная группа workers/DB budget. Зафиксированный dataset → bounded rendering → artifact. 10 одновременно работающих отчётов проверяются нагрузкой, число slots не гарантирует capacity.</documentation>
+    </element>
+    <element identifier="el-s3" xsi:type="SystemSoftware">
+      <name xml:lang="ru">S3 StoragePort · private + quarantine</name>
+      <documentation xml:lang="ru">Поддерживаемый S3 провайдер заказчика/прошедший spike. Закрытые объекты; выбор поставщика не зашит в домен. Бизнес-ACL в PostgreSQL.</documentation>
+    </element>
+    <element identifier="el-scanner" xsi:type="ApplicationComponent">
+      <name xml:lang="ru">Изолированный scanner</name>
+      <documentation xml:lang="ru">Проверка форматов, сигнатур, антивирус и лимиты обработки. Ошибка/недоступность оставляет quarantine. Результат проверки не заменяет ACL.</documentation>
+    </element>
+    <element identifier="el-lms" xsi:type="ApplicationComponent">
+      <name xml:lang="ru">Внешняя LMS</name>
+      <documentation xml:lang="ru">Заказчик предоставляет JSON API, auth, поля, pagination, IDs и правила изменений. CRM pull с checkpoints; fixtures до получения API.</documentation>
+    </element>
+    <element identifier="el-laravel" xsi:type="ApplicationComponent">
+      <name xml:lang="ru">Сайт Laravel / CMS</name>
+      <documentation xml:lang="ru">Второй внешний источник. Свой adapter contract, credentials, checkpoints и external identity namespace; никаких вымышленных конечных URL.</documentation>
+    </element>
+    <element identifier="el-observe" xsi:type="ApplicationComponent">
+      <name xml:lang="ru">Метрики / логи / audit</name>
+      <documentation xml:lang="ru">Correlation request→job→event→attempt, queue lag, lease/worker health, HTTP/DB latency и ошибки. Без секретов/ПДн в labels и диагностических payload.</documentation>
+    </element>
+    <element identifier="el-backup" xsi:type="ApplicationComponent">
+      <name xml:lang="ru">Backup / restore</name>
+      <documentation xml:lang="ru">PostgreSQL/WAL, Keycloak DB, S3 objects и config. Проверяемое восстановление; RPO/RTO согласуются. Процедуры и доступ оператора, не новый бизнес-микросервис.</documentation>
+    </element>
+  </elements>
+  <relationships>
+    <relationship identifier="rel-m-case" source="el-manager" target="el-partnership" xsi:type="Assignment"/>
+    <relationship identifier="rel-m-edu" source="el-manager" target="el-education" xsi:type="Assignment"/>
+    <relationship identifier="rel-s-case" source="el-supervisor" target="el-partnership" xsi:type="Assignment"/>
+    <relationship identifier="rel-s-control" source="el-supervisor" target="el-control" xsi:type="Assignment"/>
+    <relationship identifier="rel-s-admin" source="el-supervisor" target="el-administration" xsi:type="Assignment"/>
+    <relationship identifier="rel-a-admin" source="el-admin" target="el-administration" xsi:type="Assignment"/>
+    <relationship identifier="rel-a-exchange" source="el-admin" target="el-exchange" xsi:type="Assignment"/>
+    <relationship identifier="rel-supports-partnership" source="el-case-service" target="el-partnership" xsi:type="Serving"/>
+    <relationship identifier="rel-supports-education" source="el-learning-service" target="el-education" xsi:type="Serving"/>
+    <relationship identifier="rel-supports-control" source="el-report-service" target="el-control" xsi:type="Serving"/>
+    <relationship identifier="rel-supports-administration" source="el-governance-service" target="el-administration" xsi:type="Serving"/>
+    <relationship identifier="rel-supports-exchange" source="el-exchange-service" target="el-exchange" xsi:type="Serving"/>
+    <relationship identifier="rel-realizes-catalogs" source="el-catalogs" target="el-case-service" xsi:type="Realization"/>
+    <relationship identifier="rel-realizes-interactions" source="el-interactions" target="el-case-service" xsi:type="Realization"/>
+    <relationship identifier="rel-realizes-learning" source="el-learning" target="el-learning-service" xsi:type="Realization"/>
+    <relationship identifier="rel-realizes-analytics" source="el-analytics" target="el-report-service" xsi:type="Realization"/>
+    <relationship identifier="rel-realizes-reports" source="el-reports" target="el-report-service" xsi:type="Realization"/>
+    <relationship identifier="rel-realizes-identity" source="el-identity" target="el-governance-service" xsi:type="Realization"/>
+    <relationship identifier="rel-realizes-workflow" source="el-workflow" target="el-governance-service" xsi:type="Realization"/>
+    <relationship identifier="rel-realizes-imports" source="el-imports" target="el-exchange-service" xsi:type="Realization"/>
+    <relationship identifier="rel-realizes-integrations" source="el-integrations" target="el-exchange-service" xsi:type="Realization"/>
+    <relationship identifier="rel-realizes-files" source="el-files" target="el-exchange-service" xsi:type="Realization"/>
+    <relationship identifier="rel-https" source="el-spa" target="el-edge" xsi:type="Flow">
+      <name xml:lang="ru">HTTPS</name>
+      <documentation xml:lang="ru">API/SPA traffic через публичный reverse proxy.</documentation>
+    </relationship>
+    <relationship identifier="rel-proxy-api" source="el-edge" target="el-api" xsi:type="Flow">
+      <name xml:lang="ru">/api/v1</name>
+      <documentation xml:lang="ru">JWT проходит до API для проверки подписи/issuer/audience/expiry и AccessPolicy.</documentation>
+    </relationship>
+    <relationship identifier="rel-oidc" source="el-spa" target="el-keycloak" xsi:type="Flow">
+      <name xml:lang="ru">OIDC + PKCE</name>
+      <documentation xml:lang="ru">Поток аутентификации; допустимые redirect origins ограничены.</documentation>
+    </relationship>
+    <relationship identifier="rel-kc-db" source="el-keycloak" target="el-pg-keycloak" xsi:type="Flow">
+      <name xml:lang="ru">SQL</name>
+      <documentation xml:lang="ru">Keycloak владеет собственной базой.</documentation>
+    </relationship>
+    <relationship identifier="rel-api-db" source="el-api" target="el-pg-crm" xsi:type="Flow">
+      <name xml:lang="ru">commands / queries</name>
+      <documentation xml:lang="ru">Короткие транзакции: command result + aggregates + facts + outbox/job.</documentation>
+    </relationship>
+    <relationship identifier="rel-jobs-dispatch" source="el-pg-crm" target="el-dispatcher" xsi:type="Flow">
+      <name xml:lang="ru">jobs / outbox / leases</name>
+      <documentation xml:lang="ru">Dispatcher читает due-записи и транзакционно обновляет lease/delivery status.</documentation>
+    </relationship>
+    <relationship identifier="rel-publish" source="el-dispatcher" target="el-redis" xsi:type="Flow">
+      <name xml:lang="ru">publish job_id</name>
+      <documentation xml:lang="ru">Сбой публикации повторяется; Redis не источник истины.</documentation>
+    </relationship>
+    <relationship identifier="rel-consume-ops" source="el-redis" target="el-worker-ops" xsi:type="Flow">
+      <name xml:lang="ru">delivery</name>
+      <documentation xml:lang="ru">At-least-once, повторная доставка допустима.</documentation>
+    </relationship>
+    <relationship identifier="rel-consume-reports" source="el-redis" target="el-worker-reports" xsi:type="Flow">
+      <name xml:lang="ru">report queue</name>
+      <documentation xml:lang="ru">Отдельная очередь и execution slots.</documentation>
+    </relationship>
+    <relationship identifier="rel-ops-db" source="el-worker-ops" target="el-pg-crm" xsi:type="Flow">
+      <name xml:lang="ru">UoW / inbox / progress</name>
+      <documentation xml:lang="ru">Короткие транзакции, идемпотентные эффекты, fencing.</documentation>
+    </relationship>
+    <relationship identifier="rel-reports-db" source="el-worker-reports" target="el-pg-crm" xsi:type="Flow">
+      <name xml:lang="ru">snapshot → frozen rows</name>
+      <documentation xml:lang="ru">Отдельный snapshot и согласованная бивременная семантика; доступ проверяется повторно.</documentation>
+    </relationship>
+    <relationship identifier="rel-upload" source="el-api" target="el-s3" xsi:type="Flow">
+      <name xml:lang="ru">upload / authorized download</name>
+      <documentation xml:lang="ru">S3 вне SQL-транзакции, метаданные и state machine в PostgreSQL; quarantine не выдаётся пользователю.</documentation>
+    </relationship>
+    <relationship identifier="rel-ops-objects" source="el-worker-ops" target="el-s3" xsi:type="Flow">
+      <name xml:lang="ru">read / promote / delete</name>
+      <documentation xml:lang="ru">Объектные операции имеют retry/reconciliation и защищены attachment state.</documentation>
+    </relationship>
+    <relationship identifier="rel-rendered" source="el-worker-reports" target="el-s3" xsi:type="Flow">
+      <name xml:lang="ru">report artifacts</name>
+      <documentation xml:lang="ru">Один frozen dataset, несколько форматов, атомарная публикация завершённого artifact.</documentation>
+    </relationship>
+    <relationship identifier="rel-scan" source="el-worker-ops" target="el-scanner" xsi:type="Flow">
+      <name xml:lang="ru">scan stream / result</name>
+      <documentation xml:lang="ru">Изолированная проверка; недоступность не разрешает выдачу.</documentation>
+    </relationship>
+    <relationship identifier="rel-pull-lms" source="el-worker-ops" target="el-lms" xsi:type="Flow">
+      <name xml:lang="ru">JSON pull</name>
+      <documentation xml:lang="ru">Сеть вне доменной транзакции; inbox перед применением.</documentation>
+    </relationship>
+    <relationship identifier="rel-pull-site" source="el-worker-ops" target="el-laravel" xsi:type="Flow">
+      <name xml:lang="ru">JSON pull</name>
+      <documentation xml:lang="ru">Отдельный adapter и checkpoint.</documentation>
+    </relationship>
+    <relationship identifier="rel-api-observe" source="el-api" target="el-observe" xsi:type="Flow">
+      <name xml:lang="ru">request metrics</name>
+      <documentation xml:lang="ru">Низкокардинальные labels, sanitization.</documentation>
+    </relationship>
+    <relationship identifier="rel-worker-observe" source="el-worker-ops" target="el-observe" xsi:type="Flow">
+      <name xml:lang="ru">job metrics</name>
+      <documentation xml:lang="ru">Progress, lease/attempt, queue lag, integration lag.</documentation>
+    </relationship>
+    <relationship identifier="rel-reports-observe" source="el-worker-reports" target="el-observe" xsi:type="Flow">
+      <name xml:lang="ru">report metrics</name>
+      <documentation xml:lang="ru">Materialization/render times, row counts, cancel/failure.</documentation>
+    </relationship>
+    <relationship identifier="rel-backup-pg" source="el-pg-crm" target="el-backup" xsi:type="Flow">
+      <name xml:lang="ru">DB / WAL copy</name>
+      <documentation xml:lang="ru">Точка восстановления согласуется с объектами.</documentation>
+    </relationship>
+    <relationship identifier="rel-backup-kc" source="el-pg-keycloak" target="el-backup" xsi:type="Flow">
+      <name xml:lang="ru">DB copy</name>
+      <documentation xml:lang="ru">Сохранение identity configuration/data по принятой политике.</documentation>
+    </relationship>
+    <relationship identifier="rel-backup-s3" source="el-s3" target="el-backup" xsi:type="Flow">
+      <name xml:lang="ru">object versions</name>
+      <documentation xml:lang="ru">Проверка отсутствующих и осиротевших objects после restore.</documentation>
+    </relationship>
+  </relationships>
+  <organizations>
+    <item>
+      <label xml:lang="ru">Функции и модули</label>
+      <item identifierRef="el-manager"/>
+      <item identifierRef="el-supervisor"/>
+      <item identifierRef="el-admin"/>
+      <item identifierRef="el-partnership"/>
+      <item identifierRef="el-education"/>
+      <item identifierRef="el-control"/>
+      <item identifierRef="el-administration"/>
+      <item identifierRef="el-exchange"/>
+      <item identifierRef="el-case-service"/>
+      <item identifierRef="el-learning-service"/>
+      <item identifierRef="el-report-service"/>
+      <item identifierRef="el-governance-service"/>
+      <item identifierRef="el-exchange-service"/>
+      <item identifierRef="el-catalogs"/>
+      <item identifierRef="el-interactions"/>
+      <item identifierRef="el-learning"/>
+      <item identifierRef="el-analytics"/>
+      <item identifierRef="el-reports"/>
+      <item identifierRef="el-identity"/>
+      <item identifierRef="el-workflow"/>
+      <item identifierRef="el-imports"/>
+      <item identifierRef="el-integrations"/>
+      <item identifierRef="el-files"/>
+    </item>
+    <item>
+      <label xml:lang="ru">Компоненты исполнения</label>
+      <item identifierRef="el-spa"/>
+      <item identifierRef="el-edge"/>
+      <item identifierRef="el-api"/>
+      <item identifierRef="el-pg-crm"/>
+      <item identifierRef="el-keycloak"/>
+      <item identifierRef="el-pg-keycloak"/>
+      <item identifierRef="el-dispatcher"/>
+      <item identifierRef="el-redis"/>
+      <item identifierRef="el-worker-ops"/>
+      <item identifierRef="el-worker-reports"/>
+      <item identifierRef="el-s3"/>
+      <item identifierRef="el-scanner"/>
+      <item identifierRef="el-lms"/>
+      <item identifierRef="el-laravel"/>
+      <item identifierRef="el-observe"/>
+      <item identifierRef="el-backup"/>
+    </item>
+    <item>
+      <label xml:lang="ru">Связи</label>
+      <item identifierRef="rel-m-case"/>
+      <item identifierRef="rel-m-edu"/>
+      <item identifierRef="rel-s-case"/>
+      <item identifierRef="rel-s-control"/>
+      <item identifierRef="rel-s-admin"/>
+      <item identifierRef="rel-a-admin"/>
+      <item identifierRef="rel-a-exchange"/>
+      <item identifierRef="rel-supports-partnership"/>
+      <item identifierRef="rel-supports-education"/>
+      <item identifierRef="rel-supports-control"/>
+      <item identifierRef="rel-supports-administration"/>
+      <item identifierRef="rel-supports-exchange"/>
+      <item identifierRef="rel-realizes-catalogs"/>
+      <item identifierRef="rel-realizes-interactions"/>
+      <item identifierRef="rel-realizes-learning"/>
+      <item identifierRef="rel-realizes-analytics"/>
+      <item identifierRef="rel-realizes-reports"/>
+      <item identifierRef="rel-realizes-identity"/>
+      <item identifierRef="rel-realizes-workflow"/>
+      <item identifierRef="rel-realizes-imports"/>
+      <item identifierRef="rel-realizes-integrations"/>
+      <item identifierRef="rel-realizes-files"/>
+      <item identifierRef="rel-https"/>
+      <item identifierRef="rel-proxy-api"/>
+      <item identifierRef="rel-oidc"/>
+      <item identifierRef="rel-kc-db"/>
+      <item identifierRef="rel-api-db"/>
+      <item identifierRef="rel-jobs-dispatch"/>
+      <item identifierRef="rel-publish"/>
+      <item identifierRef="rel-consume-ops"/>
+      <item identifierRef="rel-consume-reports"/>
+      <item identifierRef="rel-ops-db"/>
+      <item identifierRef="rel-reports-db"/>
+      <item identifierRef="rel-upload"/>
+      <item identifierRef="rel-ops-objects"/>
+      <item identifierRef="rel-rendered"/>
+      <item identifierRef="rel-scan"/>
+      <item identifierRef="rel-pull-lms"/>
+      <item identifierRef="rel-pull-site"/>
+      <item identifierRef="rel-api-observe"/>
+      <item identifierRef="rel-worker-observe"/>
+      <item identifierRef="rel-reports-observe"/>
+      <item identifierRef="rel-backup-pg"/>
+      <item identifierRef="rel-backup-kc"/>
+      <item identifierRef="rel-backup-s3"/>
+    </item>
+  </organizations>
+  <views>
+    <diagrams>
+      <view identifier="view-functional" xsi:type="Diagram">
+        <name xml:lang="ru">01 · Функции, роли и границы модулей</name>
+        <documentation xml:lang="ru">Верхний ряд: бизнес-роли. Второй: функции из ТЗ. Третий: прикладные сервисы, обслуживающие функции. Нижний: модули монолита, реализующие сервисы; A/B — владельцы кода, не роли доступа. Дополнительные общие зависимости AccessPolicy/jobs/StoragePort не размножены на диаграмме; см. 01/05. Связи Assignment, Serving и Realization показывают ответственность, не HTTP-вызовы.</documentation>
+        <node identifier="view-functional-node-manager" elementRef="el-manager" x="230" y="40" w="245" h="70" xsi:type="Element">
+          <style lineWidth="1">
+            <fillColor r="255" g="246" b="210"/>
+            <lineColor r="65" g="77" b="92"/>
+            <font name="Arial" size="11"/>
+          </style>
+        </node>
+        <node identifier="view-functional-node-supervisor" elementRef="el-supervisor" x="760" y="40" w="245" h="70" xsi:type="Element">
+          <style lineWidth="1">
+            <fillColor r="255" g="246" b="210"/>
+            <lineColor r="65" g="77" b="92"/>
+            <font name="Arial" size="11"/>
+          </style>
+        </node>
+        <node identifier="view-functional-node-admin" elementRef="el-admin" x="1290" y="40" w="245" h="70" xsi:type="Element">
+          <style lineWidth="1">
+            <fillColor r="255" g="246" b="210"/>
+            <lineColor r="65" g="77" b="92"/>
+            <font name="Arial" size="11"/>
+          </style>
+        </node>
+        <node identifier="view-functional-node-partnership" elementRef="el-partnership" x="40" y="240" w="280" h="95" xsi:type="Element">
+          <style lineWidth="1">
+            <fillColor r="255" g="246" b="210"/>
+            <lineColor r="65" g="77" b="92"/>
+            <font name="Arial" size="11"/>
+          </style>
+        </node>
+        <node identifier="view-functional-node-case-service" elementRef="el-case-service" x="40" y="435" w="280" h="85" xsi:type="Element">
+          <style lineWidth="1">
+            <fillColor r="212" g="237" b="250"/>
+            <lineColor r="65" g="77" b="92"/>
+            <font name="Arial" size="11"/>
+          </style>
+        </node>
+        <node identifier="view-functional-node-education" elementRef="el-education" x="390" y="240" w="280" h="95" xsi:type="Element">
+          <style lineWidth="1">
+            <fillColor r="255" g="246" b="210"/>
+            <lineColor r="65" g="77" b="92"/>
+            <font name="Arial" size="11"/>
+          </style>
+        </node>
+        <node identifier="view-functional-node-learning-service" elementRef="el-learning-service" x="390" y="435" w="280" h="85" xsi:type="Element">
+          <style lineWidth="1">
+            <fillColor r="212" g="237" b="250"/>
+            <lineColor r="65" g="77" b="92"/>
+            <font name="Arial" size="11"/>
+          </style>
+        </node>
+        <node identifier="view-functional-node-control" elementRef="el-control" x="740" y="240" w="280" h="95" xsi:type="Element">
+          <style lineWidth="1">
+            <fillColor r="255" g="246" b="210"/>
+            <lineColor r="65" g="77" b="92"/>
+            <font name="Arial" size="11"/>
+          </style>
+        </node>
+        <node identifier="view-functional-node-report-service" elementRef="el-report-service" x="740" y="435" w="280" h="85" xsi:type="Element">
+          <style lineWidth="1">
+            <fillColor r="212" g="237" b="250"/>
+            <lineColor r="65" g="77" b="92"/>
+            <font name="Arial" size="11"/>
+          </style>
+        </node>
+        <node identifier="view-functional-node-administration" elementRef="el-administration" x="1090" y="240" w="280" h="95" xsi:type="Element">
+          <style lineWidth="1">
+            <fillColor r="255" g="246" b="210"/>
+            <lineColor r="65" g="77" b="92"/>
+            <font name="Arial" size="11"/>
+          </style>
+        </node>
+        <node identifier="view-functional-node-governance-service" elementRef="el-governance-service" x="1090" y="435" w="280" h="85" xsi:type="Element">
+          <style lineWidth="1">
+            <fillColor r="212" g="237" b="250"/>
+            <lineColor r="65" g="77" b="92"/>
+            <font name="Arial" size="11"/>
+          </style>
+        </node>
+        <node identifier="view-functional-node-exchange" elementRef="el-exchange" x="1440" y="240" w="280" h="95" xsi:type="Element">
+          <style lineWidth="1">
+            <fillColor r="255" g="246" b="210"/>
+            <lineColor r="65" g="77" b="92"/>
+            <font name="Arial" size="11"/>
+          </style>
+        </node>
+        <node identifier="view-functional-node-exchange-service" elementRef="el-exchange-service" x="1440" y="435" w="280" h="85" xsi:type="Element">
+          <style lineWidth="1">
+            <fillColor r="212" g="237" b="250"/>
+            <lineColor r="65" g="77" b="92"/>
+            <font name="Arial" size="11"/>
+          </style>
+        </node>
+        <node identifier="view-functional-node-catalogs" elementRef="el-catalogs" x="40" y="650" w="280" h="85" xsi:type="Element">
+          <style lineWidth="1">
+            <fillColor r="212" g="237" b="250"/>
+            <lineColor r="65" g="77" b="92"/>
+            <font name="Arial" size="11"/>
+          </style>
+        </node>
+        <node identifier="view-functional-node-interactions" elementRef="el-interactions" x="40" y="795" w="280" h="85" xsi:type="Element">
+          <style lineWidth="1">
+            <fillColor r="212" g="237" b="250"/>
+            <lineColor r="65" g="77" b="92"/>
+            <font name="Arial" size="11"/>
+          </style>
+        </node>
+        <node identifier="view-functional-node-learning" elementRef="el-learning" x="390" y="650" w="280" h="85" xsi:type="Element">
+          <style lineWidth="1">
+            <fillColor r="212" g="237" b="250"/>
+            <lineColor r="65" g="77" b="92"/>
+            <font name="Arial" size="11"/>
+          </style>
+        </node>
+        <node identifier="view-functional-node-analytics" elementRef="el-analytics" x="740" y="650" w="280" h="85" xsi:type="Element">
+          <style lineWidth="1">
+            <fillColor r="212" g="237" b="250"/>
+            <lineColor r="65" g="77" b="92"/>
+            <font name="Arial" size="11"/>
+          </style>
+        </node>
+        <node identifier="view-functional-node-reports" elementRef="el-reports" x="740" y="795" w="280" h="85" xsi:type="Element">
+          <style lineWidth="1">
+            <fillColor r="212" g="237" b="250"/>
+            <lineColor r="65" g="77" b="92"/>
+            <font name="Arial" size="11"/>
+          </style>
+        </node>
+        <node identifier="view-functional-node-identity" elementRef="el-identity" x="1090" y="650" w="280" h="85" xsi:type="Element">
+          <style lineWidth="1">
+            <fillColor r="212" g="237" b="250"/>
+            <lineColor r="65" g="77" b="92"/>
+            <font name="Arial" size="11"/>
+          </style>
+        </node>
+        <node identifier="view-functional-node-workflow" elementRef="el-workflow" x="1090" y="795" w="280" h="85" xsi:type="Element">
+          <style lineWidth="1">
+            <fillColor r="212" g="237" b="250"/>
+            <lineColor r="65" g="77" b="92"/>
+            <font name="Arial" size="11"/>
+          </style>
+        </node>
+        <node identifier="view-functional-node-imports" elementRef="el-imports" x="1440" y="650" w="280" h="85" xsi:type="Element">
+          <style lineWidth="1">
+            <fillColor r="212" g="237" b="250"/>
+            <lineColor r="65" g="77" b="92"/>
+            <font name="Arial" size="11"/>
+          </style>
+        </node>
+        <node identifier="view-functional-node-integrations" elementRef="el-integrations" x="1440" y="795" w="280" h="85" xsi:type="Element">
+          <style lineWidth="1">
+            <fillColor r="212" g="237" b="250"/>
+            <lineColor r="65" g="77" b="92"/>
+            <font name="Arial" size="11"/>
+          </style>
+        </node>
+        <node identifier="view-functional-node-files" elementRef="el-files" x="1440" y="940" w="280" h="85" xsi:type="Element">
+          <style lineWidth="1">
+            <fillColor r="212" g="237" b="250"/>
+            <lineColor r="65" g="77" b="92"/>
+            <font name="Arial" size="11"/>
+          </style>
+        </node>
+        <connection identifier="view-functional-connection-m-case" relationshipRef="rel-m-case" source="view-functional-node-manager" target="view-functional-node-partnership" xsi:type="Relationship">
+          <style lineWidth="1">
+            <lineColor r="75" g="88" b="105"/>
+          </style>
+        </connection>
+        <connection identifier="view-functional-connection-m-edu" relationshipRef="rel-m-edu" source="view-functional-node-manager" target="view-functional-node-education" xsi:type="Relationship">
+          <style lineWidth="1">
+            <lineColor r="75" g="88" b="105"/>
+          </style>
+        </connection>
+        <connection identifier="view-functional-connection-s-case" relationshipRef="rel-s-case" source="view-functional-node-supervisor" target="view-functional-node-partnership" xsi:type="Relationship">
+          <style lineWidth="1">
+            <lineColor r="75" g="88" b="105"/>
+          </style>
+          <bendpoint x="883" y="155"/>
+          <bendpoint x="180" y="155"/>
+        </connection>
+        <connection identifier="view-functional-connection-s-control" relationshipRef="rel-s-control" source="view-functional-node-supervisor" target="view-functional-node-control" xsi:type="Relationship">
+          <style lineWidth="1">
+            <lineColor r="75" g="88" b="105"/>
+          </style>
+        </connection>
+        <connection identifier="view-functional-connection-s-admin" relationshipRef="rel-s-admin" source="view-functional-node-supervisor" target="view-functional-node-administration" xsi:type="Relationship">
+          <style lineWidth="1">
+            <lineColor r="75" g="88" b="105"/>
+          </style>
+          <bendpoint x="883" y="175"/>
+          <bendpoint x="1230" y="175"/>
+        </connection>
+        <connection identifier="view-functional-connection-a-admin" relationshipRef="rel-a-admin" source="view-functional-node-admin" target="view-functional-node-administration" xsi:type="Relationship">
+          <style lineWidth="1">
+            <lineColor r="75" g="88" b="105"/>
+          </style>
+        </connection>
+        <connection identifier="view-functional-connection-a-exchange" relationshipRef="rel-a-exchange" source="view-functional-node-admin" target="view-functional-node-exchange" xsi:type="Relationship">
+          <style lineWidth="1">
+            <lineColor r="75" g="88" b="105"/>
+          </style>
+          <bendpoint x="1413" y="155"/>
+          <bendpoint x="1580" y="155"/>
+        </connection>
+        <connection identifier="view-functional-connection-supports-partnership" relationshipRef="rel-supports-partnership" source="view-functional-node-case-service" target="view-functional-node-partnership" xsi:type="Relationship">
+          <style lineWidth="1">
+            <lineColor r="75" g="88" b="105"/>
+          </style>
+        </connection>
+        <connection identifier="view-functional-connection-supports-education" relationshipRef="rel-supports-education" source="view-functional-node-learning-service" target="view-functional-node-education" xsi:type="Relationship">
+          <style lineWidth="1">
+            <lineColor r="75" g="88" b="105"/>
+          </style>
+        </connection>
+        <connection identifier="view-functional-connection-supports-control" relationshipRef="rel-supports-control" source="view-functional-node-report-service" target="view-functional-node-control" xsi:type="Relationship">
+          <style lineWidth="1">
+            <lineColor r="75" g="88" b="105"/>
+          </style>
+        </connection>
+        <connection identifier="view-functional-connection-supports-administration" relationshipRef="rel-supports-administration" source="view-functional-node-governance-service" target="view-functional-node-administration" xsi:type="Relationship">
+          <style lineWidth="1">
+            <lineColor r="75" g="88" b="105"/>
+          </style>
+        </connection>
+        <connection identifier="view-functional-connection-supports-exchange" relationshipRef="rel-supports-exchange" source="view-functional-node-exchange-service" target="view-functional-node-exchange" xsi:type="Relationship">
+          <style lineWidth="1">
+            <lineColor r="75" g="88" b="105"/>
+          </style>
+        </connection>
+        <connection identifier="view-functional-connection-realizes-catalogs" relationshipRef="rel-realizes-catalogs" source="view-functional-node-catalogs" target="view-functional-node-case-service" xsi:type="Relationship">
+          <style lineWidth="1">
+            <lineColor r="75" g="88" b="105"/>
+          </style>
+        </connection>
+        <connection identifier="view-functional-connection-realizes-interactions" relationshipRef="rel-realizes-interactions" source="view-functional-node-interactions" target="view-functional-node-case-service" xsi:type="Relationship">
+          <style lineWidth="1">
+            <lineColor r="75" g="88" b="105"/>
+          </style>
+          <bendpoint x="350" y="837"/>
+          <bendpoint x="350" y="565"/>
+          <bendpoint x="180" y="565"/>
+        </connection>
+        <connection identifier="view-functional-connection-realizes-learning" relationshipRef="rel-realizes-learning" source="view-functional-node-learning" target="view-functional-node-learning-service" xsi:type="Relationship">
+          <style lineWidth="1">
+            <lineColor r="75" g="88" b="105"/>
+          </style>
+        </connection>
+        <connection identifier="view-functional-connection-realizes-analytics" relationshipRef="rel-realizes-analytics" source="view-functional-node-analytics" target="view-functional-node-report-service" xsi:type="Relationship">
+          <style lineWidth="1">
+            <lineColor r="75" g="88" b="105"/>
+          </style>
+        </connection>
+        <connection identifier="view-functional-connection-realizes-reports" relationshipRef="rel-realizes-reports" source="view-functional-node-reports" target="view-functional-node-report-service" xsi:type="Relationship">
+          <style lineWidth="1">
+            <lineColor r="75" g="88" b="105"/>
+          </style>
+          <bendpoint x="1050" y="837"/>
+          <bendpoint x="1050" y="565"/>
+          <bendpoint x="880" y="565"/>
+        </connection>
+        <connection identifier="view-functional-connection-realizes-identity" relationshipRef="rel-realizes-identity" source="view-functional-node-identity" target="view-functional-node-governance-service" xsi:type="Relationship">
+          <style lineWidth="1">
+            <lineColor r="75" g="88" b="105"/>
+          </style>
+        </connection>
+        <connection identifier="view-functional-connection-realizes-workflow" relationshipRef="rel-realizes-workflow" source="view-functional-node-workflow" target="view-functional-node-governance-service" xsi:type="Relationship">
+          <style lineWidth="1">
+            <lineColor r="75" g="88" b="105"/>
+          </style>
+          <bendpoint x="1400" y="837"/>
+          <bendpoint x="1400" y="565"/>
+          <bendpoint x="1230" y="565"/>
+        </connection>
+        <connection identifier="view-functional-connection-realizes-imports" relationshipRef="rel-realizes-imports" source="view-functional-node-imports" target="view-functional-node-exchange-service" xsi:type="Relationship">
+          <style lineWidth="1">
+            <lineColor r="75" g="88" b="105"/>
+          </style>
+        </connection>
+        <connection identifier="view-functional-connection-realizes-integrations" relationshipRef="rel-realizes-integrations" source="view-functional-node-integrations" target="view-functional-node-exchange-service" xsi:type="Relationship">
+          <style lineWidth="1">
+            <lineColor r="75" g="88" b="105"/>
+          </style>
+          <bendpoint x="1750" y="837"/>
+          <bendpoint x="1750" y="565"/>
+          <bendpoint x="1580" y="565"/>
+        </connection>
+        <connection identifier="view-functional-connection-realizes-files" relationshipRef="rel-realizes-files" source="view-functional-node-files" target="view-functional-node-exchange-service" xsi:type="Relationship">
+          <style lineWidth="1">
+            <lineColor r="75" g="88" b="105"/>
+          </style>
+          <bendpoint x="1750" y="982"/>
+          <bendpoint x="1750" y="565"/>
+          <bendpoint x="1580" y="565"/>
+        </connection>
+      </view>
+      <view identifier="view-runtime" xsi:type="Diagram">
+        <name xml:lang="ru">02 · Компоненты исполнения и внешние границы</name>
+        <documentation xml:lang="ru">Целевое развёртывание: React + FastAPI modular monolith; отдельные процессы dispatcher и Celery workers из общего backend image. Цвета соответствуют слоям ArchiMate, не security zones. PostgreSQL хранит authoritative state; Redis доставляет сигналы; S3 закрыт/quarantine. Стрелки Flow подписывают обмен и не обещают синхронность или exactly-once. PostgreSQL CRM/Keycloak — разные DB/accounts в возможном общем cluster. Число report slots требует подтверждения нагрузкой. Копии/backup и observability — эксплуатационные возможности, не требование микросервисов. A/B ownership см. документацию элементов.</documentation>
+        <node identifier="view-runtime-node-spa" elementRef="el-spa" x="40" y="40" w="270" h="100" xsi:type="Element">
+          <style lineWidth="1">
+            <fillColor r="212" g="237" b="250"/>
+            <lineColor r="65" g="77" b="92"/>
+            <font name="Arial" size="11"/>
+          </style>
+        </node>
+        <node identifier="view-runtime-node-edge" elementRef="el-edge" x="380" y="40" w="270" h="100" xsi:type="Element">
+          <style lineWidth="1">
+            <fillColor r="220" g="239" b="218"/>
+            <lineColor r="65" g="77" b="92"/>
+            <font name="Arial" size="11"/>
+          </style>
+        </node>
+        <node identifier="view-runtime-node-api" elementRef="el-api" x="720" y="40" w="270" h="100" xsi:type="Element">
+          <style lineWidth="1">
+            <fillColor r="212" g="237" b="250"/>
+            <lineColor r="65" g="77" b="92"/>
+            <font name="Arial" size="11"/>
+          </style>
+        </node>
+        <node identifier="view-runtime-node-pg-crm" elementRef="el-pg-crm" x="1060" y="40" w="270" h="100" xsi:type="Element">
+          <style lineWidth="1">
+            <fillColor r="220" g="239" b="218"/>
+            <lineColor r="65" g="77" b="92"/>
+            <font name="Arial" size="11"/>
+          </style>
+        </node>
+        <node identifier="view-runtime-node-keycloak" elementRef="el-keycloak" x="40" y="240" w="270" h="100" xsi:type="Element">
+          <style lineWidth="1">
+            <fillColor r="212" g="237" b="250"/>
+            <lineColor r="65" g="77" b="92"/>
+            <font name="Arial" size="11"/>
+          </style>
+        </node>
+        <node identifier="view-runtime-node-pg-keycloak" elementRef="el-pg-keycloak" x="380" y="240" w="270" h="100" xsi:type="Element">
+          <style lineWidth="1">
+            <fillColor r="220" g="239" b="218"/>
+            <lineColor r="65" g="77" b="92"/>
+            <font name="Arial" size="11"/>
+          </style>
+        </node>
+        <node identifier="view-runtime-node-dispatcher" elementRef="el-dispatcher" x="1060" y="240" w="270" h="100" xsi:type="Element">
+          <style lineWidth="1">
+            <fillColor r="212" g="237" b="250"/>
+            <lineColor r="65" g="77" b="92"/>
+            <font name="Arial" size="11"/>
+          </style>
+        </node>
+        <node identifier="view-runtime-node-s3" elementRef="el-s3" x="40" y="490" w="270" h="100" xsi:type="Element">
+          <style lineWidth="1">
+            <fillColor r="220" g="239" b="218"/>
+            <lineColor r="65" g="77" b="92"/>
+            <font name="Arial" size="11"/>
+          </style>
+        </node>
+        <node identifier="view-runtime-node-worker-ops" elementRef="el-worker-ops" x="720" y="490" w="270" h="100" xsi:type="Element">
+          <style lineWidth="1">
+            <fillColor r="212" g="237" b="250"/>
+            <lineColor r="65" g="77" b="92"/>
+            <font name="Arial" size="11"/>
+          </style>
+        </node>
+        <node identifier="view-runtime-node-redis" elementRef="el-redis" x="1060" y="490" w="270" h="100" xsi:type="Element">
+          <style lineWidth="1">
+            <fillColor r="220" g="239" b="218"/>
+            <lineColor r="65" g="77" b="92"/>
+            <font name="Arial" size="11"/>
+          </style>
+        </node>
+        <node identifier="view-runtime-node-lms" elementRef="el-lms" x="1420" y="400" w="270" h="100" xsi:type="Element">
+          <style lineWidth="1">
+            <fillColor r="212" g="237" b="250"/>
+            <lineColor r="65" g="77" b="92"/>
+            <font name="Arial" size="11"/>
+          </style>
+        </node>
+        <node identifier="view-runtime-node-scanner" elementRef="el-scanner" x="380" y="690" w="270" h="100" xsi:type="Element">
+          <style lineWidth="1">
+            <fillColor r="212" g="237" b="250"/>
+            <lineColor r="65" g="77" b="92"/>
+            <font name="Arial" size="11"/>
+          </style>
+        </node>
+        <node identifier="view-runtime-node-worker-reports" elementRef="el-worker-reports" x="720" y="780" w="270" h="100" xsi:type="Element">
+          <style lineWidth="1">
+            <fillColor r="212" g="237" b="250"/>
+            <lineColor r="65" g="77" b="92"/>
+            <font name="Arial" size="11"/>
+          </style>
+        </node>
+        <node identifier="view-runtime-node-laravel" elementRef="el-laravel" x="1420" y="680" w="270" h="100" xsi:type="Element">
+          <style lineWidth="1">
+            <fillColor r="212" g="237" b="250"/>
+            <lineColor r="65" g="77" b="92"/>
+            <font name="Arial" size="11"/>
+          </style>
+        </node>
+        <node identifier="view-runtime-node-observe" elementRef="el-observe" x="1060" y="1060" w="270" h="100" xsi:type="Element">
+          <style lineWidth="1">
+            <fillColor r="212" g="237" b="250"/>
+            <lineColor r="65" g="77" b="92"/>
+            <font name="Arial" size="11"/>
+          </style>
+        </node>
+        <node identifier="view-runtime-node-backup" elementRef="el-backup" x="40" y="1060" w="270" h="100" xsi:type="Element">
+          <style lineWidth="1">
+            <fillColor r="212" g="237" b="250"/>
+            <lineColor r="65" g="77" b="92"/>
+            <font name="Arial" size="11"/>
+          </style>
+        </node>
+        <connection identifier="view-runtime-connection-https" relationshipRef="rel-https" source="view-runtime-node-spa" target="view-runtime-node-edge" xsi:type="Relationship">
+          <style lineWidth="1">
+            <lineColor r="75" g="88" b="105"/>
+          </style>
+        </connection>
+        <connection identifier="view-runtime-connection-proxy-api" relationshipRef="rel-proxy-api" source="view-runtime-node-edge" target="view-runtime-node-api" xsi:type="Relationship">
+          <style lineWidth="1">
+            <lineColor r="75" g="88" b="105"/>
+          </style>
+        </connection>
+        <connection identifier="view-runtime-connection-oidc" relationshipRef="rel-oidc" source="view-runtime-node-spa" target="view-runtime-node-keycloak" xsi:type="Relationship">
+          <style lineWidth="1">
+            <lineColor r="75" g="88" b="105"/>
+          </style>
+        </connection>
+        <connection identifier="view-runtime-connection-kc-db" relationshipRef="rel-kc-db" source="view-runtime-node-keycloak" target="view-runtime-node-pg-keycloak" xsi:type="Relationship">
+          <style lineWidth="1">
+            <lineColor r="75" g="88" b="105"/>
+          </style>
+        </connection>
+        <connection identifier="view-runtime-connection-api-db" relationshipRef="rel-api-db" source="view-runtime-node-api" target="view-runtime-node-pg-crm" xsi:type="Relationship">
+          <style lineWidth="1">
+            <lineColor r="75" g="88" b="105"/>
+          </style>
+        </connection>
+        <connection identifier="view-runtime-connection-jobs-dispatch" relationshipRef="rel-jobs-dispatch" source="view-runtime-node-pg-crm" target="view-runtime-node-dispatcher" xsi:type="Relationship">
+          <style lineWidth="1">
+            <lineColor r="75" g="88" b="105"/>
+          </style>
+        </connection>
+        <connection identifier="view-runtime-connection-publish" relationshipRef="rel-publish" source="view-runtime-node-dispatcher" target="view-runtime-node-redis" xsi:type="Relationship">
+          <style lineWidth="1">
+            <lineColor r="75" g="88" b="105"/>
+          </style>
+        </connection>
+        <connection identifier="view-runtime-connection-consume-ops" relationshipRef="rel-consume-ops" source="view-runtime-node-redis" target="view-runtime-node-worker-ops" xsi:type="Relationship">
+          <style lineWidth="1">
+            <lineColor r="75" g="88" b="105"/>
+          </style>
+        </connection>
+        <connection identifier="view-runtime-connection-consume-reports" relationshipRef="rel-consume-reports" source="view-runtime-node-redis" target="view-runtime-node-worker-reports" xsi:type="Relationship">
+          <style lineWidth="1">
+            <lineColor r="75" g="88" b="105"/>
+          </style>
+          <bendpoint x="1360" y="540"/>
+          <bendpoint x="1360" y="830"/>
+          <bendpoint x="990" y="830"/>
+        </connection>
+        <connection identifier="view-runtime-connection-ops-db" relationshipRef="rel-ops-db" source="view-runtime-node-worker-ops" target="view-runtime-node-pg-crm" xsi:type="Relationship">
+          <style lineWidth="1">
+            <lineColor r="75" g="88" b="105"/>
+          </style>
+          <bendpoint x="1025" y="540"/>
+          <bendpoint x="1025" y="90"/>
+        </connection>
+        <connection identifier="view-runtime-connection-reports-db" relationshipRef="rel-reports-db" source="view-runtime-node-worker-reports" target="view-runtime-node-pg-crm" xsi:type="Relationship">
+          <style lineWidth="1">
+            <lineColor r="75" g="88" b="105"/>
+          </style>
+          <bendpoint x="1385" y="830"/>
+          <bendpoint x="1385" y="90"/>
+        </connection>
+        <connection identifier="view-runtime-connection-upload" relationshipRef="rel-upload" source="view-runtime-node-api" target="view-runtime-node-s3" xsi:type="Relationship">
+          <style lineWidth="1">
+            <lineColor r="75" g="88" b="105"/>
+          </style>
+          <bendpoint x="855" y="180"/>
+          <bendpoint x="345" y="180"/>
+          <bendpoint x="345" y="540"/>
+        </connection>
+        <connection identifier="view-runtime-connection-ops-objects" relationshipRef="rel-ops-objects" source="view-runtime-node-worker-ops" target="view-runtime-node-s3" xsi:type="Relationship">
+          <style lineWidth="1">
+            <lineColor r="75" g="88" b="105"/>
+          </style>
+        </connection>
+        <connection identifier="view-runtime-connection-rendered" relationshipRef="rel-rendered" source="view-runtime-node-worker-reports" target="view-runtime-node-s3" xsi:type="Relationship">
+          <style lineWidth="1">
+            <lineColor r="75" g="88" b="105"/>
+          </style>
+          <bendpoint x="330" y="830"/>
+          <bendpoint x="330" y="620"/>
+          <bendpoint x="175" y="620"/>
+        </connection>
+        <connection identifier="view-runtime-connection-scan" relationshipRef="rel-scan" source="view-runtime-node-worker-ops" target="view-runtime-node-scanner" xsi:type="Relationship">
+          <style lineWidth="1">
+            <lineColor r="75" g="88" b="105"/>
+          </style>
+          <bendpoint x="855" y="655"/>
+          <bendpoint x="515" y="655"/>
+        </connection>
+        <connection identifier="view-runtime-connection-pull-lms" relationshipRef="rel-pull-lms" source="view-runtime-node-worker-ops" target="view-runtime-node-lms" xsi:type="Relationship">
+          <style lineWidth="1">
+            <lineColor r="75" g="88" b="105"/>
+          </style>
+          <bendpoint x="1010" y="415"/>
+          <bendpoint x="1395" y="415"/>
+        </connection>
+        <connection identifier="view-runtime-connection-pull-site" relationshipRef="rel-pull-site" source="view-runtime-node-worker-ops" target="view-runtime-node-laravel" xsi:type="Relationship">
+          <style lineWidth="1">
+            <lineColor r="75" g="88" b="105"/>
+          </style>
+          <bendpoint x="1395" y="590"/>
+          <bendpoint x="1395" y="730"/>
+        </connection>
+        <connection identifier="view-runtime-connection-api-observe" relationshipRef="rel-api-observe" source="view-runtime-node-api" target="view-runtime-node-observe" xsi:type="Relationship">
+          <style lineWidth="1">
+            <lineColor r="75" g="88" b="105"/>
+          </style>
+          <bendpoint x="1405" y="90"/>
+          <bendpoint x="1405" y="1110"/>
+        </connection>
+        <connection identifier="view-runtime-connection-worker-observe" relationshipRef="rel-worker-observe" source="view-runtime-node-worker-ops" target="view-runtime-node-observe" xsi:type="Relationship">
+          <style lineWidth="1">
+            <lineColor r="75" g="88" b="105"/>
+          </style>
+          <bendpoint x="1015" y="1010"/>
+          <bendpoint x="1195" y="1010"/>
+        </connection>
+        <connection identifier="view-runtime-connection-reports-observe" relationshipRef="rel-reports-observe" source="view-runtime-node-worker-reports" target="view-runtime-node-observe" xsi:type="Relationship">
+          <style lineWidth="1">
+            <lineColor r="75" g="88" b="105"/>
+          </style>
+          <bendpoint x="855" y="1010"/>
+          <bendpoint x="1195" y="1010"/>
+        </connection>
+        <connection identifier="view-runtime-connection-backup-pg" relationshipRef="rel-backup-pg" source="view-runtime-node-pg-crm" target="view-runtime-node-backup" xsi:type="Relationship">
+          <style lineWidth="1">
+            <lineColor r="75" g="88" b="105"/>
+          </style>
+          <bendpoint x="1345" y="200"/>
+          <bendpoint x="20" y="200"/>
+          <bendpoint x="20" y="1110"/>
+        </connection>
+        <connection identifier="view-runtime-connection-backup-kc" relationshipRef="rel-backup-kc" source="view-runtime-node-pg-keycloak" target="view-runtime-node-backup" xsi:type="Relationship">
+          <style lineWidth="1">
+            <lineColor r="75" g="88" b="105"/>
+          </style>
+          <bendpoint x="355" y="350"/>
+          <bendpoint x="355" y="1030"/>
+          <bendpoint x="175" y="1030"/>
+        </connection>
+        <connection identifier="view-runtime-connection-backup-s3" relationshipRef="rel-backup-s3" source="view-runtime-node-s3" target="view-runtime-node-backup" xsi:type="Relationship">
+          <style lineWidth="1">
+            <lineColor r="75" g="88" b="105"/>
+          </style>
+        </connection>
+      </view>
+    </diagrams>
+  </views>
+</model>
