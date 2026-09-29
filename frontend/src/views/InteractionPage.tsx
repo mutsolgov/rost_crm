@@ -1190,7 +1190,7 @@ export function InteractionPage({ id, api, catalogs, workflow, me, revision, onC
               disabled={uploading}
               onClick={(e) => { e.stopPropagation(); fileInputRef.current?.click(); }}
             >
-              <Icon name="file" size={16} />Выбрать файл на компьютере
+              <Icon name="file" size={16} />Выбрать файл
             </Button>
           </div>
         </div>
@@ -1215,7 +1215,7 @@ export function InteractionPage({ id, api, catalogs, workflow, me, revision, onC
                     </small>
                   </div>
                 </div>
-                <div className="file-actions" style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+                <div className="file-actions">
                   {isPreviewable && (
                     <Button
                       variant="secondary"

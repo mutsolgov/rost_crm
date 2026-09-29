@@ -287,7 +287,12 @@ export function WorkflowGraphView({
         </div>
       )}
 
-      <div style={{ overflowX: 'auto', padding: '10px 0' }}>
+      <div className="workflow-scroll-hint" role="note">
+        <Icon name="info" size={15} />
+        <span>Сдвиньте вправо для просмотра всех 14 этапов →</span>
+      </div>
+
+      <div className="workflow-graph-scroll">
         <svg
           viewBox="0 0 720 550"
           className="workflow-graph-svg"
@@ -488,22 +493,9 @@ export function WorkflowGraphView({
 
       {/* Selected State Details Drawer */}
       {selectedState && (
-        <div
-          style={{
-            marginTop: '14px',
-            padding: '14px 18px',
-            background: 'var(--rtk-color-background)',
-            borderRadius: 'var(--rtk-radius-md)',
-            border: '1px solid var(--rtk-color-border)',
-            display: 'flex',
-            justifyContent: 'space-between',
-            alignItems: 'center',
-            gap: '16px',
-            flexWrap: 'wrap',
-          }}
-        >
+        <div className="workflow-state-details">
           <div>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '4px' }}>
+            <div className="workflow-state-header">
               <span className="eyebrow">{selectedState.phase.toUpperCase()}</span>
               <strong style={{ fontSize: '14px' }}>{selectedState.name}</strong>
               <code style={{ fontSize: '11px', color: 'var(--rtk-color-muted)' }}>({selectedState.code})</code>
@@ -512,7 +504,7 @@ export function WorkflowGraphView({
               {selectedState.description}
             </p>
           </div>
-          <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+          <div className="workflow-state-badge-group">
             {selectedState.kind === 'terminal' ? (
               <span
                 className="format-badge"

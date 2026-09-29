@@ -506,7 +506,7 @@ export function ImportWizardModal({
             )}
 
             {previewData.preview_rows && previewData.preview_rows.length > 0 && (
-              <div className="table-scroll" style={{ maxHeight: '220px', border: '1px solid var(--rtk-color-border)', borderRadius: '8px' }}>
+              <div className="table-scroll import-preview-table">
                 <table className="data-table">
                   <thead>
                     {previewData.detected_type === 'vendors' ? (
@@ -921,7 +921,7 @@ export function WorkflowMigratorModal({
               </Button>
             </div>
 
-            <div className="migration-matrix-wrapper">
+            <div className="table-scroll migration-matrix-wrapper">
               <table className="data-table migration-matrix-table">
                 <thead>
                   <tr>

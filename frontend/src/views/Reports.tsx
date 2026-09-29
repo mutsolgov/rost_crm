@@ -78,11 +78,12 @@ export function StageFunnelDiagram({
         <span className="quiet-badge">Всего учтено: {total}</span>
       </div>
 
-      <svg
-        viewBox={`0 0 740 ${chartHeight}`}
-        className="funnel-svg"
-        style={{ width: '100%', maxHeight: `${chartHeight}px` }}
-      >
+      <div className="funnel-scroll">
+        <svg
+          viewBox={`0 0 740 ${chartHeight}`}
+          className="funnel-svg"
+          style={{ width: '100%', maxHeight: `${chartHeight}px` }}
+        >
         <defs>
           <linearGradient id="funnelBarGrad" x1="0%" y1="0%" x2="100%" y2="0%">
             <stop offset="0%" stopColor="#7700FF" />
@@ -167,6 +168,7 @@ export function StageFunnelDiagram({
           );
         })}
       </svg>
+      </div>
     </div>
   );
 }
@@ -218,22 +220,22 @@ function ColumnSelector({
   onSelectAll: () => void;
 }) {
   return (
-    <div style={{ marginTop: '16px', paddingTop: '14px', borderTop: '1px solid var(--rtk-color-border)' }}>
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '8px', flexWrap: 'wrap', gap: '8px' }}>
-        <span style={{ fontSize: '13px', fontWeight: 600, color: 'var(--rtk-color-text)' }}>
+    <div className="column-selector">
+      <div className="column-selector-header">
+        <span className="column-selector-title">
           Отображаемые колонки ({selected.length} из {columns.length}):
         </span>
         <button
           type="button"
           onClick={onSelectAll}
-          style={{ fontSize: '12px', color: 'var(--rtk-color-primary)', background: 'none', border: 'none', cursor: 'pointer', padding: 0, fontWeight: 500 }}
+          className="column-select-all-btn"
         >
           Выбрать все
         </button>
       </div>
-      <div style={{ display: 'flex', flexWrap: 'wrap', gap: '10px 16px' }}>
+      <div className="column-selector-list">
         {columns.map(col => (
-          <label key={col.key} style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', fontSize: '12px', cursor: 'pointer', userSelect: 'none' }}>
+          <label key={col.key} className="column-checkbox-item">
             <input
               type="checkbox"
               checked={selected.includes(col.key)}
