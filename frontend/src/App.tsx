@@ -54,16 +54,17 @@ function Workspace() {
   const catalogs = useResource<Catalogs>(() => api.get('/catalogs'), [api, revision]);
   const workflow = useResource<Workflow>(() => api.get('/workflow'), [api]);
   const isPrivileged = me.role === 'supervisor' || me.role === 'administrator' || me.role === 'admin';
+  const isAdmin = me.role === 'administrator' || me.role === 'admin';
   const navigation = [
     { code: 'overview', name: 'Обзор', icon: 'grid' },
-    { code: 'interactions', name: 'Взаимодействия', icon: 'layers' },
+    ...(!isAdmin ? [{ code: 'interactions', name: 'Взаимодействия', icon: 'layers' }] : []),
     { code: 'reports', name: 'Отчёты', icon: 'chart' },
     ...(isPrivileged ? [{ code: 'integrations', name: 'Интеграции', icon: 'refresh' }] : []),
     { code: 'catalogs', name: 'Справочники', icon: 'book' },
     { code: 'help', name: 'Помощь', icon: 'help' },
   ];
   const activeNav = route.path.split('/')[0] || 'overview';
-  const selectedName = navigation.find(item => item.code === activeNav)?.name || 'Рабочее пространство';
+  const selectedName = navigation.find(item => item.code === activeNav)?.name || (activeNav === 'interactions' ? 'Взаимодействия' : 'Рабочее пространство');
   const navigate = (target: string) => { setMobileOpen(false); route.navigate(target); };
   const changed = () => setRevision(value => value + 1);
   const openInteraction = (id: string) => navigate('interactions/' + encodeURIComponent(id));
@@ -98,10 +99,25 @@ function Workspace() {
       <main className="page-content" id="main-content">
         {(catalogs.error || workflow.error) ? <ErrorAlert error={catalogs.error || workflow.error} onRetry={changed}/> : null}
         {!catalogs.data || !workflow.data ? ((!catalogs.error && !workflow.error) && <Loading label="Загружаем рабочее пространство…"/>) : <>
-          {activeNav === 'overview' && <Overview api={api} revision={revision} me={me} onCreate={() => setCreateOpen(true)} canCreate={canCreate} openInteraction={openInteraction} navigate={navigate}/>}
-          {activeNav === 'interactions' && (interactionId
+          {activeNav === 'overview' && <Overview api={api} revision={revision} me={me} catalogs={catalogs.data} onCreate={() => setCreateOpen(true)} canCreate={canCreate} openInteraction={openInteraction} navigate={navigate}/>}
+          {activeNav === 'interactions' && (isAdmin ? (
+            <div className="panel" style={{ padding: '32px 28px', maxWidth: '800px', margin: '20px auto' }}>
+              <div style={{ display: 'flex', alignItems: 'flex-start', gap: '16px' }}>
+                <span style={{ color: 'var(--rtk-color-accent, #FF4F12)', marginTop: '2px' }}>
+                  <Icon name="shield" size={28}/>
+                </span>
+                <div>
+                  <h2 style={{ margin: '0 0 8px', fontSize: '18px' }}>Инвариант 152-ФЗ: Ограничение доступа к воронкам</h2>
+                  <p style={{ color: 'var(--rtk-color-muted, #475467)', fontSize: '14px', lineHeight: '1.6', margin: '0 0 20px' }}>
+                    В соответствии со ст. 7 152-ФЗ прямой доступ к клиентским воронкам закреплён за менеджерами и руководителями. Для настройки системы используйте разделы «Справочники», «Интеграции» и «Отчёты».
+                  </p>
+                  <Button onClick={() => navigate('overview')}>Вернуться на дашборд</Button>
+                </div>
+              </div>
+            </div>
+          ) : (interactionId
             ? <InteractionPage key={interactionId} id={interactionId} api={api} catalogs={catalogs.data} workflow={workflow.data} me={me} revision={revision} onChanged={changed} onBack={() => navigate('interactions')}/>
-            : <Interactions api={api} catalogs={catalogs.data} workflow={workflow.data} revision={revision} initialState={route.query.get('state') || ''} onCreate={() => setCreateOpen(true)} canCreate={canCreate} openInteraction={openInteraction}/>)}
+            : <Interactions api={api} catalogs={catalogs.data} workflow={workflow.data} revision={revision} initialState={route.query.get('state') || ''} onCreate={() => setCreateOpen(true)} canCreate={canCreate} openInteraction={openInteraction}/>))}
           {activeNav === 'reports' && <Reports api={api} catalogs={catalogs.data} workflow={workflow.data}/>}
           {activeNav === 'integrations' && (isPrivileged
             ? <IntegrationsView api={api} catalogs={catalogs.data} me={me} navigate={navigate} openInteraction={openInteraction}/>
@@ -114,7 +130,7 @@ function Workspace() {
               </div>)}
           {activeNav === 'catalogs' && <CatalogPage catalogs={catalogs.data} api={api} onChanged={changed}/>}
           {activeNav === 'help' && <HelpPage/>}
-          {!navigation.some(item => item.code === activeNav) && activeNav !== 'integrations' && <div className="panel"><h2>Страница не найдена</h2><Button onClick={() => navigate('overview')}>Перейти к обзору</Button></div>}
+          {!navigation.some(item => item.code === activeNav) && activeNav !== 'integrations' && activeNav !== 'interactions' && <div className="panel"><h2>Страница не найдена</h2><Button onClick={() => navigate('overview')}>Перейти к обзору</Button></div>}
         </>}
       </main>
       <footer className="page-footer"><span>ИТ Школа · Партнёры</span><span>Первый рабочий срез · v0.1</span></footer>

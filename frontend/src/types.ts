@@ -176,6 +176,8 @@ export interface SystemStats {
   total_products_catalog: number;
   total_inbox_pending: number;
   lms_health_status: string;
+  total_contracts_catalog: number;
+  website_health_status: string;
 }
 
 export interface Dashboard {

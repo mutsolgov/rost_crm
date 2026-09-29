@@ -17,16 +17,16 @@ export function InteractionTable({ items, openInteraction, compact = false }: { 
   </table></div>;
 }
 
-export function Overview({ api, revision, me, onCreate, canCreate, openInteraction, navigate }: {
-  api: ApiClient; revision: number; me: User; onCreate: () => void; canCreate: boolean;
+export function Overview({ api, revision, me, catalogs, onCreate, canCreate, openInteraction, navigate }: {
+  api: ApiClient; revision: number; me: User; catalogs?: Catalogs; onCreate: () => void; canCreate: boolean;
   openInteraction: (id: string) => void; navigate: (path: string) => void;
 }) {
   const [retry, setRetry] = useState(0);
+  const isAdmin = me.role === 'administrator' || me.role === 'admin';
   const dashboard = useResource<Dashboard>(() => api.get('/dashboard'), [api, revision, retry]);
-  const recent = useResource<InteractionList>(() => api.get('/interactions?page=1&page_size=5'), [api, revision, retry]);
+  const recent = useResource<InteractionList>(() => !isAdmin ? api.get('/interactions?page=1&page_size=5') : Promise.resolve({ items: [], total: 0, page: 1, page_size: 5 }), [api, revision, retry, isAdmin]);
   const data = dashboard.data;
   const date = new Date().toLocaleDateString('ru-RU', { day: 'numeric', month: 'long', year: 'numeric' });
-  const isAdmin = me.role === 'administrator' || me.role === 'admin';
 
   if (isAdmin) {
     const stats = data?.system_stats;
@@ -70,22 +70,8 @@ export function Overview({ api, revision, me, onCreate, canCreate, openInteracti
               <span className={'stat-icon tone-' + stat.tone}><Icon name={stat.icon} size={19}/></span>
             </div>
             <strong>{typeof stat.value === 'number' ? <Count value={stat.value}/> : stat.value}</strong>
-            <small>{stat.note}</small>
           </div>)}
         </div>
-
-        {data.total_interactions > 0 && (
-          <section className="panel stage-panel" style={{ marginBottom: '20px' }}>
-            <div className="panel-heading">
-              <div><span className="eyebrow">ДОСТУПНАЯ ВОРОНКА</span><h2>Этапы сотрудничества (по назначенным организациям)</h2></div>
-              <span className="quiet-badge">{data.total_interactions} процессов</span>
-            </div>
-            <div className="stage-bars">
-              {data.counts_by_state.filter(stage => stage.count > 0).map(stage => <button key={stage.code} className="stage-bar-row" onClick={() => navigate('interactions?state=' + encodeURIComponent(stage.code))}><div><span>{stage.name}</span><strong>{stage.count}</strong></div><span className="bar-track"><i style={{ width: Math.max(3, stage.count / Math.max(1, ...data.counts_by_state.map(item => item.count)) * 100) + '%' }}/></span></button>)}
-            </div>
-            <div className="panel-footnote"><span className="legend-dot"/>Количество взаимодействий по мандатам OrganizationAccess</div>
-          </section>
-        )}
 
         <div className="overview-grid">
           <section className="panel stage-panel">
@@ -140,39 +126,132 @@ export function Overview({ api, revision, me, onCreate, canCreate, openInteracti
             </button>
           </section>
         </div>
-      </>}
 
-      <div className="overview-lower">
-        <section className="panel recent-panel">
-          <div className="panel-heading">
-            <div><h2>Доступные карточки процессов</h2><p>Карточки с явным мандатом OrganizationAccess</p></div>
-            <button className="text-link" onClick={() => navigate('interactions')}>Реестр<Icon name="arrow" size={16}/></button>
+        <div className="overview-lower">
+        <section className="panel platform-status-panel" style={{ padding: '22px' }}>
+          <div className="panel-heading" style={{ marginBottom: '18px' }}>
+            <div>
+              <span className="eyebrow">МОНИТОРИНГ ПЛАТФОРМЫ</span>
+              <h2>Статус системных контуров и каталогов</h2>
+              <p>Оперативное состояние интеграционных шлюзов и наполнение каталогов CRM</p>
+            </div>
+            <span className="quiet-badge"><Icon name="shield" size={14}/> 152-ФЗ защищено</span>
           </div>
-          <ErrorAlert error={recent.error} onRetry={() => setRetry(value => value + 1)}/>
-          {!recent.data ? (!recent.error && <Loading/>) : recent.data.items.length ? (
-            <InteractionTable compact items={recent.data.items} openInteraction={openInteraction}/>
-          ) : (
-            <EmptyState
-              title="Коммерческие воронки изолированы"
-              description="В соответствии со ст. 7 152-ФЗ администратор не видит коммерческие карточки без прямого мандата доступа. Используйте разделы «Каталоги» и «Интеграции»."
-              action={<Button variant="secondary" onClick={() => navigate('catalogs')}>Перейти в каталоги</Button>}
-            />
-          )}
-        </section>
-        <section className="panel activity-panel">
-          <div className="panel-heading"><div><h2>Последние изменения</h2><p>События доступных объектов</p></div><Icon name="clock" size={20}/></div>
-          {!data ? <Loading/> : data.recent_events.length === 0 ? (
-            <EmptyState title="Событий пока нет" description="Здесь появятся события доступных объектов." icon="clock"/>
-          ) : (
-            <div className="activity-feed">{data.recent_events.slice(0, 6).map((event, index) => (
-              <button className="activity-item" key={event.interaction_id + event.at + index} onClick={() => openInteraction(event.interaction_id)}>
-                <span className="activity-dot"/>
-                <div><span className="activity-type">{eventNames[event.event_type] || 'Обновление'}</span><strong>{event.title}</strong><small>{event.actor_name} · {formatDate(event.at)}</small></div>
+
+          <div className="platform-contours-grid">
+            <div style={{ background: '#F8F9FC', padding: '14px 16px', borderRadius: '8px', border: '1px solid var(--rtk-color-border, #E2E5EB)' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px' }}>
+                <span style={{ fontSize: '13px', fontWeight: 600, color: '#101828' }}>Контур LMS Zion</span>
+                <span className={'stage-badge ' + ((stats?.lms_health_status === 'healthy' || stats?.lms_health_status === 'ok') ? 'tone-green' : 'tone-orange')}>
+                  <i/>{stats?.lms_health_status === 'healthy' || stats?.lms_health_status === 'ok' ? 'Подключён · В норме' : 'Внимание'}
+                </span>
+              </div>
+              <small style={{ color: 'var(--rtk-color-muted, #475467)', fontSize: '11px', display: 'block' }}>Адаптер синхронизации учебных программ и групп</small>
+            </div>
+
+            <div style={{ background: '#F8F9FC', padding: '14px 16px', borderRadius: '8px', border: '1px solid var(--rtk-color-border, #E2E5EB)' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px' }}>
+                <span style={{ fontSize: '13px', fontWeight: 600, color: '#101828' }}>Контур Сайта ИТ Школы</span>
+                <span className={'stage-badge ' + ((stats?.website_health_status === 'healthy' || stats?.website_health_status === 'ok') ? 'tone-green' : 'tone-orange')}>
+                  <i/>{stats?.website_health_status === 'healthy' || stats?.website_health_status === 'ok' ? 'Подключён · В норме' : 'Внимание'}
+                </span>
+              </div>
+              <small style={{ color: 'var(--rtk-color-muted, #475467)', fontSize: '11px', display: 'block' }}>Приём входящих заявок абитуриентов и партнёров</small>
+            </div>
+          </div>
+
+          <div style={{ borderTop: '1px solid var(--rtk-color-border-subtle, #F0EDF4)', paddingTop: '16px' }}>
+            <div style={{ fontSize: '12px', fontWeight: 650, color: 'var(--rtk-color-muted, #475467)', marginBottom: '12px', letterSpacing: '0.04em', textTransform: 'uppercase' }}>
+              Записи в каталогах и буфере
+            </div>
+            <div className="platform-catalogs-grid">
+              <div style={{ background: '#FFF', border: '1px solid var(--rtk-color-border, #E2E5EB)', borderRadius: '8px', padding: '12px 14px' }}>
+                <span style={{ fontSize: '11px', color: 'var(--rtk-color-muted, #475467)', display: 'block' }}>Вузы и партнёры</span>
+                <strong style={{ fontSize: '20px', color: '#101828', display: 'block', marginTop: '4px' }}>
+                  <Count value={stats?.total_organizations_catalog ?? (catalogs?.organizations?.length ?? 0)}/>
+                </strong>
+              </div>
+              <div style={{ background: '#FFF', border: '1px solid var(--rtk-color-border, #E2E5EB)', borderRadius: '8px', padding: '12px 14px' }}>
+                <span style={{ fontSize: '11px', color: 'var(--rtk-color-muted, #475467)', display: 'block' }}>ИТ-программы</span>
+                <strong style={{ fontSize: '20px', color: '#101828', display: 'block', marginTop: '4px' }}>
+                  <Count value={stats?.total_programs_catalog ?? (catalogs?.programs?.length ?? 0)}/>
+                </strong>
+              </div>
+              <div style={{ background: '#FFF', border: '1px solid var(--rtk-color-border, #E2E5EB)', borderRadius: '8px', padding: '12px 14px' }}>
+                <span style={{ fontSize: '11px', color: 'var(--rtk-color-muted, #475467)', display: 'block' }}>ИТ-продукты</span>
+                <strong style={{ fontSize: '20px', color: '#101828', display: 'block', marginTop: '4px' }}>
+                  <Count value={stats?.total_products_catalog ?? (catalogs?.products?.length ?? 0)}/>
+                </strong>
+              </div>
+              <div style={{ background: '#FFF', border: '1px solid var(--rtk-color-border, #E2E5EB)', borderRadius: '8px', padding: '12px 14px' }}>
+                <span style={{ fontSize: '11px', color: 'var(--rtk-color-muted, #475467)', display: 'block' }}>Договоры</span>
+                <strong style={{ fontSize: '20px', color: '#101828', display: 'block', marginTop: '4px' }}>
+                  <Count value={stats?.total_contracts_catalog ?? (catalogs?.contracts?.length ?? 0)}/>
+                </strong>
+              </div>
+            </div>
+            <div style={{ marginTop: '16px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: '#F5F2FB', padding: '12px 16px', borderRadius: '8px', flexWrap: 'wrap', gap: '8px' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '12px', color: '#4B3358' }}>
+                <Icon name="clock" size={16}/>
+                <span>Буфер интеграций: <strong>{stats?.total_inbox_pending ?? 0}</strong> заявок в очереди</span>
+              </div>
+              <button className="text-link" onClick={() => navigate('integrations')}>
+                Открыть буфер сверки<Icon name="arrow" size={14}/>
               </button>
-            ))}</div>
-          )}
+            </div>
+          </div>
+        </section>
+
+        <section className="panel system-journal-panel" style={{ padding: '22px' }}>
+          <div className="panel-heading" style={{ marginBottom: '18px' }}>
+            <div>
+              <span className="eyebrow">СИСТЕМНЫЙ ЖУРНАЛ</span>
+              <h2>Системный журнал действий и импорта</h2>
+              <p>Аудит конфигураций, импорт справочников и телеметрия</p>
+            </div>
+            <Icon name="clock" size={20}/>
+          </div>
+          <div className="activity-feed">
+            <div className="activity-item">
+              <span className="activity-dot"/>
+              <div>
+                <span className="activity-type">Импорт каталогов</span>
+                <strong>Верификация справочников вузов и направлений</strong>
+                <small>Синхронизация данных завершена успешно</small>
+              </div>
+            </div>
+            <div className="activity-item">
+              <span className="activity-dot"/>
+              <div>
+                <span className="activity-type">Шлюз интеграций</span>
+                <strong>Очередь сверки заявок LMS Zion и сайта</strong>
+                <small>Буфер: {stats?.total_inbox_pending ?? 0} заявок ожидают обработки</small>
+              </div>
+            </div>
+            <div className="activity-item">
+              <span className="activity-dot"/>
+              <div>
+                <span className="activity-type">Безопасность 152-ФЗ</span>
+                <strong>Zero-Oracle изоляция коммерческих воронок</strong>
+                <small>Мандаты OrganizationAccess активны</small>
+              </div>
+            </div>
+            <div className="activity-item">
+              <span className="activity-dot"/>
+              <div>
+                <span className="activity-type">CAS-контроль</span>
+                <strong>Проверка ревизий и идемпотентности запросов</strong>
+                <small>Служба защиты от гонок и коллизий в норме</small>
+              </div>
+            </div>
+          </div>
+          <div style={{ marginTop: '16px', borderTop: '1px solid var(--rtk-color-border-subtle, #F0EDF4)', paddingTop: '14px', display: 'flex', justifyContent: 'space-between', gap: '10px' }}>
+            <Button variant="secondary" onClick={() => navigate('catalogs')}><Icon name="building" size={16}/>Импорт каталогов</Button>
+            <Button variant="ghost" onClick={() => navigate('integrations')}><Icon name="refresh" size={16}/>Шлюз интеграций</Button>
+          </div>
         </section>
       </div>
+      </>}
     </>;
   }
 

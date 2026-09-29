@@ -35,11 +35,40 @@ export function Icon({ name, size = 20, className = '' }: { name: string; size?:
   return <svg className={className} width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.65" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">{paths[name] || paths.file}</svg>;
 }
 
+export function RostelecomLogo({ size = 28, className = '' }: { size?: number; className?: string }) {
+  const width = Math.round((size * 25) / 40);
+  return (
+    <svg
+      className={className}
+      width={width}
+      height={size}
+      viewBox="0 0 25 40"
+      fill="none"
+      xmlns="http://www.w3.org/2000/svg"
+      aria-hidden="true"
+    >
+      <path
+        fill="#7700FF"
+        d="M0.81 38.1c-.01-.46.18-.9.51-1.33l1.09-1.09c.52-.53 1.08-1.09 1.9-1.9 0.92-.92 2.18-2.16 4.07-4.05l.01-.01 1.85-1.84.04-.04C13.34 24.8 17.7 20.46 24.11 14.08L10.04 0 2.07 7.97C-.31 10.35.01 11.91.01 15.11v21.88c0 .61.19 1.21.54 1.72.35.5.85.89 1.42 1.1-.34-.14-.64-.37-.85-.68-.21-.3-.32-.67-.32-1.04z"
+      />
+      <path
+        fill="#FF4F12"
+        d="M1.97 39.81c.02.01.05.02.07.03.02.01.05.01.08.02.29.09.59.14.89.14h15.62l-10.25-10.27-.01.01c-1.9 1.88-3.15 3.12-4.07 4.05-.82.82-1.38 1.38-1.9 1.9l-1.09 1.09c-.33.36-.52.83-.51 1.33 0 .37.11.73.32 1.04.21.31.5.54.85.68z"
+      />
+    </svg>
+  );
+}
+
 export function Brand({ compact = false }: { compact?: boolean }) {
-  return <div className={'brand ' + (compact ? 'brand-compact' : '')}>
-    <span className="brand-mark" aria-hidden="true"><i/><b/></span>
-    <span><strong>ИТ Школа</strong><small>Партнёры</small></span>
-  </div>;
+  return (
+    <div className={'brand ' + (compact ? 'brand-compact' : '')}>
+      <RostelecomLogo size={compact ? 24 : 28} />
+      <div className="brand-text">
+        <strong>Ростелеком</strong>
+        <small>ИТ Школа · Партнёры</small>
+      </div>
+    </div>
+  );
 }
 
 export function Button({ variant = 'primary', className = '', children, ...props }: ButtonHTMLAttributes<HTMLButtonElement> & { variant?: 'primary' | 'secondary' | 'ghost' | 'danger'; children: ReactNode }) {

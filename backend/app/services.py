@@ -983,30 +983,43 @@ def dashboard(db, user):
         "unassigned_program_count": sum(i.program_id is None for i in items),
     }
     if user.role in ("administrator", "admin"):
+        from .config import get_settings
+        from .integrations.factory import get_adapter
+
+        settings = get_settings()
         total_users = db.scalar(select(func.count(User.id))) or 0
         total_organizations_catalog = db.scalar(select(func.count(Organization.id))) or 0
         total_programs_catalog = db.scalar(select(func.count(Program.id))) or 0
         total_products_catalog = db.scalar(select(func.count(Product.id))) or 0
+        total_contracts_catalog = db.scalar(select(func.count(Contract.id))) or 0
         total_inbox_pending = db.scalar(
             select(func.count(IntegrationInbox.id)).where(func.lower(IntegrationInbox.status) == "pending")
         ) or 0
         try:
-            from .config import get_settings
-            from .integrations.factory import get_adapter
-            adapter = get_adapter("lms", get_settings())
+            adapter = get_adapter("lms", settings)
             health = adapter.health_check()
             raw_status = health.get("status", "ok") if isinstance(health, dict) else "ok"
             lms_health_status = "healthy" if str(raw_status).strip().lower() in ("ok", "healthy") else str(raw_status).strip().lower()
         except Exception:
             lms_health_status = "error"
 
+        try:
+            w_adapter = get_adapter("website", settings)
+            w_health = w_adapter.health_check()
+            w_raw_status = w_health.get("status", "ok") if isinstance(w_health, dict) else "ok"
+            website_health_status = "healthy" if str(w_raw_status).strip().lower() in ("ok", "healthy") else str(w_raw_status).strip().lower()
+        except Exception:
+            website_health_status = "error"
+
         res["system_stats"] = {
             "total_users": total_users,
             "total_organizations_catalog": total_organizations_catalog,
             "total_programs_catalog": total_programs_catalog,
             "total_products_catalog": total_products_catalog,
+            "total_contracts_catalog": total_contracts_catalog,
             "total_inbox_pending": total_inbox_pending,
             "lms_health_status": lms_health_status,
+            "website_health_status": website_health_status,
         }
     return res
 
