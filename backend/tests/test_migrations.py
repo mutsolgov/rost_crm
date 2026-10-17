@@ -55,6 +55,7 @@ EXPECTED_TABLES = {
     "report_rows",
     "background_jobs",
     "transactional_outbox",
+    "import_packages",
 }
 
 
@@ -71,7 +72,7 @@ def test_alembic_config_and_linear_history():
     script = ScriptDirectory.from_config(cfg)
     heads = script.get_heads()
     assert len(heads) == 1, f"Expected exactly 1 migration head, got {heads}"
-    assert heads[0] == "0005_background_jobs_and_outbox"
+    assert heads[0] == "0006_normalize_users_and_import_packages"
 
     base = script.get_base()
     assert base == "0001_initial_schema"
@@ -98,7 +99,7 @@ def test_sqlite_migration_lifecycle(tmp_path):
 
     # Verify column structures on key tables
     user_cols = {c["name"] for c in inspector.get_columns("users")}
-    assert {"id", "keycloak_subject", "name", "role", "team_id", "permissions", "active"}.issubset(user_cols)
+    assert {"id", "keycloak_subject", "name", "role", "team_id", "permissions", "active", "email"}.issubset(user_cols)
 
     interaction_cols = {c["name"] for c in inspector.get_columns("interactions")}
     assert {
@@ -179,7 +180,33 @@ def test_sqlite_migration_lifecycle(tmp_path):
     outbox_cols = {c["name"] for c in inspector.get_columns("transactional_outbox")}
     assert {"id", "event_type", "payload", "status", "created_at", "processed_at"}.issubset(outbox_cols)
 
-    # 2. Step downgrade to 0004_temporal_fact_tables (-1)
+    # Verify import_packages columns, indexes, and foreign keys
+    ip_cols = {c["name"] for c in inspector.get_columns("import_packages")}
+    assert {
+        "id", "user_id", "import_type", "filename", "payload_hash",
+        "rows_json", "created_at", "expires_at"
+    }.issubset(ip_cols)
+
+    ip_indexes = {ix["name"] for ix in inspector.get_indexes("import_packages")}
+    assert "ix_import_packages_user_id" in ip_indexes
+    assert "ix_import_packages_payload_hash" in ip_indexes
+    assert "ix_import_packages_expires_at" in ip_indexes
+
+    ip_fks = inspector.get_foreign_keys("import_packages")
+    assert any(
+        fk["referred_table"] == "users" and fk["constrained_columns"] == ["user_id"]
+        for fk in ip_fks
+    )
+
+    # 2. Step downgrade to 0005_background_jobs_and_outbox (-1)
+    command.downgrade(cfg, "-1")
+    inspector_v5 = inspect(engine)
+    assert "import_packages" not in set(inspector_v5.get_table_names())
+    v5_user_cols = {c["name"] for c in inspector_v5.get_columns("users")}
+    assert "email" not in v5_user_cols
+    assert {"background_jobs", "transactional_outbox"}.issubset(set(inspector_v5.get_table_names()))
+
+    # Step downgrade to 0004_temporal_fact_tables (-1)
     command.downgrade(cfg, "-1")
     inspector_v4 = inspect(engine)
     assert not ({"background_jobs", "transactional_outbox"} & set(inspector_v4.get_table_names()))
@@ -244,6 +271,9 @@ def test_offline_postgresql_migration_ddl():
     assert "0003_authz_epoch" in up_sql
     assert "0004_temporal_fact_tables" in up_sql
     assert "0005_background_jobs_and_outbox" in up_sql
+    assert "0006_normalize_users_and_import_packages" in up_sql
+    assert "CREATE TABLE import_packages" in up_sql
+    assert "ALTER TABLE users ADD COLUMN email" in up_sql
     assert "ix_org_contacts_active" in up_sql
     assert "CREATE INDEX ix_org_contacts_active ON organization_contacts (organization_id, archived_at)" in up_sql
 
@@ -261,7 +291,15 @@ def test_offline_postgresql_migration_ddl():
                 f"target {target_table} (idx {create_indices[target_table]}) but is created before it"
             )
 
-    # 2a. Offline downgrade SQL for 0005 -> 0004
+    # 2a. Offline downgrade SQL for 0006 -> 0005
+    buf_down_0006 = io.StringIO()
+    with redirect_stdout(buf_down_0006):
+        command.downgrade(cfg, "0006_normalize_users_and_import_packages:0005_background_jobs_and_outbox", sql=True)
+    down_0006_sql = buf_down_0006.getvalue()
+    assert "DROP TABLE import_packages" in down_0006_sql
+    assert "0005_background_jobs_and_outbox" in down_0006_sql
+
+    # 2b. Offline downgrade SQL for 0005 -> 0004
     buf_down_0005 = io.StringIO()
     with redirect_stdout(buf_down_0005):
         command.downgrade(cfg, "0005_background_jobs_and_outbox:0004_temporal_fact_tables", sql=True)
@@ -302,7 +340,7 @@ def test_offline_postgresql_migration_ddl():
         command.downgrade(cfg, "0001_initial_schema:base", sql=True)
     down_sql = buf_down.getvalue()
 
-    for table in EXPECTED_TABLES - {"access_policy_state", "state_visits", "report_runs", "report_rows", "background_jobs", "transactional_outbox"}:
+    for table in EXPECTED_TABLES - {"access_policy_state", "state_visits", "report_runs", "report_rows", "background_jobs", "transactional_outbox", "import_packages"}:
         assert f"DROP TABLE {table}" in down_sql, f"Expected 'DROP TABLE {table}' in offline PostgreSQL downgrade SQL"
 
     # 3. Verify that foreign key dependencies are strictly respected in drop order
@@ -695,3 +733,68 @@ def test_upgrade_downgrade_with_existing_contact_data(tmp_path):
         assert row["id"] == "c-pre-1"
         assert row["full_name"] == "Старый Контакт"
         assert row["email"] == "rector@old-univ.ru"
+
+
+def test_legacy_db_without_user_phone_auto_heals_on_startup(tmp_path):
+    """Test that startup automatically adds missing user phone column and endpoints return 200."""
+    import sqlite3
+    from fastapi.testclient import TestClient
+    from app.config import Settings
+    from app.main import create_app
+    from sqlalchemy import create_engine, inspect
+
+    db_file = tmp_path / "legacy_users_no_phone.db"
+    db_url = f"sqlite:///{db_file}"
+
+    # 1. Create a legacy database with a users table lacking the 'phone' column
+    con = sqlite3.connect(str(db_file))
+    con.execute(
+        "CREATE TABLE users ("
+        "id VARCHAR(64) PRIMARY KEY, "
+        "keycloak_subject VARCHAR(255) UNIQUE, "
+        "name VARCHAR(200), "
+        "role VARCHAR(32), "
+        "team_id VARCHAR(64), "
+        "permissions JSON, "
+        "active BOOLEAN"
+        ")"
+    )
+    con.execute(
+        "INSERT INTO users (id, keycloak_subject, name, role, permissions, active) "
+        "VALUES ('u-legacy-admin', 'sub-legacy-admin', 'Legacy Admin', 'administrator', '[]', 1)"
+    )
+    con.commit()
+    con.close()
+
+    # 2. Verify 'phone' column is absent before startup
+    engine_check = create_engine(db_url)
+    cols_before = {c["name"] for c in inspect(engine_check).get_columns("users")}
+    assert "phone" not in cols_before
+    engine_check.dispose()
+
+    # 3. Launch application via TestClient (triggers lifespan which calls ensure_schema_columns)
+    app = create_app(Settings(
+        database_url=db_url,
+        app_env="development",
+        auth_mode="demo",
+    ))
+
+    with TestClient(app) as client:
+        # GET /api/v1/config queries User in demo mode and must return 200 OK (not 500 INTERNAL_ERROR)
+        resp_config = client.get("/api/v1/config")
+        assert resp_config.status_code == 200, f"Expected 200, got {resp_config.status_code}: {resp_config.text}"
+        demo_users = resp_config.json().get("demo_users", [])
+        assert any(u["id"] == "u-legacy-admin" for u in demo_users)
+
+        # GET /api/v1/me fetches User and must return 200 OK (not 500 INTERNAL_ERROR)
+        resp_me = client.get("/api/v1/me", headers={"X-Demo-User": "u-legacy-admin"})
+        assert resp_me.status_code == 200, f"Expected 200, got {resp_me.status_code}: {resp_me.text}"
+        data_me = resp_me.json()
+        assert data_me["id"] == "u-legacy-admin"
+        assert data_me["role"] == "administrator"
+
+    # 4. Verify 'phone' column was automatically added to users table
+    engine_after = create_engine(db_url)
+    cols_after = {c["name"] for c in inspect(engine_after).get_columns("users")}
+    assert "phone" in cols_after
+    engine_after.dispose()

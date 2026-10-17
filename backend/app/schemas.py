@@ -178,3 +178,19 @@ class DeliveryCreate(Body):
     expected_revision: int | None = Field(default=None, ge=1)
 
 
+class UserPatch(Body):
+    name: str | None = Field(default=None, min_length=1, max_length=200)
+    role: Literal["manager", "supervisor", "administrator"] | None = None
+    team_id: str | None = None
+    active: bool | None = None
+    permissions: list[str] | None = None
+    phone: str | None = Field(default=None, max_length=100)
+    email: str | None = Field(default=None, max_length=320)
+
+
+class OrganizationAccessPut(Body):
+    can_create: bool = False
+    read_all: bool = False
+
+
+

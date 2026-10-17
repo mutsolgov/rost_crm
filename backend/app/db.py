@@ -49,5 +49,9 @@ def runtime_settings(request: Request):
 
 
 def init_db():
-    from . import models  # Register model metadata; schema creation is explicit only.
-    Base.metadata.create_all(get_engine())
+    from . import models  # noqa: F401  # Register model metadata; schema creation is explicit only.
+    from .seed import ensure_schema_columns
+
+    engine = get_engine()
+    Base.metadata.create_all(engine)
+    ensure_schema_columns(engine)

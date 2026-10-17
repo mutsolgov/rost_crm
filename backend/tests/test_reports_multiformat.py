@@ -59,12 +59,15 @@ def test_snapshot_export_json_xlsx_pdf(client):
         assert "xl/worksheets/sheet2.xml" in zf.namelist()
         assert "xl/styles.xml" in zf.namelist()
 
-    # XLS export (legacy format alias supported for TZ compliance)
+    # XLS export (honest OLE2 BIFF8 format)
     xls_resp = client.post("/api/v1/reports/snapshot/export?format=xls", json=req, headers=headers("supervisor"))
     assert xls_resp.status_code == 200
     assert xls_resp.headers["X-Report-Format"] == "xls"
     assert "application/vnd.ms-excel" in xls_resp.headers["Content-Type"]
-    assert xls_resp.content.startswith(b"PK\x03\x04")
+    assert xls_resp.content.startswith(b"\xd0\xcf\x11\xe0\xa1\xb1\x1a\xe1")
+    from app.importer import parse_biff8_stdlib
+    grid = parse_biff8_stdlib(xls_resp.content)
+    assert len(grid) > 0
 
     # PDF export
     pdf_resp = client.post("/api/v1/reports/snapshot/export?format=pdf", json=req, headers=headers("supervisor"))
@@ -266,4 +269,50 @@ def test_xlsx_formula_injection_defense(client):
         assert "<f>" not in sheet1_xml
         assert "t=\"inlineStr\"" in sheet1_xml
         assert "HYPERLINK" in sheet1_xml
+
+
+def test_reports_cycle_label_in_snapshot_and_created_rows(client):
+    """R3: Verify cycle_label is present in report rows for snapshot and created reports."""
+    interaction = create_interaction(client, "manager-a", cycle_label="Осень 2026")
+    iid = interaction["id"]
+
+    now_iso = datetime.now(timezone.utc).isoformat()
+    # 1. Snapshot report
+    snap_resp = client.post("/api/v1/reports/snapshot", json={"as_of": now_iso, "knowledge_cutoff": now_iso}, headers=headers("supervisor"))
+    assert snap_resp.status_code == 200
+    snap_row = next(r for r in snap_resp.json()["rows"] if r["interaction_id"] == iid)
+    assert snap_row["cycle_label"] == "Осень 2026"
+
+    # 2. Created report
+    req_cr = {
+        "from": (datetime.now(timezone.utc) - timedelta(hours=1)).isoformat(),
+        "to": (datetime.now(timezone.utc) + timedelta(hours=1)).isoformat(),
+        "knowledge_cutoff": (datetime.now(timezone.utc) + timedelta(hours=1)).isoformat(),
+    }
+    cr_resp = client.post("/api/v1/reports/created", json=req_cr, headers=headers("supervisor"))
+    assert cr_resp.status_code == 200
+    cr_row = next(r for r in cr_resp.json()["rows"] if r["interaction_id"] == iid)
+    assert cr_row["cycle_label"] == "Осень 2026"
+
+
+def test_reports_export_metadata_ru_datetime_formatting(client):
+    """R2: Verify official PDF and XLSX metadata dates formatted as DD.MM.YYYY HH:MM:SS."""
+    create_interaction(client, "manager-a")
+    now_iso = "2026-10-05T23:04:26.827381Z"
+    req = {"as_of": now_iso, "knowledge_cutoff": now_iso}
+
+    # 1. XLSX export metadata
+    xlsx_resp = client.post("/api/v1/reports/snapshot/export?format=xlsx", json=req, headers=headers("supervisor"))
+    assert xlsx_resp.status_code == 200
+    with zipfile.ZipFile(io.BytesIO(xlsx_resp.content)) as zf:
+        sheet2 = zf.read("xl/worksheets/sheet2.xml").decode("utf-8")
+        assert "05.10.2026 23:04:26" in sheet2
+        assert "2026-10-05T23:04:26.827381Z" not in sheet2
+
+    # 2. PDF export metadata
+    pdf_resp = client.post("/api/v1/reports/snapshot/export?format=pdf", json=req, headers=headers("supervisor"))
+    assert pdf_resp.status_code == 200
+    expected_hex = "05.10.2026 23:04:26".encode("utf-16-be").hex().encode("ascii")
+    assert expected_hex in pdf_resp.content
+
 

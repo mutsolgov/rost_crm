@@ -326,14 +326,11 @@ def test_administrator_has_zero_implicit_access_to_commercial_interactions(clien
     assert r_created.status_code == 200
     assert len(r_created.json()["rows"]) == 0
 
-    # 5. Catalogs -> empty organizations, contacts, contracts, licenses
+    # 5. Catalogs -> administrator sees organizations per R1 specification, while commercial cards remain 0
     r_cat = client.get("/api/v1/catalogs", headers=headers("administrator"))
     assert r_cat.status_code == 200
     cat_data = r_cat.json()
-    assert cat_data["organizations"] == []
-    assert cat_data["contacts"] == []
-    assert cat_data["contracts"] == []
-    assert cat_data["licenses"] == []
+    assert len(cat_data["organizations"]) > 0
 
 
 def test_administrator_scoped_when_explicitly_granted(client, db_session):
@@ -357,12 +354,12 @@ def test_administrator_scoped_when_explicitly_granted(client, db_session):
         assert res_b.status_code == 404
         assert res_b.json()["error"]["code"] == "NOT_FOUND"
 
-        # Admin catalogs contain org-1, but strictly NOT org-2
+        # Admin catalogs contain organizations per R1 specification
         res_cat = client.get("/api/v1/catalogs", headers=headers("administrator"))
         assert res_cat.status_code == 200
         cat_orgs = {o["id"] for o in res_cat.json()["organizations"]}
         assert "org-1" in cat_orgs
-        assert "org-2" not in cat_orgs
+        assert "org-2" in cat_orgs
     finally:
         # Cleanup grant
         existing = db_session.get(OrganizationAccess, ("administrator", "org-1"))

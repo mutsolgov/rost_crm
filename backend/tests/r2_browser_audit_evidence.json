@@ -1,0 +1,264 @@
+{
+  "viewports": {
+    "desktop_1920x1080": {
+      "gridTemplateColumns": "670px 670px",
+      "gridWidth": 1356,
+      "totalCards": 6,
+      "screenshotCardsCount": 4,
+      "cardDetails": [
+        {
+          "index": 1,
+          "hasScreenshot": true,
+          "classes": "scenario-card scenario-card-full",
+          "gridColumn": "1 / -1",
+          "width": 1356,
+          "gridWidth": 1356,
+          "widthRatio": 1,
+          "top": 4508.828125,
+          "bottom": 5776.59375,
+          "imgNaturalWidth": 1440,
+          "imgNaturalHeight": 900,
+          "imgClientWidth": 1312,
+          "imgClientHeight": 820
+        },
+        {
+          "index": 2,
+          "hasScreenshot": false,
+          "classes": "scenario-card",
+          "gridColumn": "auto",
+          "width": 670,
+          "gridWidth": 1356,
+          "widthRatio": 0.4941002949852507,
+          "top": 5792.59375,
+          "bottom": 6003.484375,
+          "imgNaturalWidth": null,
+          "imgNaturalHeight": null,
+          "imgClientWidth": null,
+          "imgClientHeight": null
+        },
+        {
+          "index": 3,
+          "hasScreenshot": true,
+          "classes": "scenario-card scenario-card-full",
+          "gridColumn": "1 / -1",
+          "width": 1356,
+          "gridWidth": 1356,
+          "widthRatio": 1,
+          "top": 6019.484375,
+          "bottom": 7287.25,
+          "imgNaturalWidth": 1440,
+          "imgNaturalHeight": 900,
+          "imgClientWidth": 1312,
+          "imgClientHeight": 820
+        },
+        {
+          "index": 4,
+          "hasScreenshot": true,
+          "classes": "scenario-card scenario-card-full",
+          "gridColumn": "1 / -1",
+          "width": 1356,
+          "gridWidth": 1356,
+          "widthRatio": 1,
+          "top": 7303.25,
+          "bottom": 8594.40625,
+          "imgNaturalWidth": 1440,
+          "imgNaturalHeight": 900,
+          "imgClientWidth": 1312,
+          "imgClientHeight": 820
+        },
+        {
+          "index": 5,
+          "hasScreenshot": true,
+          "classes": "scenario-card scenario-card-full scenario-highlight warning",
+          "gridColumn": "1 / -1",
+          "width": 1356,
+          "gridWidth": 1356,
+          "widthRatio": 1,
+          "top": 8610.40625,
+          "bottom": 9853.875,
+          "imgNaturalWidth": 1440,
+          "imgNaturalHeight": 900,
+          "imgClientWidth": 1309,
+          "imgClientHeight": 818
+        },
+        {
+          "index": 6,
+          "hasScreenshot": false,
+          "classes": "scenario-card scenario-highlight important",
+          "gridColumn": "auto",
+          "width": 670,
+          "gridWidth": 1356,
+          "widthRatio": 0.4941002949852507,
+          "top": 9869.875,
+          "bottom": 10046.578125,
+          "imgNaturalWidth": null,
+          "imgNaturalHeight": null,
+          "imgClientWidth": null,
+          "imgClientHeight": null
+        }
+      ],
+      "oppositePairs": 0,
+      "allScreenshotsSpanFull": true,
+      "bodyScrollWidth": 1905,
+      "windowInnerWidth": 1920,
+      "hasHorizontalOverflow": false
+    },
+    "laptop_1366x768": {
+      "sidebarWidth": 252,
+      "mainShellWidth": 1099,
+      "mainShellMarginLeft": "252px",
+      "contentWidth": 1099,
+      "bodyScrollWidth": 1351,
+      "windowInnerWidth": 1366,
+      "hasHorizontalOverflow": false,
+      "headerInfo": {
+        "headerWidth": 1013,
+        "addrWidth": 179.5,
+        "addrRight": 878.453125,
+        "headerRight": 1308,
+        "noClipping": true
+      }
+    },
+    "tablet_768x1024": {
+      "gridTemplateColumns": "498px",
+      "isSingleColumn": true,
+      "bodyScrollWidth": 768,
+      "windowInnerWidth": 768,
+      "hasHorizontalOverflow": false,
+      "tabCount": 5,
+      "minTabHeight": 41.9375,
+      "touchTargetsAdequate": true
+    },
+    "mobile_375x812": {
+      "gridTemplateColumns": "448px",
+      "isSingleColumn": true,
+      "sidebarTransform": "matrix(1, 0, 0, 1, -252, 0)",
+      "sidebarHiddenOffscreen": true,
+      "mainShellWidth": "375px",
+      "mainShellMarginLeft": "0px",
+      "bodyScrollWidth": 375,
+      "windowInnerWidth": 375,
+      "hasHorizontalOverflow": false
+    }
+  },
+  "lightbox": {
+    "lightbox_details": {
+      "backdropExists": true,
+      "containerExists": true,
+      "title": "Экран авторизации и выбор демонстрационных ролей",
+      "eyebrow": "ЭКРАН 01 · #/",
+      "caption": "Стартовый экран системы с возможностью переключения ролей на демонстрационных данных и корпоративной авторизацией.",
+      "calloutsCount": 3,
+      "imgSrc": "/docs/screenshots/screen-01-login.png",
+      "imgClientDimensions": "1123x702",
+      "bodyOverflow": "hidden"
+    },
+    "escape_dismiss": {
+      "backdropExists": false,
+      "bodyOverflowRestored": true
+    },
+    "backdrop_dismiss": {
+      "backdropExists": false,
+      "bodyOverflowRestored": true
+    },
+    "verdict": "PASS"
+  },
+  "error_simulator_ac21": {
+    "evaluation": {
+      "titleVal": "Тест AC21: Согласование условий сотрудничества",
+      "commentVal": "Проверка сохранения ввода при эмуляции HTTP 409 Conflict (CAS mismatch)",
+      "errText": "HTTP 409 Conflict: CAS revision mismatch. Карточка была изменена другим пользователем. Введенные данные сохранены.\nСервер отклонил операцию. Пользовательские поля не сброшены.",
+      "remediation": "Рекомендация по исправлению: Откройте карточку в соседней вкладке, ознакомьтесь с правками коллеги, скорректируйте данные и повторите сохранение. Введённый текст не сброшен.",
+      "envelope": {
+        "error": {
+          "code": "REVISION_CONFLICT",
+          "message": "Карточка была изменена другим пользователем. Ожидаемая ревизия устарела.",
+          "request_id": "req-sim-409-demo",
+          "details": {
+            "expected_revision": 2,
+            "current_revision": 3
+          }
+        }
+      },
+      "successText": "AC21 соблюден: Введенный текст сохранен в форме!Значение «Тест AC21: Согласование условий сотрудничества» и комментарий «Проверка сохранения ввода при эмуляции HTTP 409 Conflict (CAS mismatch)» остались в полях ввода без стирания."
+    },
+    "verdict": "PASS"
+  },
+  "print_export": {
+    "window_print_called": true,
+    "css_evaluation": {
+      "hiddenElements": {
+        "sidebar": "none",
+        "topbar": "none",
+        "demoStrip": "none",
+        "headerActions": "none",
+        "helpTabs": "none",
+        "demoForm": "none"
+      },
+      "shellWidth": "1905px",
+      "shellMarginLeft": "0px",
+      "cardBreakInside": "avoid"
+    },
+    "verdict": "PASS"
+  },
+  "role_tab_transitions": {
+    "transitions": [
+      {
+        "tab": "manager",
+        "label": "Менеджер",
+        "status": {
+          "activeBtnText": "Менеджер\n15 этапов воронки",
+          "heading": "Регламент менеджера: Ведение воронки и карточек взаимодействий",
+          "cardCount": 6
+        },
+        "new_errors": 0
+      },
+      {
+        "tab": "supervisor",
+        "label": "Руководитель",
+        "status": {
+          "activeBtnText": "Руководитель\nКвоты и отчёты",
+          "heading": "Регламент руководителя: Управление командой, квоты и аналитический движок",
+          "cardCount": 5
+        },
+        "new_errors": 0
+      },
+      {
+        "tab": "admin",
+        "label": "Администратор",
+        "status": {
+          "activeBtnText": "Администратор\nИмпорт и миграции",
+          "heading": "Регламент администратора: Инфраструктура, импорт и миграции процессов",
+          "cardCount": 5
+        },
+        "new_errors": 0
+      },
+      {
+        "tab": "errors",
+        "label": "Справочник ошибок",
+        "status": {
+          "activeBtnText": "Справочник ошибок\nКоды HTTP / CAS",
+          "heading": "Интерактивный справочник кодов ошибок и диагностика",
+          "cardCount": 0
+        },
+        "new_errors": 0
+      },
+      {
+        "tab": "security",
+        "label": "Безопасность 152-ФЗ",
+        "status": {
+          "activeBtnText": "Безопасность 152-ФЗ\nФСТЭК №117",
+          "heading": "Матрица соответствия 152-ФЗ и приказ ФСТЭК России №117",
+          "cardCount": 5
+        },
+        "new_errors": 0
+      }
+    ],
+    "console_errors": [],
+    "js_exceptions": [],
+    "verdict": "PASS"
+  },
+  "console_errors": [],
+  "js_exceptions": [],
+  "verdict": "PASS"
+}

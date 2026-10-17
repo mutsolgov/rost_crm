@@ -8,17 +8,18 @@ import re
 import struct
 import xml.etree.ElementTree as ET
 import zipfile
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Any
 from uuid import uuid4
 
-from sqlalchemy import func, select
+from sqlalchemy import delete, func, select
 from sqlalchemy.orm import Session
 
 from .errors import APIError
 from .models import (
     Comment,
     Contract,
+    ImportPackage,
     Interaction,
     License,
     Organization,
@@ -39,9 +40,23 @@ from .services import (
     has_organization_access,
     require_permission,
 )
+from .services_modules.common import aware
 from .workflow import TERMINAL_STATES
 
 _IMPORT_PACKAGES: dict[str, dict] = {}
+
+
+def purge_expired_import_packages(db: Session) -> None:
+    """Purge import packages older than 24 hours from both DB and L1 in-memory cache."""
+    now = utcnow()
+    expired_keys = [k for k, v in _IMPORT_PACKAGES.items() if v.get("expires_at") and aware(v["expires_at"]) < now]
+    for k in expired_keys:
+        _IMPORT_PACKAGES.pop(k, None)
+    try:
+        db.execute(delete(ImportPackage).where(ImportPackage.expires_at < now))
+        db.commit()
+    except Exception:
+        db.rollback()
 
 
 def canonical_json(data: Any) -> str:
@@ -484,19 +499,40 @@ def _match_header(header_text: str, file_type: str | None = None) -> str | None:
     return None
 
 
-def _find_organization(db: Session, name: str) -> Organization | None:
+def _find_organization(db: Session, name: str, batch_orgs: dict[str, Organization] | None = None) -> Organization | None:
     if not name:
         return None
     name_norm = name.strip().lower().strip("\"'«»")
+    cache = batch_orgs if batch_orgs is not None else db.info.get("_batch_orgs")
+    if cache is not None:
+        if name in cache:
+            return cache[name]
+        if name_norm in cache:
+            return cache[name_norm]
     for obj in db.new:
         if isinstance(obj, Organization):
             if obj.name and (obj.name == name or obj.name.strip().lower().strip("\"'«»") == name_norm or (obj.id and obj.id.lower() == name_norm)):
+                if cache is not None:
+                    cache[name] = obj
+                    cache[name_norm] = obj
+                    if obj.id:
+                        cache[obj.id.lower()] = obj
                 return obj
     org = db.scalar(select(Organization).where(Organization.name == name))
     if org is not None:
+        if cache is not None:
+            cache[name] = org
+            cache[name_norm] = org
+            if org.id:
+                cache[org.id.lower()] = org
         return org
     for o in db.scalars(select(Organization)).all():
         if o.name.strip().lower().strip("\"'«»") == name_norm or (o.id and o.id.lower() == name_norm):
+            if cache is not None:
+                cache[name] = o
+                cache[name_norm] = o
+                if o.id:
+                    cache[o.id.lower()] = o
             return o
     return None
 
@@ -1008,18 +1044,40 @@ def preview_organizations_import(
     import_id = uuid4().hex
     preview_rows: list[dict] = []
     errors: list[dict] = []
+    db.info["_batch_orgs"] = {}
 
     file_type = import_type if (import_type and import_type in ("organizations", "vendors", "users", "lms_learners")) else (
         parsed_rows[0].get("_file_type") if parsed_rows else _detect_file_type([], filename=filename)
     )
 
     payload_hash = hashlib.sha256(canonical_json(parsed_rows).encode("utf-8")).hexdigest()
+
+    # DB Persistence with 24-hour expiration and purge
+    purge_expired_import_packages(db)
+    expires_at = utcnow() + timedelta(hours=24)
+    pkg = ImportPackage(
+        id=import_id,
+        user_id=user.id,
+        import_type=file_type or "organizations",
+        filename=filename,
+        payload_hash=payload_hash,
+        rows_json=parsed_rows,
+        created_at=utcnow(),
+        expires_at=expires_at,
+    )
+    db.add(pkg)
+    try:
+        db.commit()
+    except Exception:
+        db.rollback()
+
     _IMPORT_PACKAGES[import_id] = {
         "hash": payload_hash,
         "rows": parsed_rows,
         "type": file_type,
         "user_id": user.id,
         "created_at": utcnow(),
+        "expires_at": expires_at,
     }
 
     if file_type == "lms_learners":
@@ -1341,9 +1399,33 @@ def commit_organizations_import(
     if import_id:
         pkg = _IMPORT_PACKAGES.get(import_id)
         if not pkg:
-            raise APIError("IMPORT_PACKAGE_NOT_FOUND", "Пакет импорта не найден или истек срок действия.", 404)
-        if pkg["user_id"] != user.id and user.role != "administrator":
-            raise APIError("FORBIDDEN", "Пакет принадлежит другому пользователю.", 403)
+            # Fallback to persistent DB storage
+            purge_expired_import_packages(db)
+            db_pkg = db.get(ImportPackage, import_id)
+            pkg_exp = aware(db_pkg.expires_at) if db_pkg and db_pkg.expires_at else None
+            if not db_pkg or (pkg_exp and pkg_exp < utcnow()):
+                raise APIError("IMPORT_PACKAGE_NOT_FOUND", "Пакет импорта не найден или истек срок действия.", 404)
+            # 152-ФЗ Zero-Oracle 404: Indistinguishable from non-existent package
+            if db_pkg.user_id != user.id and user.role != "administrator":
+                raise APIError("IMPORT_PACKAGE_NOT_FOUND", "Пакет импорта не найден или истек срок действия.", 404)
+            pkg = {
+                "hash": db_pkg.payload_hash,
+                "rows": db_pkg.rows_json,
+                "type": db_pkg.import_type,
+                "user_id": db_pkg.user_id,
+                "created_at": db_pkg.created_at,
+                "expires_at": pkg_exp,
+            }
+            _IMPORT_PACKAGES[import_id] = pkg
+        else:
+            # Check expiration in L1 cache
+            if pkg.get("expires_at") and aware(pkg["expires_at"]) < utcnow():
+                _IMPORT_PACKAGES.pop(import_id, None)
+                raise APIError("IMPORT_PACKAGE_NOT_FOUND", "Пакет импорта не найден или истек срок действия.", 404)
+            # 152-ФЗ Zero-Oracle 404: Indistinguishable from non-existent package
+            if pkg["user_id"] != user.id and user.role != "administrator":
+                raise APIError("IMPORT_PACKAGE_NOT_FOUND", "Пакет импорта не найден или истек срок действия.", 404)
+
         if rows:
             curr_hash = hashlib.sha256(canonical_json(rows).encode("utf-8")).hexdigest()
             if curr_hash != pkg["hash"]:
@@ -1368,6 +1450,8 @@ def commit_organizations_import(
     updated_users = 0
     created_vendors = 0
     errors: list[dict] = []
+    batch_orgs: dict[str, Organization] = {}
+    db.info["_batch_orgs"] = batch_orgs
 
     first_row = rows[0] if rows else {}
     first_data = first_row.get("data") or first_row.get("mapped_fields") or first_row.get("raw_values") or first_row
@@ -1438,11 +1522,15 @@ def commit_organizations_import(
                 if not vendor_name:
                     raise APIError("VALIDATION_ERROR", f"Строка {idx}: поле 'Вендор' обязательно для заполнения.", 422)
 
-                vendor_org = _find_organization(db, vendor_name)
+                vendor_org = _find_organization(db, vendor_name, batch_orgs=batch_orgs)
                 if not vendor_org:
                     vendor_org = Organization(name=vendor_name, type="vendor", owner_id=user.id if user.role == "manager" else None)
                     db.add(vendor_org)
                     db.flush()
+                    batch_orgs[vendor_name] = vendor_org
+                    batch_orgs[vendor_name.strip().lower().strip("\"'«»")] = vendor_org
+                    if vendor_org.id:
+                        batch_orgs[vendor_org.id.lower()] = vendor_org
                     created_orgs += 1
                     created_vendors += 1
                     access = OrganizationAccess(organization_id=vendor_org.id, user_id=user.id, read_all=True, can_create=True)
@@ -1543,7 +1631,7 @@ def commit_organizations_import(
                 else:
                     slug = re.sub(r"[^a-zA-Z0-9_\-]+", "-", clean_email.split("@")[0]).strip("-")
                     uid = slug if slug and not db.get(User, slug) else f"user-{uuid4().hex[:8]}"
-                    perms = [f"phone:{clean_phone}"] if clean_phone else []
+                    perms = []
                     new_u = User(
                         id=uid,
                         keycloak_subject=clean_email,
@@ -1571,11 +1659,15 @@ def commit_organizations_import(
                 if org_type not in {"university", "school", "other", "vendor"}:
                     org_type = "university"
 
-                org = _find_organization(db, name)
+                org = _find_organization(db, name, batch_orgs=batch_orgs)
                 if not org:
                     org = Organization(name=name, type=org_type, owner_id=user.id if user.role == "manager" else None)
                     db.add(org)
                     db.flush()
+                    batch_orgs[name] = org
+                    batch_orgs[name.strip().lower().strip("\"'«»")] = org
+                    if org.id:
+                        batch_orgs[org.id.lower()] = org
                     created_orgs += 1
                     access = OrganizationAccess(organization_id=org.id, user_id=user.id, read_all=True, can_create=True)
                     db.add(access)
@@ -1704,8 +1796,6 @@ def commit_organizations_import(
                                 target_prod = db.get(Product, linked_prod_id)
                     if not target_prod and vendor_name:
                         target_prod = db.scalar(select(Product).where(Product.vendor == vendor_name))
-                    if not target_prod:
-                        target_prod = db.scalar(select(Product))
 
                     if target_prod:
                         signed_on_dt = _parse_date(license_signed)

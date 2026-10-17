@@ -1,0 +1,370 @@
+{
+  "service": "rtk-lms-zion",
+  "version": "1.4.0",
+  "as_of": "2026-10-07T12:00:00Z",
+  "summary": {
+    "learners_count": 5,
+    "cohorts_count": 4,
+    "courses_count": 5,
+    "partner_companies_count": 5
+  },
+  "metrics": [
+    {
+      "external_id": "zion-metric-org-1-devops-active_cohorts",
+      "organization_id": "org-1",
+      "organization_name": "Московский технический университет",
+      "program_id": "program-devops",
+      "program_name": "DevOps и облачные технологии",
+      "metric_code": "active_cohorts",
+      "value": 2.0,
+      "unit": "cohort",
+      "as_of": "2026-10-07T10:00:00Z",
+      "source_revision": "1"
+    },
+    {
+      "external_id": "zion-metric-org-1-devops-students_enrolled",
+      "organization_id": "org-1",
+      "organization_name": "Московский технический университет",
+      "program_id": "program-devops",
+      "program_name": "DevOps и облачные технологии",
+      "metric_code": "students_enrolled",
+      "value": 45.0,
+      "unit": "student",
+      "as_of": "2026-10-07T10:00:00Z",
+      "source_revision": "1"
+    },
+    {
+      "external_id": "zion-metric-org-1-devops-students_completed",
+      "organization_id": "org-1",
+      "organization_name": "Московский технический университет",
+      "program_id": "program-devops",
+      "program_name": "DevOps и облачные технологии",
+      "metric_code": "students_completed",
+      "value": 38.0,
+      "unit": "student",
+      "as_of": "2026-10-07T10:00:00Z",
+      "source_revision": "1"
+    },
+    {
+      "external_id": "zion-metric-org-1-devops-attendance_rate",
+      "organization_id": "org-1",
+      "organization_name": "Московский технический университет",
+      "program_id": "program-devops",
+      "program_name": "DevOps и облачные технологии",
+      "metric_code": "attendance_rate",
+      "value": 91.5,
+      "unit": "percent",
+      "as_of": "2026-10-07T10:00:00Z",
+      "source_revision": "1"
+    },
+    {
+      "external_id": "zion-metric-org-2-qa-active_cohorts",
+      "organization_id": "org-2",
+      "organization_name": "Северный университет прикладных наук",
+      "program_id": "program-qa",
+      "program_name": "Инженерия качества ПО",
+      "metric_code": "active_cohorts",
+      "value": 1.0,
+      "unit": "cohort",
+      "as_of": "2026-10-07T11:00:00Z",
+      "source_revision": "1"
+    },
+    {
+      "external_id": "zion-metric-org-2-qa-students_enrolled",
+      "organization_id": "org-2",
+      "organization_name": "Северный университет прикладных наук",
+      "program_id": "program-qa",
+      "program_name": "Инженерия качества ПО",
+      "metric_code": "students_enrolled",
+      "value": 30.0,
+      "unit": "student",
+      "as_of": "2026-10-07T11:00:00Z",
+      "source_revision": "1"
+    },
+    {
+      "external_id": "zion-metric-org-2-qa-students_completed",
+      "organization_id": "org-2",
+      "organization_name": "Северный университет прикладных наук",
+      "program_id": "program-qa",
+      "program_name": "Инженерия качества ПО",
+      "metric_code": "students_completed",
+      "value": 26.0,
+      "unit": "student",
+      "as_of": "2026-10-07T11:00:00Z",
+      "source_revision": "1"
+    },
+    {
+      "external_id": "zion-metric-org-2-qa-attendance_rate",
+      "organization_id": "org-2",
+      "organization_name": "Северный университет прикладных наук",
+      "program_id": "program-qa",
+      "program_name": "Инженерия качества ПО",
+      "metric_code": "attendance_rate",
+      "value": 88.0,
+      "unit": "percent",
+      "as_of": "2026-10-07T11:00:00Z",
+      "source_revision": "1"
+    }
+  ],
+  "learners": [
+    {
+      "id": "lrn-001",
+      "learner_id": "lrn-001",
+      "last_name": "Черепанова",
+      "first_name": "Светлана",
+      "patronymic": "Васильевна",
+      "full_name": "Черепанова Светлана Васильевна",
+      "phone": "79990234365",
+      "phone_formatted": "7 (999) 023-43-65",
+      "email": "cherepanona.s@test.ru",
+      "order_id": "ORD-20260313051569-OYJRVN",
+      "order_number": "ORD-20260313051569-OYJRVN",
+      "course": "Анализ данных без программирования",
+      "program_id": "program-data-analysis",
+      "cohort": 1,
+      "cohort_id": 1,
+      "progress": 85.0,
+      "progress_percent": 85.0,
+      "tests_passed": 8,
+      "tests_total": 10,
+      "score": 85.0,
+      "status": "active"
+    },
+    {
+      "id": "lrn-002",
+      "learner_id": "lrn-002",
+      "last_name": "Кричанов",
+      "first_name": "Максим",
+      "patronymic": "Сергеевич",
+      "full_name": "Кричанов Максим Сергеевич",
+      "phone": "79977361351",
+      "phone_formatted": "7 (997) 736-13-51",
+      "email": "max_crich@mail.ru",
+      "order_id": "ORD-202605130654453-GDJIKG",
+      "order_number": "ORD-202605130654453-GDJIKG",
+      "course": "Инженер-тестировщик",
+      "program_id": "program-qa",
+      "cohort": 1,
+      "cohort_id": 1,
+      "progress": 90.0,
+      "progress_percent": 90.0,
+      "tests_passed": 9,
+      "tests_total": 10,
+      "score": 90.0,
+      "status": "active"
+    },
+    {
+      "id": "lrn-003",
+      "learner_id": "lrn-003",
+      "last_name": "Григорьев",
+      "first_name": "Станислав",
+      "patronymic": "Семенович",
+      "full_name": "Григорьев Станислав Семенович",
+      "phone": "79947392263",
+      "phone_formatted": "7 (994) 739-22-63",
+      "email": "grigorev355@gmail.com",
+      "order_id": "ORD-20261721184559-AJIJEN",
+      "order_number": "ORD-20261721184559-AJIJEN",
+      "course": "Управление ИТ-проектами на базе программного продукта ПАО «Ростелеком»",
+      "program_id": "program-project-management",
+      "cohort": 2,
+      "cohort_id": 2,
+      "progress": 65.0,
+      "progress_percent": 65.0,
+      "tests_passed": 6,
+      "tests_total": 10,
+      "score": 65.0,
+      "status": "active"
+    },
+    {
+      "id": "lrn-004",
+      "learner_id": "lrn-004",
+      "last_name": "Осипенко",
+      "first_name": "Ирина",
+      "patronymic": "Викторовна",
+      "full_name": "Осипенко Ирина Викторовна",
+      "phone": "79934253846",
+      "phone_formatted": "7 (993) 425-38-46",
+      "email": "Osipenko833484@mail.ru",
+      "order_id": "ORD-20260522061330-2LT0MG",
+      "order_number": "ORD-20260522061330-2LT0MG",
+      "course": "Промпт-инжиниринг",
+      "program_id": "program-prompt-engineering",
+      "cohort": 3,
+      "cohort_id": 3,
+      "progress": 45.0,
+      "progress_percent": 45.0,
+      "tests_passed": 4,
+      "tests_total": 10,
+      "score": 45.0,
+      "status": "active"
+    },
+    {
+      "id": "lrn-005",
+      "learner_id": "lrn-005",
+      "last_name": "Иванов",
+      "first_name": "Михаил",
+      "patronymic": "Петрович",
+      "full_name": "Иванов Михаил Петрович",
+      "phone": "79924583434",
+      "phone_formatted": "7 (992) 458-34-34",
+      "email": "mp_ivanov@mail.ru",
+      "order_id": "ORD-20260904075403-ZXFSZX",
+      "order_number": "ORD-20260904075403-ZXFSZX",
+      "course": "Python-разработчик с использованием инструментов ИИ",
+      "program_id": "program-python-ai",
+      "cohort": 4,
+      "cohort_id": 4,
+      "progress": 30.0,
+      "progress_percent": 30.0,
+      "tests_passed": 3,
+      "tests_total": 10,
+      "score": 30.0,
+      "status": "active"
+    }
+  ],
+  "cohorts": [
+    {
+      "id": 1,
+      "cohort_id": 1,
+      "name": "Поток 1",
+      "course": "Анализ данных без программирования, Инженер-тестировщик",
+      "courses": [
+        "Анализ данных без программирования",
+        "Инженер-тестировщик"
+      ],
+      "start_date": "2026-03-15T00:00:00Z"
+    },
+    {
+      "id": 2,
+      "cohort_id": 2,
+      "name": "Поток 2",
+      "course": "Управление ИТ-проектами на базе программного продукта ПАО «Ростелеком»",
+      "courses": [
+        "Управление ИТ-проектами на базе программного продукта ПАО «Ростелеком»"
+      ],
+      "start_date": "2026-06-20T00:00:00Z"
+    },
+    {
+      "id": 3,
+      "cohort_id": 3,
+      "name": "Поток 3",
+      "course": "Промпт-инжиниринг",
+      "courses": [
+        "Промпт-инжиниринг"
+      ],
+      "start_date": "2026-06-01T00:00:00Z"
+    },
+    {
+      "id": 4,
+      "cohort_id": 4,
+      "name": "Поток 4",
+      "course": "Python-разработчик с использованием инструментов ИИ",
+      "courses": [
+        "Python-разработчик с использованием инструментов ИИ"
+      ],
+      "start_date": "2026-09-10T00:00:00Z"
+    }
+  ],
+  "partner_organizations": [
+    {
+      "company": "ПАО «Ростелеком»",
+      "products": [
+        "«RT.DataVision»"
+      ],
+      "representative_name": "Кузнецов Дмитрий Сергеевич",
+      "representative_phone": "+7 (922) 333-44-55",
+      "representative_email": "kuznetsov.ds@example.ru",
+      "channel": "Чат в ТГ"
+    },
+    {
+      "company": "ООО «Базис»",
+      "products": [
+        "«Базис Dynamix»"
+      ],
+      "representative_name": "Иванов Иван Иванович",
+      "representative_phone": "+7 (900) 111-22-33",
+      "representative_email": "ivanov.ii@example.ru",
+      "channel": "Почта, Чат в ТГ"
+    },
+    {
+      "company": "ООО «ТДата»",
+      "products": [
+        "«RT.DataLake»",
+        "«RT.Warehouse»"
+      ],
+      "representative_name": "Смирнова Анна Петровна",
+      "representative_phone": "+7 (911) 222-33-44",
+      "representative_email": "smirnova.ap@example.ru",
+      "channel": "Чат в ТГ"
+    },
+    {
+      "company": "ООО «РТК ИТ Плюс»",
+      "products": [
+        "«AKOLA»",
+        "«Яга»"
+      ],
+      "contacts": [
+        {
+          "name": "Попова Мария Владимировна",
+          "phone": "+7 (933) 444-55-66",
+          "email": "popova.mv@example.ru",
+          "product": "«AKOLA»"
+        },
+        {
+          "name": "Соколов Алексей Андреевич",
+          "phone": "+7 (944) 555-66-77",
+          "email": "sokolov.aa@example.ru",
+          "product": "«Яга»"
+        }
+      ]
+    },
+    {
+      "company": "ООО «РТК ИТ»",
+      "products": [
+        "«Web3Gate»",
+        "«Аврора SDK»",
+        "«Нейрошлюз»"
+      ],
+      "contacts": [
+        {
+          "name": "Лебедева Елена Дмитриевна",
+          "phone": "+7 (955) 666-77-88",
+          "email": "lebedeva.ed@example.ru",
+          "product": "«Web3Gate»"
+        },
+        {
+          "name": "Козлов Максим Игоревич",
+          "phone": "+7 (966) 777-88-99",
+          "email": "kozlov.mi@example.ru",
+          "product": "«Аврора SDK»"
+        },
+        {
+          "name": "Новикова Ольга Александровна",
+          "phone": "+7 (977) 888-99-00",
+          "email": "novikova.oa@example.ru",
+          "product": "«Нейрошлюз»"
+        }
+      ]
+    }
+  ],
+  "webhook_simulation_templates": [
+    {
+      "schema_version": "1.0",
+      "source": "lms",
+      "entity_type": "learning_metric",
+      "external_id": "zion-metric-org-1-devops-active_cohorts-v2",
+      "source_revision": "2",
+      "operation": "upsert",
+      "effective_at": "2026-10-07T12:00:00Z",
+      "payload": {
+        "organization_id": "org-1",
+        "program_id": "program-devops",
+        "metric_code": "active_cohorts",
+        "value": 3.0,
+        "unit": "cohort",
+        "as_of": "2026-10-07T12:00:00Z"
+      }
+    }
+  ]
+}

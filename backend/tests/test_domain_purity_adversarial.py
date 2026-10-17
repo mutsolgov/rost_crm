@@ -9,15 +9,13 @@ Empirical stress tests for:
 """
 
 import io
-import json
 import zipfile
 from pathlib import Path
 import pytest
 from fastapi.testclient import TestClient
 
-from app.models import IntegrationInbox, Interaction, Organization, User
+from app.models import IntegrationInbox, Interaction, User
 from app.seed import seed_database
-from app.importer import preview_organizations_import, commit_organizations_import, _detect_file_type, parse_tabular_file
 
 
 REPO_ROOT = Path(__file__).resolve().parent.parent.parent
@@ -350,7 +348,7 @@ def test_catalogs_owners_filters_out_rogue_learner_with_manager_role(client: Tes
             id="cherepanona-s",
             keycloak_subject="cherepanona.s@test.ru",
             name="Черепанова Светлана Васильевна",
-            role="manager",
+            role="learner",
             team_id="north",
             active=True,
         )
@@ -397,7 +395,7 @@ def test_catalogs_owners_filters_out_learner_even_if_assigned_as_interaction_own
             id="mp_ivanov",
             keycloak_subject="mp_ivanov@mail.ru",
             name="Иванов Михаил Петрович",
-            role="manager",
+            role="learner",
             team_id="north",
             active=True,
         )
@@ -434,7 +432,7 @@ def test_seed_database_purges_all_lingering_learner_accounts(client: TestClient)
                     id=lid,
                     keycloak_subject=lemail,
                     name=f"Learner {lid}",
-                    role="manager",
+                    role="learner",
                     active=True,
                 ))
         session.commit()
@@ -480,6 +478,85 @@ def test_seed_database_idempotent_multiple_runs(client: TestClient):
         assert "supervisor" in user_ids
         assert "administrator" in user_ids
         assert not any(lid in user_ids for lid in KNOWN_LEARNER_IDS)
+
+
+def test_seed_database_preserves_added_staff_users(client: TestClient):
+    """R1: When seed_database is called repeatedly, users with staff roles
+    (manager, supervisor, administrator) not in initial USERS constant MUST NOT be deleted.
+    Users with non-staff roles or without roles MUST be purged.
+    """
+    staff_ids = ["custom-staff-manager-99", "custom-staff-supervisor-99", "custom-staff-admin-99"]
+    non_staff_ids = ["rogue-learner-99", "rogue-guest-99", "rogue-norole-99"]
+
+    with client.app.state.session_factory() as session:
+        for uid in staff_ids + non_staff_ids:
+            existing = session.get(User, uid)
+            if existing:
+                session.delete(existing)
+        session.commit()
+
+        session.add_all([
+            User(
+                id="custom-staff-manager-99",
+                keycloak_subject="manager99@rt.ru",
+                name="Менеджер Дополнительный",
+                role="manager",
+                active=True,
+            ),
+            User(
+                id="custom-staff-supervisor-99",
+                keycloak_subject="supervisor99@rt.ru",
+                name="Супервизор Дополнительный",
+                role="supervisor",
+                active=True,
+            ),
+            User(
+                id="custom-staff-admin-99",
+                keycloak_subject="admin99@rt.ru",
+                name="Администратор Дополнительный",
+                role="administrator",
+                active=True,
+            ),
+            User(
+                id="rogue-learner-99",
+                keycloak_subject="learner99@test.ru",
+                name="Студент Нештатный",
+                role="learner",
+                active=True,
+            ),
+            User(
+                id="rogue-guest-99",
+                keycloak_subject="guest99@test.ru",
+                name="Гость Нештатный",
+                role="guest",
+                active=True,
+            ),
+            User(
+                id="rogue-norole-99",
+                keycloak_subject="norole99@test.ru",
+                name="Пользователь Без Роли",
+                role="",
+                active=True,
+            ),
+        ])
+        session.commit()
+
+    # Re-run seed_database
+    with client.app.state.session_factory() as session:
+        seed_database(session)
+        session.commit()
+
+    # Verify staff users are preserved
+    with client.app.state.session_factory() as session:
+        for sid in staff_ids:
+            found = session.get(User, sid)
+            assert found is not None, f"Staff user {sid} was mistakenly deleted by seed_database!"
+            assert found.role in ("manager", "supervisor", "administrator")
+
+        # Verify non-staff / invalid role users are purged
+        for nid in non_staff_ids:
+            found = session.get(User, nid)
+            assert found is None, f"Non-staff user {nid} was NOT purged by seed_database!"
 
 
 # ==============================================================================

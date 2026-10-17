@@ -107,10 +107,14 @@ def upgrade() -> None:
             sa.Column("team_id", sa.String(length=64), nullable=True),
             sa.Column("permissions", sa.JSON(), nullable=False),
             sa.Column("active", sa.Boolean(), nullable=False),
+            sa.Column("phone", sa.String(length=100), nullable=True),
             sa.ForeignKeyConstraint(["team_id"], ["teams.id"], ondelete="SET NULL"),
             sa.PrimaryKeyConstraint("id"),
             sa.UniqueConstraint("keycloak_subject"),
         )
+    else:
+        if column_missing("users", "phone"):
+            op.add_column("users", sa.Column("phone", sa.String(length=100), nullable=True))
 
     # 1.6 Organizations (depends on users)
     if table_missing("organizations"):
@@ -297,6 +301,9 @@ def upgrade() -> None:
             batch_op.create_index(batch_op.f("ix_interactions_license_id"), ["license_id"], unique=False)
             batch_op.create_index(batch_op.f("ix_interactions_organization_id"), ["organization_id"], unique=False)
             batch_op.create_index(batch_op.f("ix_interactions_owner_id"), ["owner_id"], unique=False)
+            batch_op.create_index(batch_op.f("ix_interactions_product_id"), ["product_id"], unique=False)
+            batch_op.create_index(batch_op.f("ix_interactions_program_id"), ["program_id"], unique=False)
+            batch_op.create_index(batch_op.f("ix_interactions_state"), ["state"], unique=False)
             batch_op.create_index(batch_op.f("ix_interactions_team_id"), ["team_id"], unique=False)
 
     # 5. Tables dependent on interactions
@@ -498,6 +505,9 @@ def downgrade() -> None:
     if table_exists("interactions"):
         with op.batch_alter_table("interactions", schema=None) as batch_op:
             batch_op.drop_index(batch_op.f("ix_interactions_team_id"))
+            batch_op.drop_index(batch_op.f("ix_interactions_state"))
+            batch_op.drop_index(batch_op.f("ix_interactions_program_id"))
+            batch_op.drop_index(batch_op.f("ix_interactions_product_id"))
             batch_op.drop_index(batch_op.f("ix_interactions_owner_id"))
             batch_op.drop_index(batch_op.f("ix_interactions_organization_id"))
             batch_op.drop_index(batch_op.f("ix_interactions_license_id"))

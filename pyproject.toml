@@ -1,0 +1,51 @@
+[tool.ruff]
+target-version = "py312"
+line-length = 120
+extend-exclude = [
+    ".venv",
+    "venv",
+    "node_modules",
+    "dist",
+    "storage",
+    "backend/storage",
+    ".agents",
+]
+
+[tool.ruff.lint]
+select = [
+    "E",   # pycodestyle errors
+    "W",   # pycodestyle warnings
+    "F",   # Pyflakes (unused imports, variables, logic bugs)
+    "I",   # isort (import ordering)
+    "N",   # pep8-naming
+    "S",   # flake8-bandit (security invariants)
+    "B",   # flake8-bugbear (common design errors)
+    "A",   # flake8-builtins (shadowing builtins)
+    "C4",  # flake8-comprehensions
+]
+ignore = [
+    "A003", # Class attribute builtin shadowing (e.g. User.id, Product.type)
+    "A005", # Module-level builtin shadowing
+    "B008", # Do not perform function call in argument defaults (standard FastAPI Depends)
+    "N806", # Variable in function should be lowercase (e.g. Base, Engine, Session)
+]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/*" = ["S101", "S105", "S106", "S107", "F401", "F841", "F999"]
+"tests/**" = ["S101", "S105", "S106", "S107", "F401", "F841", "F999"]
+"backend/tests/*" = ["S101", "S105", "S106", "S107", "F401", "F841", "F999"]
+"backend/tests/**" = ["S101", "S105", "S106", "S107", "F401", "F841", "F999"]
+"backend/benchmarks/*" = ["S101", "F401", "F841", "F999"]
+"backend/benchmarks/**" = ["S101", "F401", "F841", "F999"]
+"docs/checks/*" = ["S101"]
+"scripts/*" = ["S101"]
+
+[tool.ruff.lint.isort]
+combine-as-imports = true
+known-first-party = ["app"]
+
+[tool.ruff.format]
+quote-style = "double"
+indent-style = "space"
+line-ending = "lf"
+docstring-code-format = true

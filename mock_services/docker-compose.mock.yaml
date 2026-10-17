@@ -1,0 +1,40 @@
+name: rtk-mock-services
+
+services:
+  mock-lms:
+    container_name: rtk-mock-lms
+    build:
+      context: ./lms
+      dockerfile: Dockerfile
+    ports:
+      - "8081:8081"
+    environment:
+      PORT: 8081
+      CRM_API_URL: ${CRM_API_URL:-http://host.docker.internal:8000}
+      LMS_WEBHOOK_SECRET: ${LMS_WEBHOOK_SECRET:-rtk-lms-webhook-secret}
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    restart: unless-stopped
+    networks:
+      - mock-net
+
+  mock-website:
+    container_name: rtk-mock-website
+    build:
+      context: ./website
+      dockerfile: Dockerfile
+    ports:
+      - "8082:8082"
+    environment:
+      PORT: 8082
+      CRM_API_URL: ${CRM_API_URL:-http://host.docker.internal:8000}
+      WEBSITE_WEBHOOK_SECRET: ${WEBSITE_WEBHOOK_SECRET:-rtk-website-webhook-secret}
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    restart: unless-stopped
+    networks:
+      - mock-net
+
+networks:
+  mock-net:
+    driver: bridge

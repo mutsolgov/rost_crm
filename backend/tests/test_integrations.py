@@ -46,6 +46,14 @@ def test_integrations_status_rbac(client):
     assert len(data_sup["adapters"]) == 2
     assert data_sup["total_inbox"] == 0
     assert data_sup["total_metrics"] == 0
+    assert data_sup["total_applications"] == 0
+    assert data_sup["total_errors"] == 0
+    assert data_sup["last_synced_lms"] is None
+    assert data_sup["last_synced_website"] is None
+    assert data_sup["last_synced_at"] is None
+    assert data_sup["adapters_by_source"]["lms"]["connected"] is True
+    assert data_sup["adapters_by_source"]["website"]["connected"] is True
+    assert all(a.get("connected") is True for a in data_sup["adapters"])
 
     # Admin receives 200 OK
     res_adm = client.get("/api/v1/integrations/status", headers=headers("administrator"))
@@ -396,3 +404,110 @@ def test_scope_isolation_152_fz_on_created_interaction(client):
     res_b = client.get(f"/api/v1/interactions/{inter_id}", headers=headers("manager-b"))
     assert res_b.status_code == 404
     assert res_b.json()["error"]["code"] == "NOT_FOUND"
+
+
+def test_mock_adapters_health_check_connected():
+    """Mock LMS and Website adapters return 'connected': True and status='ok'."""
+    from app.integrations.mock_lms import MockLMSAdapter
+    from app.integrations.mock_website import MockWebsiteAdapter
+
+    lms = MockLMSAdapter()
+    lms_health = lms.health_check()
+    assert lms_health["status"] == "ok"
+    assert lms_health["connected"] is True
+    assert lms_health["mode"] == "mock"
+    assert lms_health["source"] == "lms"
+
+    website = MockWebsiteAdapter()
+    website_health = website.health_check()
+    assert website_health["status"] == "ok"
+    assert website_health["connected"] is True
+    assert website_health["mode"] == "mock"
+    assert website_health["source"] == "website"
+
+
+def test_integrations_status_counters_and_sync_error_isolation(client, app):
+    """Verifies that get_integrations_status correctly calculates total_applications,
+    total_errors, last_synced_lms, last_synced_website, and that sync_error records
+    do NOT advance sync timestamps nor inflate total_applications.
+    """
+    from datetime import timedelta
+    from app.models import new_id, utcnow
+
+    # 1. Initial state: no syncs performed yet
+    st0 = client.get("/api/v1/integrations/status", headers=headers("supervisor")).json()
+    assert st0["total_applications"] == 0
+    assert st0["total_errors"] == 0
+    assert st0["last_synced_lms"] is None
+    assert st0["last_synced_website"] is None
+    assert st0["last_synced_at"] is None
+
+    # 2. Sync LMS -> 12 educational metrics
+    res_lms = client.post("/api/v1/integrations/sync/lms", headers=headers("supervisor"))
+    assert res_lms.status_code == 200
+
+    st_lms = client.get("/api/v1/integrations/status", headers=headers("supervisor")).json()
+    assert st_lms["total_metrics"] == 12
+    assert st_lms["total_applications"] == 0
+    assert st_lms["total_errors"] == 0
+    assert st_lms["last_synced_lms"] is not None
+    assert st_lms["last_synced_website"] is None
+    assert st_lms["last_synced_at"] == st_lms["last_synced_lms"]
+    lms_ts = st_lms["last_synced_lms"]
+
+    # 3. Sync Website -> 4 applications
+    res_web = client.post("/api/v1/integrations/sync/website", headers=headers("supervisor"))
+    assert res_web.status_code == 200
+
+    st_web = client.get("/api/v1/integrations/status", headers=headers("supervisor")).json()
+    assert st_web["total_applications"] == 4
+    assert st_web["total_errors"] == 0
+    assert st_web["last_synced_lms"] == lms_ts
+    assert st_web["last_synced_website"] is not None
+    web_ts = st_web["last_synced_website"]
+    assert st_web["last_synced_at"] is not None
+    assert st_web["last_synced_at"] == max(lms_ts, web_ts)
+
+    # 4. Inject sync_error and error status records with future timestamps into IntegrationInbox
+    future_time_1 = utcnow() + timedelta(hours=2)
+    future_time_2 = utcnow() + timedelta(hours=3)
+
+    with app.state.session_factory() as session:
+        # Website sync error with future timestamp
+        err1 = IntegrationInbox(
+            id=new_id(),
+            source="website",
+            entity_type="sync_error",
+            external_id="err-web-test-1",
+            source_revision="1",
+            status="error",
+            error_message="Website gateway timeout 504",
+            payload={"error": "504"},
+            received_at=future_time_1,
+        )
+        # LMS sync error with future timestamp
+        err2 = IntegrationInbox(
+            id=new_id(),
+            source="lms",
+            entity_type="sync_error",
+            external_id="err-lms-test-2",
+            source_revision="1",
+            status="error",
+            error_message="LMS connection refused",
+            payload={"error": "connection_refused"},
+            received_at=future_time_2,
+        )
+        session.add_all([err1, err2])
+        session.commit()
+
+    # 5. Verify status endpoint after errors
+    st_err = client.get("/api/v1/integrations/status", headers=headers("supervisor")).json()
+
+    # Total errors is incremented
+    assert st_err["total_errors"] == 2
+    # Total applications is NOT affected by website sync_error
+    assert st_err["total_applications"] == 4
+    # Sync timestamps are NOT advanced to future error timestamps
+    assert st_err["last_synced_lms"] == lms_ts
+    assert st_err["last_synced_website"] == web_ts
+    assert st_err["last_synced_at"] == max(lms_ts, web_ts)

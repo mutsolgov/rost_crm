@@ -3,7 +3,7 @@ from __future__ import annotations
 import argparse
 from datetime import timedelta
 
-from sqlalchemy import or_, select
+from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session
 
 from .db import Base, get_engine
@@ -31,7 +31,7 @@ USERS = [
     {"id": "manager-a", "keycloak_subject": "11111111-1111-4111-8111-111111111111", "name": "Анна Смирнова", "role": "manager", "team_id": "north"},
     {"id": "manager-b", "keycloak_subject": "22222222-2222-4222-8222-222222222222", "name": "Михаил Волков", "role": "manager", "team_id": "north"},
     {"id": "supervisor", "keycloak_subject": "33333333-3333-4333-8333-333333333333", "name": "Елена Соколова", "role": "supervisor", "team_id": "north"},
-    {"id": "administrator", "keycloak_subject": "44444444-4444-4444-8444-444444444444", "name": "Администратор Демонстрационный", "role": "administrator", "team_id": None, "permissions": ["workflow.global_migrate"]},
+    {"id": "administrator", "keycloak_subject": "44444444-4444-4444-8444-444444444444", "name": "Администратор Демонстрационный", "role": "administrator", "team_id": None, "permissions": ["workflow.global_migrate", "interactions.create", "interactions.assign", "interactions.write", "interactions.edit"]},
 ]
 
 
@@ -199,42 +199,133 @@ def seed_database(db: Session) -> None:
         state.updated_at = utcnow()
     db.flush()
 
-    # R1: Domain purity - purge any legacy or mistaken learner records from User table
-    learner_ids = ("cherepanona-s", "max_crich", "grigorev355", "osipenko833484", "mp_ivanov")
-    learner_emails = (
-        "cherepanona.s@test.ru",
-        "max_crich@mail.ru",
-        "grigorev355@gmail.com",
-        "osipenko833484@mail.ru",
-        "mp_ivanov@mail.ru",
-    )
-    for u in db.scalars(select(User).where(or_(User.id.in_(learner_ids), User.keycloak_subject.in_(learner_emails)))).all():
+    # R1: Domain purity - purge any legacy, rogue, or non-staff records from User table
+    valid_staff_roles = ("manager", "supervisor", "administrator", "admin")
+    extraneous_users = db.scalars(
+        select(User).where(
+            or_(
+                User.role.is_(None),
+                ~func.lower(func.trim(User.role)).in_(valid_staff_roles),
+            )
+        )
+    ).all()
+    for u in extraneous_users:
+        for g in db.scalars(select(OrganizationAccess).where(OrganizationAccess.user_id == u.id)).all():
+            db.delete(g)
         db.delete(u)
+    db.flush()
+
+    from .models import WorkflowVersion
+    from .workflow import WORKFLOW_V1, WORKFLOW_V2
+    if db.scalar(select(WorkflowVersion).where(WorkflowVersion.version == 1)) is None:
+        db.add(WorkflowVersion(
+            id=f"wf-v1-{now.strftime('%Y%m%d%H%M%S')}",
+            version=1,
+            name=WORKFLOW_V1["name"],
+            description=WORKFLOW_V1.get("description", ""),
+            definition=WORKFLOW_V1,
+            is_published=True,
+            created_at=now,
+        ))
+    if db.scalar(select(WorkflowVersion).where(WorkflowVersion.version == 2)) is None:
+        db.add(WorkflowVersion(
+            id=f"wf-v2-{now.strftime('%Y%m%d%H%M%S')}",
+            version=2,
+            name=WORKFLOW_V2["name"],
+            description=WORKFLOW_V2.get("description", ""),
+            definition=WORKFLOW_V2,
+            is_published=True,
+            created_at=now,
+        ))
     db.flush()
 
 
 def ensure_schema_columns(engine) -> None:
     from sqlalchemy import inspect, text
+    from . import models  # noqa: F401
+    Base.metadata.create_all(engine)
+
     inspector = inspect(engine)
+    is_pg = getattr(engine.dialect, "name", "") == "postgresql"
+    dt_type = "TIMESTAMP WITH TIME ZONE" if is_pg else "DATETIME"
+
     with engine.begin() as conn:
+        if inspector.has_table("users"):
+            cols = {c["name"] for c in inspector.get_columns("users")}
+            if "phone" not in cols:
+                conn.execute(text("ALTER TABLE users ADD COLUMN phone VARCHAR(100) NULL"))
+            if "email" not in cols:
+                conn.execute(text("ALTER TABLE users ADD COLUMN email VARCHAR(320) NULL"))
+                try:
+                    with conn.begin_nested():
+                        conn.execute(text("CREATE INDEX IF NOT EXISTS ix_users_email ON users (email)"))
+                except Exception:
+                    pass
+
+        if not inspector.has_table("import_packages"):
+            models.ImportPackage.__table__.create(conn, checkfirst=True)
+
         if inspector.has_table("organizations"):
             cols = {c["name"] for c in inspector.get_columns("organizations")}
             if "owner_id" not in cols:
                 conn.execute(text("ALTER TABLE organizations ADD COLUMN owner_id VARCHAR(64) NULL"))
                 try:
-                    conn.execute(text("CREATE INDEX ix_organizations_owner_id ON organizations (owner_id)"))
+                    with conn.begin_nested():
+                        conn.execute(text("CREATE INDEX IF NOT EXISTS ix_organizations_owner_id ON organizations (owner_id)"))
                 except Exception:
                     pass
+
+        if inspector.has_table("organization_contacts"):
+            cols = {c["name"] for c in inspector.get_columns("organization_contacts")}
+            if "notes" not in cols:
+                conn.execute(text("ALTER TABLE organization_contacts ADD COLUMN notes TEXT NULL"))
+            if "revision" not in cols:
+                conn.execute(text("ALTER TABLE organization_contacts ADD COLUMN revision INTEGER DEFAULT 1"))
+            if "created_at" not in cols:
+                conn.execute(text(f"ALTER TABLE organization_contacts ADD COLUMN created_at {dt_type} NULL"))
+            if "updated_at" not in cols:
+                conn.execute(text(f"ALTER TABLE organization_contacts ADD COLUMN updated_at {dt_type} NULL"))
+            if "archived_at" not in cols:
+                conn.execute(text(f"ALTER TABLE organization_contacts ADD COLUMN archived_at {dt_type} NULL"))
+            try:
+                indexes = {idx["name"] for idx in inspector.get_indexes("organization_contacts") if idx.get("name")}
+                if "ix_org_contacts_active" not in indexes:
+                    with conn.begin_nested():
+                        conn.execute(text("CREATE INDEX IF NOT EXISTS ix_org_contacts_active ON organization_contacts (organization_id, archived_at)"))
+            except Exception:
+                pass
+
         if inspector.has_table("learning_metrics"):
             cols = {c["name"] for c in inspector.get_columns("learning_metrics")}
             if "last_applied_revision" not in cols:
                 conn.execute(text("ALTER TABLE learning_metrics ADD COLUMN last_applied_revision VARCHAR(64) NULL"))
+
         if inspector.has_table("workflow_versions"):
             cols = {c["name"] for c in inspector.get_columns("workflow_versions")}
             if "definition" not in cols:
                 conn.execute(text("ALTER TABLE workflow_versions ADD COLUMN definition JSON NULL"))
             if "is_published" not in cols:
                 conn.execute(text("ALTER TABLE workflow_versions ADD COLUMN is_published BOOLEAN NOT NULL DEFAULT FALSE"))
+
+        if inspector.has_table("interactions"):
+            existing_indexes = set()
+            try:
+                existing_indexes = {idx["name"] for idx in inspector.get_indexes("interactions") if idx.get("name")}
+            except Exception:
+                pass
+
+            target_indexes = [
+                ("ix_interactions_program_id", "CREATE INDEX IF NOT EXISTS ix_interactions_program_id ON interactions (program_id)"),
+                ("ix_interactions_product_id", "CREATE INDEX IF NOT EXISTS ix_interactions_product_id ON interactions (product_id)"),
+                ("ix_interactions_state", "CREATE INDEX IF NOT EXISTS ix_interactions_state ON interactions (state)"),
+            ]
+            for idx_name, create_sql in target_indexes:
+                if idx_name not in existing_indexes:
+                    try:
+                        with conn.begin_nested():
+                            conn.execute(text(create_sql))
+                    except Exception:
+                        pass
 
 
 def main() -> None:

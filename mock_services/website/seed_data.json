@@ -1,0 +1,229 @@
+{
+  "service": "rtk-it-school-portal",
+  "version": "2.1.0",
+  "as_of": "2026-10-07T12:00:00Z",
+  "summary": {
+    "total_applications": 5,
+    "partner_companies_count": 5
+  },
+  "applications": [
+    {
+      "id": "ORD-20260313051569-OYJRVN",
+      "external_id": "ORD-20260313051569-OYJRVN",
+      "order_number": "ORD-20260313051569-OYJRVN",
+      "created_at": "2026-03-13T05:15:00Z",
+      "organization_name": "ПАО «Ростелеком»",
+      "contact_name": "Черепанова Светлана Васильевна",
+      "representative_name": "Черепанова Светлана Васильевна",
+      "contact_email": "cherepanona.s@test.ru",
+      "representative_email": "cherepanona.s@test.ru",
+      "contact_phone": "7 (999) 023-43-65",
+      "representative_phone": "7 (999) 023-43-65",
+      "representative_position": "Слушатель курса",
+      "program_name": "Анализ данных без программирования",
+      "program_id": "program-data-analysis",
+      "cohort": 1,
+      "cohort_id": 1,
+      "amount": 45000.0,
+      "payment_status": "paid",
+      "status": "paid",
+      "comments": "Оплаченная заявка на курс 'Анализ данных без программирования', Поток 1.",
+      "source_revision": "1"
+    },
+    {
+      "id": "ORD-202605130654453-GDJIKG",
+      "external_id": "ORD-202605130654453-GDJIKG",
+      "order_number": "ORD-202605130654453-GDJIKG",
+      "created_at": "2026-05-13T06:54:00Z",
+      "organization_name": "ООО «Базис»",
+      "contact_name": "Кричанов Максим Сергеевич",
+      "representative_name": "Кричанов Максим Сергеевич",
+      "contact_email": "max_crich@mail.ru",
+      "representative_email": "max_crich@mail.ru",
+      "contact_phone": "7 (997) 736-13-51",
+      "representative_phone": "7 (997) 736-13-51",
+      "representative_position": "Слушатель курса",
+      "program_name": "Инженер-тестировщик",
+      "program_id": "program-qa",
+      "cohort": 1,
+      "cohort_id": 1,
+      "amount": 55000.0,
+      "payment_status": "paid",
+      "status": "paid",
+      "comments": "Оплаченная заявка на курс 'Инженер-тестировщик', Поток 1.",
+      "source_revision": "1"
+    },
+    {
+      "id": "ORD-20261721184559-AJIJEN",
+      "external_id": "ORD-20261721184559-AJIJEN",
+      "order_number": "ORD-20261721184559-AJIJEN",
+      "created_at": "2026-06-17T18:45:00Z",
+      "organization_name": "ПАО «Ростелеком»",
+      "contact_name": "Григорьев Станислав Семенович",
+      "representative_name": "Григорьев Станислав Семенович",
+      "contact_email": "grigorev355@gmail.com",
+      "representative_email": "grigorev355@gmail.com",
+      "contact_phone": "7 (994) 739-22-63",
+      "representative_phone": "7 (994) 739-22-63",
+      "representative_position": "Слушатель курса",
+      "program_name": "Управление ИТ-проектами на базе программного продукта ПАО «Ростелеком»",
+      "program_id": "program-project-management",
+      "cohort": 2,
+      "cohort_id": 2,
+      "amount": 60000.0,
+      "payment_status": "paid",
+      "status": "paid",
+      "comments": "Оплаченная заявка на курс 'Управление ИТ-проектами на базе программного продукта ПАО «Ростелеком»', Поток 2.",
+      "source_revision": "1"
+    },
+    {
+      "id": "ORD-20260522061330-2LT0MG",
+      "external_id": "ORD-20260522061330-2LT0MG",
+      "order_number": "ORD-20260522061330-2LT0MG",
+      "created_at": "2026-05-22T06:13:00Z",
+      "organization_name": "ООО «ТДата»",
+      "contact_name": "Осипенко Ирина Викторовна",
+      "representative_name": "Осипенко Ирина Викторовна",
+      "contact_email": "Osipenko833484@mail.ru",
+      "representative_email": "Osipenko833484@mail.ru",
+      "contact_phone": "7 (993) 425-38-46",
+      "representative_phone": "7 (993) 425-38-46",
+      "representative_position": "Слушатель курса",
+      "program_name": "Промпт-инжиниринг",
+      "program_id": "program-prompt-engineering",
+      "cohort": 3,
+      "cohort_id": 3,
+      "amount": 48000.0,
+      "payment_status": "paid",
+      "status": "paid",
+      "comments": "Оплаченная заявка на курс 'Промпт-инжиниринг', Поток 3.",
+      "source_revision": "1"
+    },
+    {
+      "id": "ORD-20260904075403-ZXFSZX",
+      "external_id": "ORD-20260904075403-ZXFSZX",
+      "order_number": "ORD-20260904075403-ZXFSZX",
+      "created_at": "2026-09-04T07:54:00Z",
+      "organization_name": "ООО «РТК ИТ»",
+      "contact_name": "Иванов Михаил Петрович",
+      "representative_name": "Иванов Михаил Петрович",
+      "contact_email": "mp_ivanov@mail.ru",
+      "representative_email": "mp_ivanov@mail.ru",
+      "contact_phone": "7 (992) 458-34-34",
+      "representative_phone": "7 (992) 458-34-34",
+      "representative_position": "Слушатель курса",
+      "program_name": "Python-разработчик с использованием инструментов ИИ",
+      "program_id": "program-python-ai",
+      "cohort": 4,
+      "cohort_id": 4,
+      "amount": 75000.0,
+      "payment_status": "paid",
+      "status": "paid",
+      "comments": "Оплаченная заявка на курс 'Python-разработчик с использованием инструментов ИИ', Поток 4.",
+      "source_revision": "1"
+    }
+  ],
+  "partners": [
+    {
+      "company": "ПАО «Ростелеком»",
+      "products": [
+        "«RT.DataVision»"
+      ],
+      "representative_name": "Кузнецов Дмитрий Сергеевич",
+      "representative_phone": "+7 (922) 333-44-55",
+      "representative_email": "kuznetsov.ds@example.ru",
+      "channel": "Чат в ТГ"
+    },
+    {
+      "company": "ООО «Базис»",
+      "products": [
+        "«Базис Dynamix»"
+      ],
+      "representative_name": "Иванов Иван Иванович",
+      "representative_phone": "+7 (900) 111-22-33",
+      "representative_email": "ivanov.ii@example.ru",
+      "channel": "Почта, Чат в ТГ"
+    },
+    {
+      "company": "ООО «ТДата»",
+      "products": [
+        "«RT.DataLake»",
+        "«RT.Warehouse»"
+      ],
+      "representative_name": "Смирнова Анна Петровна",
+      "representative_phone": "+7 (911) 222-33-44",
+      "representative_email": "smirnova.ap@example.ru",
+      "channel": "Чат в ТГ"
+    },
+    {
+      "company": "ООО «РТК ИТ Плюс»",
+      "products": [
+        "«AKOLA»",
+        "«Яга»"
+      ],
+      "contacts": [
+        {
+          "name": "Попова Мария Владимировна",
+          "phone": "+7 (933) 444-55-66",
+          "email": "popova.mv@example.ru",
+          "product": "«AKOLA»"
+        },
+        {
+          "name": "Соколов Алексей Андреевич",
+          "phone": "+7 (944) 555-66-77",
+          "email": "sokolov.aa@example.ru",
+          "product": "«Яга»"
+        }
+      ]
+    },
+    {
+      "company": "ООО «РТК ИТ»",
+      "products": [
+        "«Web3Gate»",
+        "«Аврора SDK»",
+        "«Нейрошлюз»"
+      ],
+      "contacts": [
+        {
+          "name": "Лебедева Елена Дмитриевна",
+          "phone": "+7 (955) 666-77-88",
+          "email": "lebedeva.ed@example.ru",
+          "product": "«Web3Gate»"
+        },
+        {
+          "name": "Козлов Максим Игоревич",
+          "phone": "+7 (966) 777-88-99",
+          "email": "kozlov.mi@example.ru",
+          "product": "«Аврора SDK»"
+        },
+        {
+          "name": "Новикова Ольга Александровна",
+          "phone": "+7 (977) 888-99-00",
+          "email": "novikova.oa@example.ru",
+          "product": "«Нейрошлюз»"
+        }
+      ]
+    }
+  ],
+  "webhook_simulation_templates": [
+    {
+      "schema_version": "1.0",
+      "source": "website",
+      "entity_type": "application",
+      "external_id": "ORD-20261007999999-NEWAPP",
+      "source_revision": "1",
+      "operation": "upsert",
+      "effective_at": "2026-10-07T14:00:00Z",
+      "payload": {
+        "organization_name": "ПАО «Ростелеком»",
+        "representative_name": "Новый Заявитель",
+        "representative_email": "new.applicant@rt.ru",
+        "representative_phone": "+7 (999) 777-88-99",
+        "representative_position": "Куратор направления",
+        "program_name": "DevOps и облачные технологии",
+        "program_id": "program-devops",
+        "comments": "Входящая заявка на поток слушателей через образовательный портал."
+      }
+    }
+  ]
+}

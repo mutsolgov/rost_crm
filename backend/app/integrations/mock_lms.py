@@ -15,6 +15,7 @@ class MockLMSAdapter(BaseIntegrationAdapter):
     def health_check(self) -> dict[str, Any]:
         return {
             "status": "ok",
+            "connected": True,
             "mode": "mock",
             "source": self.source,
             "endpoint": self.base_url,

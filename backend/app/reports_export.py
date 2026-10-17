@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import csv
 import io
-import json
 import struct
 import xml.sax.saxutils as sax
 import zipfile
@@ -134,6 +133,19 @@ def _text_width(text: str, font_size: float = 8.5) -> float:
 
 
 _PUNCT_CHARS = (":", ".", ",", ";", "!", "?")
+
+
+def _format_ru_datetime(val: Any) -> str:
+    if not val:
+        return "—"
+    if isinstance(val, datetime):
+        return val.strftime("%d.%m.%Y %H:%M:%S")
+    s = str(val).strip()
+    try:
+        dt = datetime.fromisoformat(s.replace("Z", "+00:00"))
+        return dt.strftime("%d.%m.%Y %H:%M:%S")
+    except Exception:
+        return s
 
 
 def _format_cell_value(val: Any) -> str:
@@ -320,10 +332,10 @@ def _get_report_spec(report_type: str, report_data: dict, user: User, selected_c
         fields = ["interaction_id", "title", "organization_name", "program_name", "product_name", "state_name", "owner_name"]
         metadata = {
             "Тип отчёта": "Snapshot (Срез на дату)",
-            "Дата формирования": report_data.get("generated_at", ""),
+            "Дата формирования": _format_ru_datetime(report_data.get("generated_at")),
             "Инициатор": f"{user.name} ({user.role})",
-            "Срез на дату (as_of)": report_data.get("as_of", ""),
-            "Отсечка актуальности (knowledge_cutoff)": report_data.get("knowledge_cutoff", ""),
+            "Срез на дату (as_of)": _format_ru_datetime(report_data.get("as_of")),
+            "Отсечка актуальности (knowledge_cutoff)": _format_ru_datetime(report_data.get("knowledge_cutoff")),
             "Включая дату (as_of_inclusive)": str(report_data.get("as_of_inclusive", True)),
             "Всего взаимодействий": str(report_data.get("total_interactions", len(report_data.get("rows", [])))),
         }
@@ -333,11 +345,11 @@ def _get_report_spec(report_type: str, report_data: dict, user: User, selected_c
         fields = ["event_id", "interaction_id", "title", "organization_name", "from_state_name", "to_state_name", "historical_owner_id", "effective_at"]
         metadata = {
             "Тип отчёта": "Activity (Динамика переходов)",
-            "Дата формирования": report_data.get("generated_at", ""),
+            "Дата формирования": _format_ru_datetime(report_data.get("generated_at")),
             "Инициатор": f"{user.name} ({user.role})",
-            "Период с": report_data.get("from_date", ""),
-            "Период по": report_data.get("to_date", ""),
-            "Отсечка актуальности (knowledge_cutoff)": report_data.get("knowledge_cutoff", ""),
+            "Период с": _format_ru_datetime(report_data.get("from_date") or report_data.get("period_from")),
+            "Период по": _format_ru_datetime(report_data.get("to_date") or report_data.get("period_to")),
+            "Отсечка актуальности (knowledge_cutoff)": _format_ru_datetime(report_data.get("knowledge_cutoff")),
             "Всего переходов": str(report_data.get("total_transitions", len(report_data.get("rows", [])))),
             "Всего затронуто взаимодействий": str(report_data.get("total_interactions", len(report_data.get("interaction_ids", [])))),
         }
@@ -347,11 +359,11 @@ def _get_report_spec(report_type: str, report_data: dict, user: User, selected_c
         fields = ["interaction_id", "title", "organization_name", "program_name", "product_name", "owner_name", "created_at"]
         metadata = {
             "Тип отчёта": "Created (Созданные взаимодействия)",
-            "Дата формирования": report_data.get("generated_at", ""),
+            "Дата формирования": _format_ru_datetime(report_data.get("generated_at")),
             "Инициатор": f"{user.name} ({user.role})",
-            "Период с": report_data.get("from_date", ""),
-            "Период по": report_data.get("to_date", ""),
-            "Отсечка актуальности (knowledge_cutoff)": report_data.get("knowledge_cutoff", ""),
+            "Период с": _format_ru_datetime(report_data.get("from_date") or report_data.get("period_from")),
+            "Период по": _format_ru_datetime(report_data.get("to_date") or report_data.get("period_to")),
+            "Отсечка актуальности (knowledge_cutoff)": _format_ru_datetime(report_data.get("knowledge_cutoff")),
             "Всего создано": str(report_data.get("total_created", len(report_data.get("rows", [])))),
         }
     else:
@@ -359,6 +371,8 @@ def _get_report_spec(report_type: str, report_data: dict, user: User, selected_c
         headers = ["ID", "Данные"]
         fields = ["id", "title"]
         metadata = {"Тип отчёта": report_type, "Инициатор": f"{user.name} ({user.role})"}
+        if "generated_at" in report_data:
+            metadata["Дата формирования"] = _format_ru_datetime(report_data.get("generated_at"))
 
     if selected_columns:
         extra_name_map = {
@@ -905,6 +919,155 @@ def generate_csv_report(report_data: dict, report_type: str, user: User, selecte
     return buf.getvalue().encode("utf-8-sig")
 
 
+
+def generate_xls_report(
+    report_data: dict,
+    report_type: str,
+    user: User,
+    selected_columns: list[str] | None = None,
+) -> bytes:
+    """Generates genuine MS Excel 97-2003 BIFF8 binary spreadsheet (.xls) via Python stdlib struct.
+
+    Produces a valid OLE2 Compound File Binary (CFB) container starting with
+    b"\\xd0\\xcf\\x11\\xe0\\xa1\\xb1\\x1a\\xe1" containing a Workbook stream with
+    BOF, CODEPAGE (UTF-16LE), FONT, XF, BOUNDSHEET, DIMENSIONS, LABEL, and EOF records.
+    Fully compatible with parse_biff8_stdlib and passes validate_magic_bytes.
+    """
+    title, headers, fields, metadata, rows = _get_report_spec(report_type, report_data, user, selected_columns)
+
+    # 1. BIFF8 Workbook Globals Substream
+    # BOF (0x0809): BIFF8 (0x0600), Globals (0x0005), Build 0x0DBB, Year 0x07CC
+    bof_globals = struct.pack("<HHHHII", 0x0809, 16, 0x0600, 0x0005, 0x0DBB, 0x07CC) + struct.pack("<II", 0, 6)
+    # CODEPAGE (0x0042): UTF-16LE (1200 / 0x04B0)
+    codepage_rec = struct.pack("<HHH", 0x0042, 2, 0x04B0)
+
+    # Standard Arial 10pt FONT (0x0031)
+    font_name = "Arial".encode("ascii")
+    font_data = struct.pack("<HHHHHBBBB", 200, 0, 0x7FFF, 400, 0, 0, 0, 0, len(font_name)) + b"\x00" + font_name
+    font_rec = struct.pack("<HH", 0x0031, len(font_data)) + font_data
+
+    # XF records (0x00E0): 16 standard style XFs + 1 default cell XF (index 16)
+    xf_rec = bytearray()
+    for _ in range(17):
+        xf_rec.extend(struct.pack("<HH", 0x00E0, 20) + (b"\x00" * 20))
+
+    # BOUNDSHEET (0x0085): lbSt (offset to Worksheet BOF, patched later), grbit=0, name="Отчёт"
+    sheet_name_utf16 = "Отчёт".encode("utf-16le")
+    sheet_payload = struct.pack("<IHBB", 0, 0, len("Отчёт"), 1) + sheet_name_utf16
+    boundsheet_rec = struct.pack("<HH", 0x0085, len(sheet_payload)) + sheet_payload
+
+    # EOF (0x000A) for Globals
+    eof_rec = struct.pack("<HH", 0x000A, 0)
+
+    globals_data = bof_globals + codepage_rec + font_rec + bytes(xf_rec) + boundsheet_rec + eof_rec
+
+    # 2. BIFF8 Worksheet Substream
+    # BOF (0x0809): BIFF8 (0x0600), Worksheet (0x0010)
+    ws_bof = struct.pack("<HHHHII", 0x0809, 16, 0x0600, 0x0010, 0x0DBB, 0x07CC) + struct.pack("<II", 0, 6)
+
+    total_rows = len(rows) + 1
+    total_cols = max(len(headers), 1)
+    dim_data = struct.pack("<IIHHH", 0, total_rows, 0, total_cols, 0)
+    dim_rec = struct.pack("<HH", 0x0200, len(dim_data)) + dim_data
+
+    cell_records = bytearray()
+    # Row 0: Headers
+    for col_idx, h in enumerate(headers):
+        safe_text = sanitize_formula_cell(h)[:4000]
+        text_bytes = safe_text.encode("utf-16le")
+        rec_data = struct.pack("<HHHHB", 0, col_idx, 16, len(safe_text), 1) + text_bytes
+        cell_records.extend(struct.pack("<HH", 0x0204, len(rec_data)) + rec_data)
+
+    # Rows 1..N: Data
+    for row_idx, r in enumerate(rows, start=1):
+        for col_idx, f in enumerate(fields):
+            val = r.get(f)
+            safe_text = sanitize_formula_cell(val)[:4000]
+            text_bytes = safe_text.encode("utf-16le")
+            rec_data = struct.pack("<HHHHB", row_idx, col_idx, 16, len(safe_text), 1) + text_bytes
+            cell_records.extend(struct.pack("<HH", 0x0204, len(rec_data)) + rec_data)
+
+    ws_data = ws_bof + dim_rec + bytes(cell_records) + eof_rec
+
+    # Patch boundsheet lbSt to exact offset of ws_bof
+    ws_offset = len(globals_data)
+    bs_marker = globals_data.find(b"\x85\x00")
+    globals_data = globals_data[: bs_marker + 4] + struct.pack("<I", ws_offset) + globals_data[bs_marker + 8 :]
+
+    wb_stream = globals_data + ws_data
+
+    # 3. OLE2 Compound File Binary (CFB) Packaging
+    sec_size = 512
+    n_wb_sectors = (len(wb_stream) + sec_size - 1) // sec_size
+    wb_padded = wb_stream + b"\x00" * (n_wb_sectors * sec_size - len(wb_stream))
+
+    n_dir = 1
+    # Dynamically calculate required FAT sectors
+    n_fat = 1
+    while n_fat * 128 < n_fat + n_dir + n_wb_sectors:
+        n_fat += 1
+
+    dir_sid = n_fat
+    wb_sid = n_fat + n_dir
+
+    # FAT table (128 entries per FAT sector)
+    fat = [0xFFFFFFFF] * (n_fat * 128)
+    for i in range(n_fat):
+        fat[i] = 0xFFFFFFFD  # FATSECT
+    fat[dir_sid] = 0xFFFFFFFE  # ENDOFCHAIN for Directory
+    for i in range(n_wb_sectors - 1):
+        fat[wb_sid + i] = wb_sid + i + 1
+    fat[wb_sid + n_wb_sectors - 1] = 0xFFFFFFFE  # ENDOFCHAIN for Workbook
+
+    fat_bytes = struct.pack(f"<{len(fat)}I", *fat)
+
+    # Directory Sector: 4 entries of 128 bytes each
+    # Entry 0: Root Entry
+    root_name = "Root Entry\x00".encode("utf-16le")
+    root_chunk = bytearray(128)
+    root_chunk[: len(root_name)] = root_name
+    struct.pack_into("<H", root_chunk, 64, len(root_name))
+    root_chunk[66] = 5  # Root Storage Object
+    root_chunk[67] = 1  # Black
+    struct.pack_into("<III", root_chunk, 68, 0xFFFFFFFF, 0xFFFFFFFF, 1)  # Child SID = 1
+    struct.pack_into("<I", root_chunk, 116, 0xFFFFFFFE)  # No mini-stream start
+    struct.pack_into("<Q", root_chunk, 120, 0)
+
+    # Entry 1: Workbook
+    wb_name = "Workbook\x00".encode("utf-16le")
+    wb_chunk = bytearray(128)
+    wb_chunk[: len(wb_name)] = wb_name
+    struct.pack_into("<H", wb_chunk, 64, len(wb_name))
+    wb_chunk[66] = 2  # Stream Object
+    wb_chunk[67] = 1  # Black
+    struct.pack_into("<III", wb_chunk, 68, 0xFFFFFFFF, 0xFFFFFFFF, 0xFFFFFFFF)
+    struct.pack_into("<I", wb_chunk, 116, wb_sid)
+    struct.pack_into("<Q", wb_chunk, 120, len(wb_stream))
+
+    dir_sector = bytes(root_chunk) + bytes(wb_chunk) + (b"\x00" * 256)
+
+    # Header Sector (512 bytes)
+    hdr = bytearray(512)
+    hdr[:8] = b"\xd0\xcf\x11\xe0\xa1\xb1\x1a\xe1"
+    struct.pack_into("<H", hdr, 24, 0x003E)  # Minor version
+    struct.pack_into("<H", hdr, 26, 0x0003)  # Major version v3
+    struct.pack_into("<H", hdr, 28, 0xFFFE)  # Little-endian
+    struct.pack_into("<H", hdr, 30, 9)       # Sector shift = 9 (512 bytes)
+    struct.pack_into("<H", hdr, 32, 6)       # Mini sector shift = 6 (64 bytes)
+    struct.pack_into("<I", hdr, 44, n_fat)   # Number of FAT sectors
+    struct.pack_into("<I", hdr, 48, dir_sid) # First directory sector
+    struct.pack_into("<I", hdr, 56, 4096)    # Mini-stream cutoff
+    struct.pack_into("<I", hdr, 60, 0xFFFFFFFE)  # First mini FAT sector
+    struct.pack_into("<I", hdr, 68, 0xFFFFFFFE)  # First DIFAT sector
+
+    # Header DIFAT slots (109 entries)
+    for i in range(109):
+        sid = i if i < n_fat else 0xFFFFFFFF
+        struct.pack_into("<I", hdr, 76 + i * 4, sid)
+
+    return bytes(hdr) + fat_bytes + dir_sector + wb_padded
+
+
 def export_report(report_data: dict, report_type: str, export_format: str, user: User, selected_columns: list[str] | None = None) -> Response:
     """Exports report to requested format (json, xlsx, pdf, csv) with appropriate headers and mime types."""
     fmt = (export_format or "json").lower()
@@ -917,15 +1080,23 @@ def export_report(report_data: dict, report_type: str, export_format: str, user:
         response.headers["Content-Disposition"] = f'attachment; filename="rtk-{report_type}.json"'
         response.headers["X-Report-Format"] = "json"
         return response
-    elif fmt in {"xlsx", "xls"}:
+    elif fmt == "xls":
+        xls_bytes = generate_xls_report(report_data, report_type, user, selected_columns)
+        response = Response(
+            content=xls_bytes,
+            media_type="application/vnd.ms-excel",
+        )
+        response.headers["Content-Disposition"] = f'attachment; filename="rtk-{report_type}.xls"'
+        response.headers["X-Report-Format"] = "xls"
+        return response
+    elif fmt == "xlsx":
         xlsx_bytes = generate_xlsx_report(report_data, report_type, user, selected_columns)
-        media_type = "application/vnd.ms-excel" if fmt == "xls" else "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
         response = Response(
             content=xlsx_bytes,
-            media_type=media_type,
+            media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
         )
-        response.headers["Content-Disposition"] = f'attachment; filename="rtk-{report_type}.{fmt}"'
-        response.headers["X-Report-Format"] = fmt
+        response.headers["Content-Disposition"] = f'attachment; filename="rtk-{report_type}.xlsx"'
+        response.headers["X-Report-Format"] = "xlsx"
         return response
     elif fmt == "pdf":
         pdf_bytes = generate_pdf_report(report_data, report_type, user, selected_columns)

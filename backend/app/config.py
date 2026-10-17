@@ -1,4 +1,5 @@
 import os
+import urllib.parse
 from dataclasses import dataclass
 from functools import lru_cache
 
@@ -42,11 +43,25 @@ class Settings:
             raise RuntimeError("LMS_INTEGRATION_MODE must be mock or live")
         if self.website_integration_mode not in {"mock", "live"}:
             raise RuntimeError("WEBSITE_INTEGRATION_MODE must be mock or live")
+        if self.app_env == "production":
+            if self.lms_webhook_secret == "rtk-lms-webhook-secret":
+                raise RuntimeError("Default lms_webhook_secret is forbidden in production")
+            if self.website_webhook_secret == "rtk-website-webhook-secret":
+                raise RuntimeError("Default website_webhook_secret is forbidden in production")
+            if self.webhook_secret == "rtk-default-webhook-secret":
+                raise RuntimeError("Default webhook_secret is forbidden in production")
+            try:
+                parsed_db = urllib.parse.urlparse(self.database_url)
+                db_password = parsed_db.password or ""
+            except Exception:
+                db_password = ""
+            if ":rtk@" in self.database_url or db_password == "rtk":
+                raise RuntimeError("Default database password is forbidden in production")
 
 
 @lru_cache
 def get_settings() -> Settings:
-    env = os.getenv("APP_ENV", "production")
+    env = os.getenv("APP_ENV", "development")
     mode = os.getenv("AUTH_MODE", "oidc")
     if mode not in {"demo", "oidc"}:
         raise RuntimeError("AUTH_MODE must be oidc or demo")

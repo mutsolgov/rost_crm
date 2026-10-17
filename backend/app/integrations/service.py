@@ -7,12 +7,14 @@ from typing import Any
 from uuid import uuid4
 
 from sqlalchemy import func, or_, select, update
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 from sqlalchemy.orm.attributes import flag_modified
 
 from ..config import Settings, get_settings
 from ..errors import APIError
 from ..models import (
+    Direction,
     IntegrationInbox,
     Interaction,
     LearningMetric,
@@ -72,8 +74,132 @@ def get_integrations_status(
     )
     total_metrics = db.scalar(select(func.count(LearningMetric.id))) or 0
 
-    last_received = db.scalar(select(func.max(IntegrationInbox.received_at)))
+    # R3: Separated sync timestamps excluding sync_error and error status
+    last_lms = db.scalar(
+        select(func.max(IntegrationInbox.received_at)).where(
+            IntegrationInbox.source == "lms",
+            IntegrationInbox.entity_type != "sync_error",
+            IntegrationInbox.status != "error",
+        )
+    )
+    last_synced_lms = iso(last_lms) if last_lms else None
+
+    last_website = db.scalar(
+        select(func.max(IntegrationInbox.received_at)).where(
+            IntegrationInbox.source == "website",
+            IntegrationInbox.entity_type != "sync_error",
+            IntegrationInbox.status != "error",
+        )
+    )
+    last_synced_website = iso(last_website) if last_website else None
+
+    last_received = db.scalar(
+        select(func.max(IntegrationInbox.received_at)).where(
+            IntegrationInbox.entity_type != "sync_error",
+            IntegrationInbox.status != "error",
+        )
+    )
     last_synced_at = iso(last_received) if last_received else None
+
+    # R3: Total actual website applications (source == "website", entity_type != "sync_error")
+    total_applications = (
+        db.scalar(
+            select(func.count(IntegrationInbox.id)).where(
+                IntegrationInbox.source == "website",
+                IntegrationInbox.entity_type != "sync_error",
+            )
+        )
+        or 0
+    )
+
+    # R3: Total exchange errors (entity_type == "sync_error" or status == "error")
+    total_errors = (
+        db.scalar(
+            select(func.count(IntegrationInbox.id)).where(
+                or_(
+                    IntegrationInbox.entity_type == "sync_error",
+                    IntegrationInbox.status == "error",
+                )
+            )
+        )
+        or 0
+    )
+
+    # R2: Website-specific counters (source == "website", entity_type != "sync_error", status != "error")
+    website_pending = (
+        db.scalar(
+            select(func.count(IntegrationInbox.id)).where(
+                IntegrationInbox.source == "website",
+                IntegrationInbox.entity_type != "sync_error",
+                IntegrationInbox.status != "error",
+                IntegrationInbox.status == "pending",
+            )
+        )
+        or 0
+    )
+    website_processed = (
+        db.scalar(
+            select(func.count(IntegrationInbox.id)).where(
+                IntegrationInbox.source == "website",
+                IntegrationInbox.entity_type != "sync_error",
+                IntegrationInbox.status != "error",
+                IntegrationInbox.status == "processed",
+            )
+        )
+        or 0
+    )
+    website_rejected = (
+        db.scalar(
+            select(func.count(IntegrationInbox.id)).where(
+                IntegrationInbox.source == "website",
+                IntegrationInbox.entity_type != "sync_error",
+                IntegrationInbox.status != "error",
+                IntegrationInbox.status == "rejected",
+            )
+        )
+        or 0
+    )
+
+    # R2: Reconciliation queue counters (entity_type.not_in(["learning_metric", "sync_error"]), status != "error")
+    reconcile_total = (
+        db.scalar(
+            select(func.count(IntegrationInbox.id)).where(
+                IntegrationInbox.entity_type.not_in(["learning_metric", "sync_error"]),
+                IntegrationInbox.status != "error",
+            )
+        )
+        or 0
+    )
+    reconcile_pending = (
+        db.scalar(
+            select(func.count(IntegrationInbox.id)).where(
+                IntegrationInbox.entity_type.not_in(["learning_metric", "sync_error"]),
+                IntegrationInbox.status != "error",
+                IntegrationInbox.status == "pending",
+            )
+        )
+        or 0
+    )
+    reconcile_processed = (
+        db.scalar(
+            select(func.count(IntegrationInbox.id)).where(
+                IntegrationInbox.entity_type.not_in(["learning_metric", "sync_error"]),
+                IntegrationInbox.status != "error",
+                IntegrationInbox.status == "processed",
+            )
+        )
+        or 0
+    )
+    reconcile_rejected = (
+        db.scalar(
+            select(func.count(IntegrationInbox.id)).where(
+                IntegrationInbox.entity_type.not_in(["learning_metric", "sync_error"]),
+                IntegrationInbox.status != "error",
+                IntegrationInbox.status == "rejected",
+            )
+        )
+        or 0
+    )
 
     return {
         "adapters": [lms_health, website_health],
@@ -87,7 +213,18 @@ def get_integrations_status(
         "total_quarantined": total_quarantined,
         "total_rejected": total_rejected,
         "total_metrics": total_metrics,
+        "total_applications": total_applications,
+        "total_errors": total_errors,
+        "website_pending": website_pending,
+        "website_processed": website_processed,
+        "website_rejected": website_rejected,
+        "reconcile_total": reconcile_total,
+        "reconcile_pending": reconcile_pending,
+        "reconcile_processed": reconcile_processed,
+        "reconcile_rejected": reconcile_rejected,
         "last_synced_at": last_synced_at,
+        "last_synced_lms": last_synced_lms,
+        "last_synced_website": last_synced_website,
     }
 
 
@@ -116,158 +253,170 @@ def ingest_envelopes(db: Session, envelopes: list[NormalizedEnvelope]) -> dict[s
             )
         )
         if existing:
+            existing.received_at = aware(env.received_at) if hasattr(env, "received_at") and env.received_at else utcnow()
+            db.flush()
             skipped_count += 1
             continue
 
-        item = IntegrationInbox(
-            id=new_id(),
-            source=env.source,
-            entity_type=env.entity_type,
-            external_id=env.external_id,
-            source_revision=env.source_revision,
-            payload=env.payload,
-            status="pending",
-            received_at=aware(env.received_at) if hasattr(env, "received_at") and env.received_at else utcnow(),
-        )
-        db.add(item)
-
-        if env.entity_type == "learning_metric":
-            org_id = env.payload.get("organization_id")
-            prog_id = env.payload.get("program_id")
-            org = db.get(Organization, org_id) if org_id else None
-            if not org and env.payload.get("organization_name"):
-                org = db.scalar(select(Organization).where(Organization.name == env.payload["organization_name"]))
-            prog = db.get(Program, prog_id) if prog_id else None
-            if not prog and env.payload.get("program_name"):
-                prog = db.scalar(select(Program).where(Program.name == env.payload["program_name"]))
-
-            if org and prog:
-                as_of_val = env.payload.get("as_of")
-                if isinstance(as_of_val, str):
-                    try:
-                        as_of_dt = aware(datetime.fromisoformat(as_of_val))
-                    except Exception:
-                        as_of_dt = utcnow()
-                elif isinstance(as_of_val, datetime):
-                    as_of_dt = aware(as_of_val)
-                else:
-                    as_of_dt = aware(env.effective_at) if hasattr(env, "effective_at") and env.effective_at else utcnow()
-
-                metric_code = env.payload.get("metric_code", "")
-                raw_val = env.payload.get("value")
-                try:
-                    val = float(raw_val) if raw_val is not None else 0.0
-                    if not math.isfinite(val):
-                        val = 0.0
-                except (ValueError, TypeError):
-                    val = 0.0
-                unit = str(env.payload.get("unit", ""))
-
-                metric = db.scalar(
-                    select(LearningMetric).where(
-                        LearningMetric.source == env.source,
-                        LearningMetric.external_id == env.external_id,
-                    )
+        try:
+            with db.begin_nested():
+                item = IntegrationInbox(
+                    id=new_id(),
+                    source=env.source,
+                    entity_type=env.entity_type,
+                    external_id=env.external_id,
+                    source_revision=env.source_revision,
+                    payload=env.payload,
+                    status="pending",
+                    received_at=aware(env.received_at) if hasattr(env, "received_at") and env.received_at else utcnow(),
                 )
-                if metric:
-                    applied_inboxes = list(
-                        db.scalars(
-                            select(IntegrationInbox)
-                            .where(
-                                IntegrationInbox.source == env.source,
-                                IntegrationInbox.entity_type == "learning_metric",
-                                IntegrationInbox.external_id == env.external_id,
-                                IntegrationInbox.status == "processed",
-                                IntegrationInbox.error_message.is_(None),
-                                IntegrationInbox.id != item.id,
+                db.add(item)
+
+                if env.entity_type == "learning_metric":
+                    org_id = env.payload.get("organization_id")
+                    prog_id = env.payload.get("program_id")
+                    org = db.get(Organization, org_id) if org_id else None
+                    if not org and env.payload.get("organization_name"):
+                        org = db.scalar(select(Organization).where(Organization.name == env.payload["organization_name"]))
+                    prog = db.get(Program, prog_id) if prog_id else None
+                    if not prog and env.payload.get("program_name"):
+                        prog = db.scalar(select(Program).where(Program.name == env.payload["program_name"]))
+
+                    if org and prog:
+                        as_of_val = env.payload.get("as_of")
+                        if isinstance(as_of_val, str):
+                            try:
+                                as_of_dt = aware(datetime.fromisoformat(as_of_val))
+                            except Exception:
+                                as_of_dt = utcnow()
+                        elif isinstance(as_of_val, datetime):
+                            as_of_dt = aware(as_of_val)
+                        else:
+                            as_of_dt = aware(env.effective_at) if hasattr(env, "effective_at") and env.effective_at else utcnow()
+
+                        metric_code = env.payload.get("metric_code", "")
+                        raw_val = env.payload.get("value")
+                        try:
+                            val = float(raw_val) if raw_val is not None else 0.0
+                            if not math.isfinite(val):
+                                val = 0.0
+                        except (ValueError, TypeError):
+                            val = 0.0
+                        unit = str(env.payload.get("unit", ""))
+
+                        metric = db.scalar(
+                            select(LearningMetric).where(
+                                LearningMetric.source == env.source,
+                                LearningMetric.external_id == env.external_id,
                             )
                         )
-                    )
-                    prev_inbox = None
-                    for prev in applied_inboxes:
-                        if prev_inbox is None or _is_revision_older(prev_inbox.source_revision, prev.source_revision):
-                            prev_inbox = prev
+                        if metric:
+                            applied_inboxes = list(
+                                db.scalars(
+                                    select(IntegrationInbox)
+                                    .where(
+                                        IntegrationInbox.source == env.source,
+                                        IntegrationInbox.entity_type == "learning_metric",
+                                        IntegrationInbox.external_id == env.external_id,
+                                        IntegrationInbox.status == "processed",
+                                        IntegrationInbox.error_message.is_(None),
+                                        IntegrationInbox.id != item.id,
+                                    )
+                                )
+                            )
+                            prev_inbox = None
+                            for prev in applied_inboxes:
+                                if prev_inbox is None or _is_revision_older(prev_inbox.source_revision, prev.source_revision):
+                                    prev_inbox = prev
 
-                    if prev_inbox and _is_revision_older(env.source_revision, prev_inbox.source_revision):
-                        item.status = "skipped"
+                            if prev_inbox and _is_revision_older(env.source_revision, prev_inbox.source_revision):
+                                item.status = "skipped"
+                                item.matched_organization_id = org.id
+                                item.processed_at = utcnow()
+                                item.error_message = (
+                                    f"Skipped: envelope source_revision {env.source_revision} older than existing revision {prev_inbox.source_revision}"
+                                )
+                                db.flush()
+                                skipped_count += 1
+                                continue
+
+                            db.execute(
+                                update(LearningMetric)
+                                .where(
+                                    LearningMetric.id == metric.id,
+                                    or_(
+                                        LearningMetric.last_applied_revision.is_(None),
+                                        LearningMetric.last_applied_revision == metric.last_applied_revision,
+                                    ),
+                                )
+                                .values(
+                                    organization_id=org.id,
+                                    program_id=prog.id,
+                                    metric_code=metric_code,
+                                    value=val,
+                                    unit=unit,
+                                    as_of=as_of_dt,
+                                    last_applied_revision=str(env.source_revision),
+                                )
+                            )
+                            metric.last_applied_revision = str(env.source_revision)
+                        else:
+                            metric = LearningMetric(
+                                id=new_id(),
+                                organization_id=org.id,
+                                program_id=prog.id,
+                                metric_code=metric_code,
+                                value=val,
+                                unit=unit,
+                                as_of=as_of_dt,
+                                source=env.source,
+                                external_id=env.external_id,
+                                last_applied_revision=str(env.source_revision),
+                                created_at=utcnow(),
+                            )
+                            db.add(metric)
+                        item.status = "processed"
                         item.matched_organization_id = org.id
                         item.processed_at = utcnow()
-                        item.error_message = (
-                            f"Skipped: envelope source_revision {env.source_revision} older than existing revision {prev_inbox.source_revision}"
-                        )
-                        skipped_count += 1
-                        continue
+                        db.flush()
+                        processed_count += 1
+                    else:
+                        item.status = "quarantined"
+                        item.error_message = f"Организация ({org_id}) или программа ({prog_id}) не найдена в системе"
+                        db.flush()
+                        quarantined_count += 1
 
-                    res = db.execute(
-                        update(LearningMetric)
-                        .where(
-                            LearningMetric.id == metric.id,
-                            or_(
-                                LearningMetric.last_applied_revision.is_(None),
-                                LearningMetric.last_applied_revision == metric.last_applied_revision,
-                            ),
+                elif env.entity_type == "application":
+                    org_name = (env.payload.get("organization_name") or "").strip()
+                    if org_name:
+                        matched_org = db.scalar(
+                            select(Organization).where(func.lower(Organization.name) == org_name.lower())
                         )
-                        .values(
-                            organization_id=org.id,
-                            program_id=prog.id,
-                            metric_code=metric_code,
-                            value=val,
-                            unit=unit,
-                            as_of=as_of_dt,
-                            last_applied_revision=str(env.source_revision),
-                        )
-                    )
-                    metric.last_applied_revision = str(env.source_revision)
+                        if not matched_org:
+                            matches = list(db.scalars(
+                                select(Organization).where(Organization.name.ilike(f"%{org_name}%"))
+                            ))
+                            if len(matches) == 1:
+                                matched_org = matches[0]
+                            elif not matches:
+                                all_orgs = list(db.scalars(select(Organization)))
+                                sub_matches = [o for o in all_orgs if o.name.lower() in org_name.lower()]
+                                if len(sub_matches) == 1:
+                                    matched_org = sub_matches[0]
+
+                        if matched_org:
+                            item.matched_organization_id = matched_org.id
+                    item.status = "pending"
+                    db.flush()
+                    pending_count += 1
                 else:
-                    metric = LearningMetric(
-                        id=new_id(),
-                        organization_id=org.id,
-                        program_id=prog.id,
-                        metric_code=metric_code,
-                        value=val,
-                        unit=unit,
-                        as_of=as_of_dt,
-                        source=env.source,
-                        external_id=env.external_id,
-                        last_applied_revision=str(env.source_revision),
-                        created_at=utcnow(),
-                    )
-                    db.add(metric)
-                item.status = "processed"
-                item.matched_organization_id = org.id
-                item.processed_at = utcnow()
-                processed_count += 1
-            else:
-                item.status = "quarantined"
-                item.error_message = f"Организация ({org_id}) или программа ({prog_id}) не найдена в системе"
-                quarantined_count += 1
-
-        elif env.entity_type == "application":
-            org_name = (env.payload.get("organization_name") or "").strip()
-            if org_name:
-                matched_org = db.scalar(
-                    select(Organization).where(func.lower(Organization.name) == org_name.lower())
-                )
-                if not matched_org:
-                    matches = list(db.scalars(
-                        select(Organization).where(Organization.name.ilike(f"%{org_name}%"))
-                    ))
-                    if len(matches) == 1:
-                        matched_org = matches[0]
-                    elif not matches:
-                        all_orgs = list(db.scalars(select(Organization)))
-                        sub_matches = [o for o in all_orgs if o.name.lower() in org_name.lower()]
-                        if len(sub_matches) == 1:
-                            matched_org = sub_matches[0]
-
-                if matched_org:
-                    item.matched_organization_id = matched_org.id
-            item.status = "pending"
-            pending_count += 1
-        else:
-            item.status = "processed"
-            item.processed_at = utcnow()
-            processed_count += 1
+                    item.status = "processed"
+                    item.processed_at = utcnow()
+                    db.flush()
+                    processed_count += 1
+        except IntegrityError:
+            skipped_count += 1
+            continue
 
     return {
         "received_count": received_count,
@@ -344,6 +493,16 @@ def sync_source(
     skipped_count = counts["skipped_count"]
     quarantined_count = counts["quarantined_count"]
 
+    msg = (
+        f"Синхронизация '{src}' завершена: получено {received_count}, обработано {processed_count}, "
+        f"ожидает сверки {pending_count}, пропущено дубликатов {skipped_count}."
+    )
+    if received_count > 0 and processed_count == 0 and pending_count == 0 and skipped_count == received_count:
+        if src == "lms":
+            msg += " Все учебные метрики в витрине ниже уже актуальны."
+        elif src == "website":
+            msg += " Все заявки с сайта уже загружены в очередь сверки ниже."
+
     result = {
         "source": src,
         "received_count": received_count,
@@ -351,10 +510,7 @@ def sync_source(
         "pending_count": pending_count,
         "skipped_count": skipped_count,
         "quarantined_count": quarantined_count,
-        "message": (
-            f"Синхронизация '{src}' завершена: получено {received_count}, обработано {processed_count}, "
-            f"ожидает сверки {pending_count}, пропущено дубликатов {skipped_count}."
-        ),
+        "message": msg,
     }
 
     if idempotency_key and saved:
@@ -505,7 +661,14 @@ def process_webhook(db: Session, source: str, raw_payload: Any) -> dict[str, Any
     src = (source or "").strip().lower()
     envelopes = normalize_webhook_payload(src, raw_payload)
     counts = ingest_envelopes(db, envelopes)
-    db.commit()
+    try:
+        db.commit()
+    except IntegrityError:
+        db.rollback()
+        counts["skipped_count"] += counts["processed_count"] + counts["pending_count"] + counts["quarantined_count"]
+        counts["processed_count"] = 0
+        counts["pending_count"] = 0
+        counts["quarantined_count"] = 0
 
     processed_total = counts["processed_count"] + counts["pending_count"] + counts["quarantined_count"]
     return {
@@ -530,6 +693,7 @@ def list_inbox_items(
     status: str | None = None,
     page: int = 1,
     page_size: int = 20,
+    exclude_technical: bool = False,
 ) -> dict[str, Any]:
     require_permission(user, "integrations.manage")
 
@@ -538,6 +702,11 @@ def list_inbox_items(
         query = query.where(IntegrationInbox.source == source.strip().lower())
     if status:
         query = query.where(IntegrationInbox.status == status.strip().lower())
+    if exclude_technical:
+        query = query.where(
+            IntegrationInbox.entity_type.not_in(["learning_metric", "sync_error"]),
+            IntegrationInbox.status != "error",
+        )
 
     total = db.scalar(select(func.count()).select_from(query.subquery())) or 0
 
@@ -877,6 +1046,16 @@ def get_learning_metrics_summary(
             }
         query = query.where(LearningMetric.organization_id == organization_id)
     else:
+        if not allowed_orgs:
+            return {
+                "total_cohorts": 0,
+                "total_enrolled": 0,
+                "total_completed": 0,
+                "avg_attendance_rate": 0.0,
+                "by_program": [],
+                "by_organization": [],
+                "metrics": [],
+            }
         query = query.where(LearningMetric.organization_id.in_(allowed_orgs))
 
     if program_id:
@@ -991,6 +1170,51 @@ def get_learning_metrics_summary(
     }
 
 
+def _get_or_create_lms_pool(db: Session) -> tuple[Organization, Program]:
+    pool_org = db.scalar(select(Organization).where(Organization.name == "ИТ Школа Ростелекома (Пул заявок)"))
+    if not pool_org:
+        pool_org = db.get(Organization, "org-lms-pool")
+    if not pool_org:
+        pool_org = Organization(
+            id="org-lms-pool",
+            name="ИТ Школа Ростелекома (Пул заявок)",
+            type="school",
+        )
+        db.add(pool_org)
+        db.flush()
+    elif pool_org.name != "ИТ Школа Ростелекома (Пул заявок)":
+        pool_org.name = "ИТ Школа Ростелекома (Пул заявок)"
+        db.flush()
+
+    pool_prog = db.scalar(select(Program).where(Program.name == "Общий пул программ LMS"))
+    if not pool_prog:
+        pool_prog = db.get(Program, "program-lms-pool")
+    if not pool_prog:
+        direction = (
+            db.scalar(select(Direction).where(Direction.name.ilike("%Общие%")))
+            or db.scalar(select(Direction).where(Direction.name.ilike("%Цифровые%")))
+            or db.scalar(select(Direction))
+        )
+        if not direction:
+            direction = db.get(Direction, "direction-digital")
+        if not direction:
+            direction = Direction(id="direction-digital", name="Цифровые технологии")
+            db.add(direction)
+            db.flush()
+        pool_prog = Program(
+            id="program-lms-pool",
+            name="Общий пул программ LMS",
+            direction_id=direction.id,
+        )
+        db.add(pool_prog)
+        db.flush()
+    elif pool_prog.name != "Общий пул программ LMS":
+        pool_prog.name = "Общий пул программ LMS"
+        db.flush()
+
+    return pool_org, pool_prog
+
+
 def process_lms_payments_json(
     db: Session,
     user: User,
@@ -998,6 +1222,8 @@ def process_lms_payments_json(
 ) -> dict[str, Any]:
     if user.role not in ("supervisor", "administrator", "admin"):
         raise APIError("FORBIDDEN", "Доступ к загрузке выгрузок LMS разрешен только ролям supervisor и administrator.", 403)
+
+    pool_org, pool_prog = _get_or_create_lms_pool(db)
 
     raw_items = []
     if isinstance(data, list):
@@ -1032,6 +1258,16 @@ def process_lms_payments_json(
             )
         )
     )
+    learners_by_email: dict[str, IntegrationInbox] = {}
+    learners_by_phone: dict[str, IntegrationInbox] = {}
+    for l_inbox in existing_learners:
+        l_payload = l_inbox.payload or {}
+        l_email = str(l_payload.get("email") or l_inbox.external_id or "").strip().lower()
+        if l_email:
+            learners_by_email[l_email] = l_inbox
+        l_phone_digits = "".join(filter(str.isdigit, str(l_payload.get("phone") or "")))
+        if len(l_phone_digits) >= 10:
+            learners_by_phone[l_phone_digits[-10:]] = l_inbox
 
     for item in valid_items:
         raw_ext_id = (
@@ -1044,7 +1280,15 @@ def process_lms_payments_json(
             )
         )
         ext_id = str(raw_ext_id).strip() if raw_ext_id is not None and str(raw_ext_id).strip() else uuid4().hex
-        course_name = str(item.get("Курс") or item.get("course") or item.get("program") or "").strip()
+        course_name = str(
+            item.get("Курс")
+            or item.get("course")
+            or item.get("program")
+            or item.get("program_name")
+            or item.get("course_name")
+            or item.get("program_id")
+            or ""
+        ).strip()
         raw_cohort = (
             item.get("Номер потока")
             if item.get("Номер потока") is not None
@@ -1070,28 +1314,58 @@ def process_lms_payments_json(
 
         prog = None
         if course_name:
-            prog = db.scalar(select(Program).where(func.lower(Program.name) == course_name.lower()))
+            c_norm = course_name.strip().lower()
+            all_progs = list(db.scalars(select(Program)).all())
+            for p in all_progs:
+                p_norm = p.name.strip().lower()
+                if p_norm == c_norm or p.id.lower() == c_norm:
+                    prog = p
+                    break
             if not prog:
-                prog = db.scalar(select(Program).where(func.lower(Program.name).contains(course_name.lower())))
+                for p in all_progs:
+                    p_norm = p.name.strip().lower()
+                    pid_norm = p.id.strip().lower()
+                    if (len(c_norm) >= 3 and (c_norm in p_norm or c_norm in pid_norm)) or (len(p_norm) >= 3 and p_norm in c_norm):
+                        prog = p
+                        break
             if not prog:
                 prog = db.get(Program, course_name)
+            if not prog:
+                default_dir = (
+                    db.scalar(select(Direction).where(Direction.name.ilike("%Общие%")))
+                    or db.scalar(select(Direction).where(Direction.name.ilike("%Цифровые%")))
+                    or db.scalar(select(Direction))
+                )
+                if default_dir:
+                    prog_id_cand = course_name if course_name.startswith("prog-") else f"prog-auto-{uuid4().hex[:8]}"
+                    prog = Program(
+                        id=prog_id_cand,
+                        name=course_name,
+                        direction_id=default_dir.id,
+                    )
+                    db.add(prog)
+                    db.flush()
         if not prog:
-            prog = db.scalar(select(Program))
+            prog = pool_prog
 
         org = None
         org_name = str(item.get("Организация") or item.get("Вуз") or item.get("organization") or "").strip()
         if org_name:
-            org = db.scalar(select(Organization).where(func.lower(Organization.name) == org_name.lower()))
-        if not org and prog:
+            o_norm = org_name.strip().lower().strip("\"'«»")
+            for o in db.scalars(select(Organization)).all():
+                if o.name.strip().lower().strip("\"'«»") == o_norm or (o.id and o.id.lower() == o_norm):
+                    org = o
+                    break
+        if not org and prog and prog.id != pool_prog.id:
             org = db.scalar(select(Organization).join(Interaction).where(Interaction.program_id == prog.id))
         if not org:
-            org = db.scalar(select(Organization))
+            org = pool_org
 
         payload = {
             **item,
             "order_id": ext_id,
             "external_id": ext_id,
-            "course": course_name,
+            "course": course_name or prog.name,
             "cohort": cohort,
             "last_name": last_name,
             "first_name": first_name,
@@ -1099,45 +1373,46 @@ def process_lms_payments_json(
             "representative_name": full_name or "—",
             "representative_email": email or None,
             "representative_phone": phone or None,
-            "organization_name": org_name or (org.name if org else "—"),
-            "program_name": prog.name if prog else (course_name or "Не указана"),
-            "matched_program_id": prog.id if prog else None,
-            "matched_program_name": prog.name if prog else None,
-            "matched_organization_id": org.id if org else None,
-            "matched_organization_name": org.name if org else None,
+            "organization_name": org_name or org.name,
+            "program_name": prog.name,
+            "matched_program_id": prog.id,
+            "matched_program_name": prog.name,
+            "matched_organization_id": org.id,
+            "matched_organization_name": org.name,
         }
 
-        # Bidirectional enrichment with existing LMS learners
-        for l_inbox in existing_learners:
+        # Bidirectional enrichment with existing LMS learners (O(1) hash lookup)
+        matched_l_inbox = None
+        if email and email.lower() in learners_by_email:
+            matched_l_inbox = learners_by_email[email.lower()]
+        else:
+            item_phone_digits = "".join(filter(str.isdigit, str(phone or "")))
+            if len(item_phone_digits) >= 10 and item_phone_digits[-10:] in learners_by_phone:
+                matched_l_inbox = learners_by_phone[item_phone_digits[-10:]]
+
+        if matched_l_inbox:
+            l_inbox = matched_l_inbox
             l_payload = l_inbox.payload or {}
             l_email = str(l_payload.get("email") or l_inbox.external_id or "").strip().lower()
-            l_phone_digits = "".join(filter(str.isdigit, str(l_payload.get("phone") or "")))
-            item_phone_digits = "".join(filter(str.isdigit, str(phone or "")))
+            payload["linked_learner_id"] = l_inbox.external_id
+            payload["linked_learner_email"] = l_email or email
+            payload["has_questionnaire"] = True
+            payload["questionnaire_status"] = "completed"
+            for k in ("snils", "passport_series", "passport_number", "passport_issued_by", "passport_issued_date", "education", "diploma_university"):
+                if l_payload.get(k):
+                    payload[k] = l_payload[k]
 
-            email_match = bool(email and l_email and email.lower() == l_email)
-            phone_match = bool(item_phone_digits and l_phone_digits and len(item_phone_digits) >= 10 and len(l_phone_digits) >= 10 and item_phone_digits[-10:] == l_phone_digits[-10:])
-
-            if email_match or phone_match:
-                payload["linked_learner_id"] = l_inbox.external_id
-                payload["linked_learner_email"] = l_email or email
-                payload["has_questionnaire"] = True
-                payload["questionnaire_status"] = "completed"
-                for k in ("snils", "passport_series", "passport_number", "passport_issued_by", "passport_issued_date", "education", "diploma_university"):
-                    if l_payload.get(k):
-                        payload[k] = l_payload[k]
-
-                l_payload_updated = dict(l_payload)
-                l_payload_updated["linked_order_id"] = ext_id
-                l_payload_updated["course_name"] = course_name
-                l_payload_updated["cohort"] = cohort
-                l_payload_updated["payment_status"] = "paid" if is_item_paid else "pending"
-                if prog:
-                    l_payload_updated["matched_program_id"] = prog.id
-                if org and not l_inbox.matched_organization_id:
-                    l_inbox.matched_organization_id = org.id
-                l_inbox.payload = l_payload_updated
-                flag_modified(l_inbox, "payload")
-                break
+            l_payload_updated = dict(l_payload)
+            l_payload_updated["linked_order_id"] = ext_id
+            l_payload_updated["course_name"] = course_name
+            l_payload_updated["cohort"] = cohort
+            l_payload_updated["payment_status"] = "paid" if is_item_paid else "pending"
+            if prog:
+                l_payload_updated["matched_program_id"] = prog.id
+            if org and not l_inbox.matched_organization_id:
+                l_inbox.matched_organization_id = org.id
+            l_inbox.payload = l_payload_updated
+            flag_modified(l_inbox, "payload")
 
         existing_inbox = db.scalar(
             select(IntegrationInbox).where(
@@ -1156,7 +1431,7 @@ def process_lms_payments_json(
                 source_revision=cohort,
                 payload=payload,
                 status="pending",
-                matched_organization_id=org.id if org else None,
+                matched_organization_id=org.id,
                 received_at=utcnow(),
             )
             db.add(inbox_rec)
@@ -1169,16 +1444,20 @@ def process_lms_payments_json(
 
         processed_count += 1
 
-        prog_key = prog.id if prog else "default"
+        prog_key = prog.id
         if prog_key not in by_prog_items:
             by_prog_items[prog_key] = []
         by_prog_items[prog_key].append(item)
 
     for prog_id, p_items in by_prog_items.items():
-        prog = db.get(Program, prog_id) if prog_id != "default" else db.scalar(select(Program))
+        if not prog_id:
+            continue
+        prog = db.get(Program, prog_id)
         if not prog:
             continue
-        org = db.scalar(select(Organization).join(Interaction).where(Interaction.program_id == prog.id)) or db.scalar(select(Organization))
+        org = db.scalar(select(Organization).join(Interaction).where(Interaction.program_id == prog.id))
+        if not org:
+            org = pool_org
         if not org:
             continue
 
@@ -1293,6 +1572,16 @@ def process_lms_payments_json(
                 except (ValueError, TypeError):
                     pass
 
+    legacy_batch_metrics = db.scalars(
+        select(LearningMetric).where(
+            LearningMetric.source == "lms",
+            LearningMetric.external_id.in_(["lms-app-batch-total", "lms-pay-batch-total"]),
+        )
+    ).all()
+    for bm in legacy_batch_metrics:
+        db.delete(bm)
+
+    db.flush()
     db.commit()
 
     return {
@@ -1420,6 +1709,24 @@ def process_lms_learners_file(
         )
     )
 
+    orders_by_email: dict[str, list[IntegrationInbox]] = {}
+    orders_by_phone: dict[str, list[IntegrationInbox]] = {}
+
+    def _index_order(o_inbox: IntegrationInbox) -> None:
+        o_payload = o_inbox.payload or {}
+        o_email = str(o_payload.get("Email") or o_payload.get("email") or o_payload.get("representative_email") or "").strip().lower()
+        if o_email:
+            orders_by_email.setdefault(o_email, []).append(o_inbox)
+        o_phone_raw = str(o_payload.get("Телефон") or o_payload.get("phone") or o_payload.get("representative_phone") or "")
+        o_phone_digits = "".join(filter(str.isdigit, o_phone_raw))
+        if len(o_phone_digits) >= 10:
+            orders_by_phone.setdefault(o_phone_digits[-10:], []).append(o_inbox)
+        if o_phone_digits:
+            orders_by_phone.setdefault(o_phone_digits, []).append(o_inbox)
+
+    for o_inbox in existing_orders:
+        _index_order(o_inbox)
+
     for row in raw_rows[1:]:
         row_dict: dict[str, str] = {}
         for idx, val in enumerate(row):
@@ -1438,6 +1745,10 @@ def process_lms_learners_file(
         clean_email = str(row_dict.get("email") or "").strip().lower()
         phone_raw = str(row_dict.get("phone") or "").strip()
         phone_digits = "".join(filter(str.isdigit, phone_raw))
+
+        # Dynamically index order_inbox if created or modified inside loop
+        if "order_inbox" in locals() and isinstance(locals()["order_inbox"], IntegrationInbox):
+            _index_order(locals()["order_inbox"])
 
         external_id = clean_email or phone_digits or uuid4().hex
 
@@ -1498,7 +1809,23 @@ def process_lms_learners_file(
         }
 
         matched_org_id = None
-        for o_inbox in existing_orders:
+        candidate_orders: list[IntegrationInbox] = []
+        if clean_email:
+            candidate_orders.extend(orders_by_email.get(clean_email, []))
+        if phone_digits:
+            if len(phone_digits) >= 10:
+                candidate_orders.extend(orders_by_phone.get(phone_digits[-10:], []))
+            candidate_orders.extend(orders_by_phone.get(phone_digits, []))
+
+        seen_cand_ids = set()
+        deduped_candidates: list[IntegrationInbox] = []
+        for o_inbox in candidate_orders:
+            cand_id = o_inbox.id or id(o_inbox)
+            if cand_id not in seen_cand_ids:
+                seen_cand_ids.add(cand_id)
+                deduped_candidates.append(o_inbox)
+
+        for o_inbox in deduped_candidates:
             o_payload = o_inbox.payload or {}
             o_email = str(o_payload.get("Email") or o_payload.get("email") or o_payload.get("representative_email") or "").strip().lower()
             o_phone_raw = str(o_payload.get("Телефон") or o_payload.get("phone") or o_payload.get("representative_phone") or "")
@@ -1552,6 +1879,8 @@ def process_lms_learners_file(
             )
             db.add(inbox_rec)
             created_count += 1
+            if inbox_rec.entity_type == "lms_order":
+                _index_order(inbox_rec)
         else:
             existing_inbox.payload = payload
             existing_inbox.status = "pending"

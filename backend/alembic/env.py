@@ -4,8 +4,29 @@ from logging.config import fileConfig
 from pathlib import Path
 
 from alembic import context
+from alembic.ddl.impl import DefaultImpl
 import sqlalchemy as sa
 from sqlalchemy import engine_from_config, event, pool
+
+# Ensure alembic_version table uses VARCHAR(64) so revision IDs > 32 chars are supported
+_orig_version_table_impl = DefaultImpl.version_table_impl
+
+
+def _patched_version_table_impl(self, *, version_table: str, version_table_schema: str | None, version_table_pk: bool, **kw):
+    vt = _orig_version_table_impl(
+        self,
+        version_table=version_table,
+        version_table_schema=version_table_schema,
+        version_table_pk=version_table_pk,
+        **kw,
+    )
+    if "version_num" in vt.c:
+        vt.c.version_num.type = sa.String(64)
+    return vt
+
+
+DefaultImpl.version_table_impl = _patched_version_table_impl
+
 
 # Ensure backend directory is in sys.path
 backend_dir = Path(__file__).resolve().parents[1]

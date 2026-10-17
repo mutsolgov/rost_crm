@@ -2,7 +2,7 @@ from datetime import datetime, timezone
 from uuid import uuid4
 
 from sqlalchemy import Boolean, DateTime, Float, ForeignKey, Index, Integer, JSON, String, Text, UniqueConstraint
-from sqlalchemy.orm import Mapped, mapped_column
+from sqlalchemy.orm import Mapped, mapped_column, synonym
 
 from .db import Base
 
@@ -31,23 +31,30 @@ class User(Base):
     team_id: Mapped[str | None] = mapped_column(String(64), ForeignKey("teams.id", ondelete="SET NULL"), nullable=True)
     permissions: Mapped[list] = mapped_column(JSON, default=list)
     active: Mapped[bool] = mapped_column(Boolean, default=True)
+    # Physical database columns
+    _email: Mapped[str | None] = mapped_column("email", String(320), nullable=True, index=True)
+    _phone: Mapped[str | None] = mapped_column("phone", String(100), nullable=True)
 
     @property
     def email(self) -> str | None:
+        """Safe email getter: returns email column, or falls back to keycloak_subject if empty and subject contains @."""
+        if self._email:
+            return self._email
         if self.keycloak_subject and "@" in self.keycloak_subject:
             return self.keycloak_subject
-        return getattr(self, "_email", None)
+        return self._email
 
     @email.setter
     def email(self, val: str | None) -> None:
+        """Safe email setter: writes strictly to physical column email, NEVER mutating keycloak_subject OIDC UUID."""
         self._email = val
-        if val and "@" in val:
-            if not getattr(self, "keycloak_subject", None) or "@" in (self.keycloak_subject or ""):
-                self.keycloak_subject = val
+
+    email = synonym("_email", descriptor=email)
 
     @property
     def phone(self) -> str | None:
-        if hasattr(self, "_phone") and self._phone:
+        """Phone getter: returns physical column if set, else falls back to legacy permissions phone string."""
+        if self._phone:
             return self._phone
         if isinstance(self.permissions, list):
             for item in self.permissions:
@@ -59,23 +66,16 @@ class User(Base):
 
     @phone.setter
     def phone(self, val: str | None) -> None:
+        """Phone setter: writes to physical column phone and cleans up legacy phone from permissions."""
         self._phone = val
-        if val:
-            perms = list(self.permissions or [])
-            new_perms = [
-                p for p in perms
+        if self.permissions:
+            self.permissions = [
+                p for p in self.permissions
                 if not (isinstance(p, str) and p.startswith("phone:"))
                 and not (isinstance(p, dict) and "phone" in p)
             ]
-            new_perms.append(f"phone:{val}")
-            self.permissions = new_perms
-        else:
-            if self.permissions:
-                self.permissions = [
-                    p for p in self.permissions
-                    if not (isinstance(p, str) and p.startswith("phone:"))
-                    and not (isinstance(p, dict) and "phone" in p)
-                ]
+
+    phone = synonym("_phone", descriptor=phone)
 
 
 
@@ -167,15 +167,15 @@ class Interaction(Base):
     id: Mapped[str] = mapped_column(String(64), primary_key=True, default=new_id)
     title: Mapped[str] = mapped_column(String(250))
     organization_id: Mapped[str] = mapped_column(ForeignKey("organizations.id"), index=True)
-    program_id: Mapped[str | None] = mapped_column(ForeignKey("programs.id"), nullable=True)
-    product_id: Mapped[str | None] = mapped_column(ForeignKey("products.id"), nullable=True)
+    program_id: Mapped[str | None] = mapped_column(ForeignKey("programs.id"), index=True, nullable=True)
+    product_id: Mapped[str | None] = mapped_column(ForeignKey("products.id"), index=True, nullable=True)
     cycle_label: Mapped[str] = mapped_column(String(100))
     owner_id: Mapped[str] = mapped_column(ForeignKey("users.id"), index=True)
     contract_id: Mapped[str | None] = mapped_column(ForeignKey("contracts.id"), index=True, nullable=True)
     license_id: Mapped[str | None] = mapped_column(ForeignKey("licenses.id"), index=True, nullable=True)
     contact_id: Mapped[str | None] = mapped_column(ForeignKey("organization_contacts.id"), index=True, nullable=True)
     team_id: Mapped[str | None] = mapped_column(String(64), ForeignKey("teams.id", ondelete="SET NULL"), index=True, nullable=True)
-    state: Mapped[str] = mapped_column(String(80))
+    state: Mapped[str] = mapped_column(String(80), index=True)
     workflow_version: Mapped[int] = mapped_column(Integer, default=1)
     revision: Mapped[int] = mapped_column(Integer, default=1)
     visit_id: Mapped[str] = mapped_column(String(64), default=new_id)
@@ -401,4 +401,17 @@ class TransactionalOutbox(Base):
     status: Mapped[str] = mapped_column(String(32), default="pending", nullable=False, index=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
     processed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+
+class ImportPackage(Base):
+    __tablename__ = "import_packages"
+
+    id: Mapped[str] = mapped_column(String(64), primary_key=True, default=new_id)
+    user_id: Mapped[str] = mapped_column(String(64), ForeignKey("users.id"), nullable=False, index=True)
+    import_type: Mapped[str] = mapped_column(String(64), nullable=False)
+    filename: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    payload_hash: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    rows_json: Mapped[list] = mapped_column(JSON, default=list, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, nullable=False)
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, index=True)
 

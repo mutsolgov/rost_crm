@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import hashlib
 from pathlib import Path, PurePath
-import re
 import socket
 import struct
 from uuid import uuid4
@@ -18,17 +17,20 @@ from .services import append_event, cas, iso, require_permission, scoped_interac
 MAX_FILE_SIZE = 26_214_400  # 25 MB
 
 ALLOWED_EXTENSIONS = {
-    "png", "jpeg", "jpg", "pdf", "zip", "gzip", "gz", "rar", "doc", "docx", "xls", "xlsx"
+    "png", "jpeg", "pdf", "zip", "gzip", "rar", "doc", "docx", "xls", "xlsx"
+}
+
+EXTENSION_ALIASES = {
+    "jpg": "jpeg",
+    "gz": "gzip",
 }
 
 MIME_TYPES = {
     "png": "image/png",
     "jpeg": "image/jpeg",
-    "jpg": "image/jpeg",
     "pdf": "application/pdf",
     "zip": "application/zip",
     "gzip": "application/gzip",
-    "gz": "application/gzip",
     "rar": "application/vnd.rar",
     "doc": "application/msword",
     "docx": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
@@ -55,11 +57,12 @@ def sanitize_filename(filename: str) -> tuple[str, str]:
     cleaned = PurePath(filename.replace("\\", "/")).name.strip()
     if not cleaned or cleaned in {".", ".."}:
         raise APIError("FILE_TYPE_NOT_ALLOWED", "Недопустимое имя файла.", 422)
-    ext = cleaned.rsplit(".", 1)[-1].lower() if "." in cleaned else ""
+    raw_ext = cleaned.rsplit(".", 1)[-1].lower() if "." in cleaned else ""
+    ext = EXTENSION_ALIASES.get(raw_ext, raw_ext)
     if ext not in ALLOWED_EXTENSIONS:
         raise APIError(
             "FILE_TYPE_NOT_ALLOWED",
-            f"Формат файла '{ext}' не входит в перечень 10 разрешенных форматов: "
+            f"Формат файла '{raw_ext or ext}' не входит в перечень 10 разрешенных форматов: "
             "png, jpeg, pdf, zip, gzip, rar, doc, docx, xls, xlsx.",
             422,
         )
@@ -74,14 +77,14 @@ def validate_magic_bytes(ext: str, data: bytes) -> bool:
         if data.startswith(sig):
             return False
 
-    norm = ext.lower()
+    norm = EXTENSION_ALIASES.get(ext.lower(), ext.lower())
     if norm == "png":
         return data.startswith(b"\x89PNG\r\n\x1a\n")
-    if norm in {"jpg", "jpeg"}:
+    if norm == "jpeg":
         return data.startswith(b"\xff\xd8\xff")
     if norm == "pdf":
         return data.startswith(b"%PDF-")
-    if norm in {"gz", "gzip"}:
+    if norm == "gzip":
         return data.startswith(b"\x1f\x8b")
     if norm == "rar":
         return data.startswith(b"Rar!\x1a\x07")
