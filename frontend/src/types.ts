@@ -169,6 +169,38 @@ export interface InteractionDetail extends Interaction {
 export interface InteractionList {
   items: Interaction[]; total: number; page: number; page_size: number;
 }
+export interface RecentSystemEvent {
+  id: string;
+  type: string;
+  event_type: string;
+  title: string;
+  description: string;
+  actor_name: string;
+  received_at: string;
+  created_at?: string;
+  timestamp?: string;
+}
+
+export interface OrganizationGrant {
+  organization_id: string;
+  organization_name: string;
+  can_create: boolean;
+  read_all: boolean;
+}
+
+export interface AdminUser {
+  id: string;
+  name: string;
+  role: string;
+  team_id?: string | null;
+  active: boolean;
+  email?: string | null;
+  phone?: string | null;
+  permissions: string[];
+  organization_grants: OrganizationGrant[];
+  authz_epoch?: number;
+}
+
 export interface SystemStats {
   total_users: number;
   total_organizations_catalog: number;
@@ -178,6 +210,7 @@ export interface SystemStats {
   lms_health_status: string;
   total_contracts_catalog: number;
   website_health_status: string;
+  recent_system_events?: RecentSystemEvent[];
 }
 
 export interface Dashboard {
@@ -189,9 +222,15 @@ export interface Dashboard {
   system_stats?: SystemStats;
 }
 export interface SnapshotQuery {
-  as_of: string; knowledge_cutoff?: string; as_of_inclusive: true;
-  organization_ids: string[]; program_ids: string[];
-  product_ids: string[]; owner_ids: string[];
+  as_of: string;
+  knowledge_cutoff?: string;
+  as_of_inclusive: true;
+  organization_ids: string[];
+  direction_ids?: string[];
+  program_ids: string[];
+  product_ids: string[];
+  owner_ids: string[];
+  state_ids?: string[];
   selected_columns?: string[];
 }
 export interface Snapshot {
@@ -212,9 +251,11 @@ export interface ActivityQuery {
   knowledge_cutoff?: string;
   historical_owner_id?: string;
   organization_ids?: string[];
+  direction_ids?: string[];
   program_ids?: string[];
   product_ids?: string[];
   owner_ids?: string[];
+  state_ids?: string[];
   selected_columns?: string[];
 }
 
@@ -250,9 +291,11 @@ export interface CreatedQuery {
   to_date: string;
   knowledge_cutoff?: string;
   organization_ids?: string[];
+  direction_ids?: string[];
   program_ids?: string[];
   product_ids?: string[];
   owner_ids?: string[];
+  state_ids?: string[];
   selected_columns?: string[];
 }
 
@@ -353,7 +396,7 @@ export interface LmsUploadResponse {
 // ============================================================================
 
 export type IntegrationSource = 'lms' | 'website';
-export type IntegrationEntityType = 'learning_metric' | 'application' | 'learner' | 'lms_order';
+export type IntegrationEntityType = 'learning_metric' | 'application' | 'learner' | 'lms_order' | 'sync_error';
 export type InboxStatus = 'pending' | 'processed' | 'quarantined' | 'rejected';
 export type ReconciliationAction = 'link_existing' | 'create_new' | 'reject';
 
@@ -397,6 +440,7 @@ export interface IntegrationAdapterStatus {
   endpoint?: string;
   latency_ms?: number;
   error?: string | null;
+  connected?: boolean;
 }
 
 export interface IntegrationsStatusResponse {
@@ -408,7 +452,18 @@ export interface IntegrationsStatusResponse {
   total_quarantined: number;
   total_rejected: number;
   total_metrics: number;
+  total_applications?: number;
+  total_errors?: number;
   last_synced_at: string | null;
+  last_synced_lms?: string | null;
+  last_synced_website?: string | null;
+  website_pending?: number;
+  website_processed?: number;
+  website_rejected?: number;
+  reconcile_total?: number;
+  reconcile_pending?: number;
+  reconcile_processed?: number;
+  reconcile_rejected?: number;
 }
 
 export interface IntegrationSyncResponse {
@@ -418,7 +473,9 @@ export interface IntegrationSyncResponse {
   pending_count: number;
   skipped_count: number;
   quarantined_count: number;
-  message: string;
+  message?: string;
+  status?: string;
+  error_message?: string | null;
 }
 
 export interface ApplicationPayload {
@@ -430,6 +487,7 @@ export interface ApplicationPayload {
   representative_phone?: string;
   program_name?: string;
   program_id?: string;
+  course_name?: string;
   comments?: string;
   [key: string]: unknown;
 }

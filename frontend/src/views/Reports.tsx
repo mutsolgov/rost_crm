@@ -252,8 +252,11 @@ function ColumnSelector({
 interface SnapshotFilters {
   asOf: string;
   organizationId: string;
+  directionId: string;
   programId: string;
+  productId: string;
   ownerId: string;
+  stateId: string;
   selectedColumns: string[];
 }
 
@@ -261,8 +264,11 @@ interface ActivityFilters {
   fromDate: string;
   toDate: string;
   organizationId: string;
+  directionId: string;
   programId: string;
+  productId: string;
   historicalOwnerId: string;
+  stateId: string;
   selectedColumns: string[];
 }
 
@@ -270,8 +276,11 @@ interface CreatedFilters {
   fromDate: string;
   toDate: string;
   organizationId: string;
+  directionId: string;
   programId: string;
+  productId: string;
   ownerId: string;
+  stateId: string;
   selectedColumns: string[];
 }
 
@@ -289,8 +298,11 @@ export function Reports({
   const [snapshotFilters, setSnapshotFilters] = useState<SnapshotFilters>({
     asOf: isoNow(),
     organizationId: '',
+    directionId: '',
     programId: '',
+    productId: '',
     ownerId: '',
+    stateId: '',
     selectedColumns: SNAPSHOT_COLUMNS.map(c => c.key),
   });
 
@@ -298,8 +310,11 @@ export function Reports({
     fromDate: isoDaysAgo(30),
     toDate: isoNow(),
     organizationId: '',
+    directionId: '',
     programId: '',
+    productId: '',
     historicalOwnerId: '',
+    stateId: '',
     selectedColumns: ACTIVITY_COLUMNS.map(c => c.key),
   });
 
@@ -307,8 +322,11 @@ export function Reports({
     fromDate: isoDaysAgo(30),
     toDate: isoNow(),
     organizationId: '',
+    directionId: '',
     programId: '',
+    productId: '',
     ownerId: '',
+    stateId: '',
     selectedColumns: CREATED_COLUMNS.map(c => c.key),
   });
 
@@ -326,9 +344,11 @@ export function Reports({
     knowledge_cutoff: new Date().toISOString(),
     as_of_inclusive: true,
     organization_ids: snapshotFilters.organizationId ? [snapshotFilters.organizationId] : [],
+    direction_ids: snapshotFilters.directionId ? [snapshotFilters.directionId] : [],
     program_ids: snapshotFilters.programId ? [snapshotFilters.programId] : [],
-    product_ids: [],
+    product_ids: snapshotFilters.productId ? [snapshotFilters.productId] : [],
     owner_ids: snapshotFilters.ownerId ? [snapshotFilters.ownerId] : [],
+    state_ids: snapshotFilters.stateId ? [snapshotFilters.stateId] : [],
     selected_columns: snapshotFilters.selectedColumns,
   });
 
@@ -337,10 +357,12 @@ export function Reports({
     to_date: safeIso(activityFilters.toDate),
     knowledge_cutoff: new Date().toISOString(),
     organization_ids: activityFilters.organizationId ? [activityFilters.organizationId] : [],
+    direction_ids: activityFilters.directionId ? [activityFilters.directionId] : [],
     historical_owner_id: activityFilters.historicalOwnerId || undefined,
     program_ids: activityFilters.programId ? [activityFilters.programId] : [],
-    product_ids: [],
+    product_ids: activityFilters.productId ? [activityFilters.productId] : [],
     owner_ids: [],
+    state_ids: activityFilters.stateId ? [activityFilters.stateId] : [],
     selected_columns: activityFilters.selectedColumns,
   });
 
@@ -349,9 +371,11 @@ export function Reports({
     to_date: safeIso(createdFilters.toDate),
     knowledge_cutoff: new Date().toISOString(),
     organization_ids: createdFilters.organizationId ? [createdFilters.organizationId] : [],
+    direction_ids: createdFilters.directionId ? [createdFilters.directionId] : [],
     owner_ids: createdFilters.ownerId ? [createdFilters.ownerId] : [],
     program_ids: createdFilters.programId ? [createdFilters.programId] : [],
-    product_ids: [],
+    product_ids: createdFilters.productId ? [createdFilters.productId] : [],
+    state_ids: createdFilters.stateId ? [createdFilters.stateId] : [],
     selected_columns: createdFilters.selectedColumns,
   });
 
@@ -396,6 +420,82 @@ export function Reports({
         await api.download('/reports/created/export', payload, format, `created-report.${format}`);
       }
       setNotice(`Отчёт (${format.toUpperCase()}) успешно сформирован и загружен`);
+    } catch (problem) {
+      setError(problem);
+    } finally {
+      setExporting(false);
+    }
+  }
+
+  async function handleExportFunnelPng() {
+    setExporting(true);
+    setError(null);
+    try {
+      const svg = document.querySelector('.funnel-svg') as SVGSVGElement | null;
+      if (!svg) {
+        throw new Error('SVG-элемент диаграммы воронки не найден.');
+      }
+      const viewBoxAttr = svg.getAttribute('viewBox');
+      let svgWidth = 740;
+      let svgHeight = 400;
+      if (viewBoxAttr) {
+        const parts = viewBoxAttr.trim().split(/\s+/).map(Number);
+        if (parts.length === 4) {
+          svgWidth = parts[2] || 740;
+          svgHeight = parts[3] || 400;
+        }
+      }
+
+      let svgXml = new XMLSerializer().serializeToString(svg);
+      if (!svgXml.includes('xmlns="http://www.w3.org/2000/svg"')) {
+        svgXml = svgXml.replace('<svg ', '<svg xmlns="http://www.w3.org/2000/svg" ');
+      }
+      // Resolve CSS variables and styles for offscreen rasterization
+      svgXml = svgXml.replace(/var\(--rtk-color-text\)/g, '#101828');
+      svgXml = svgXml.replace(/fontFamily="inherit"/g, 'fontFamily="Inter, system-ui, -apple-system, sans-serif"');
+
+      const scale = 2;
+      const canvas = document.createElement('canvas');
+      canvas.width = svgWidth * scale;
+      canvas.height = svgHeight * scale;
+      const ctx = canvas.getContext('2d');
+      if (!ctx) {
+        throw new Error('Canvas 2D context не поддерживается браузером.');
+      }
+
+      ctx.fillStyle = '#FFFFFF';
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+      const blob = new Blob([svgXml], { type: 'image/svg+xml;charset=utf-8' });
+      const url = URL.createObjectURL(blob);
+
+      await new Promise<void>((resolve, reject) => {
+        const img = new Image();
+        img.onload = () => {
+          try {
+            ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+            URL.revokeObjectURL(url);
+            const dataUrl = canvas.toDataURL('image/png');
+            const link = document.createElement('a');
+            link.download = 'funnel-report.png';
+            link.href = dataUrl;
+            document.body.appendChild(link);
+            link.click();
+            link.remove();
+            resolve();
+          } catch (err) {
+            URL.revokeObjectURL(url);
+            reject(err);
+          }
+        };
+        img.onerror = () => {
+          URL.revokeObjectURL(url);
+          reject(new Error('Не удалось растеризовать векторное изображение воронки.'));
+        };
+        img.src = url;
+      });
+
+      setNotice('График воронки (PNG) успешно сформирован и загружен');
     } catch (problem) {
       setError(problem);
     } finally {
@@ -515,6 +615,18 @@ export function Reports({
                   </select>
                 </label>
                 <label className="field">
+                  <span>ИТ-направление</span>
+                  <select
+                    value={snapshotFilters.directionId}
+                    onChange={e => setSnapshotFilters(prev => ({ ...prev, directionId: e.target.value }))}
+                  >
+                    <option value="">Все направления</option>
+                    {catalogs.directions.map(item => (
+                      <option key={item.id} value={item.id}>{item.name}</option>
+                    ))}
+                  </select>
+                </label>
+                <label className="field">
                   <span>Программа</span>
                   <select
                     value={snapshotFilters.programId}
@@ -523,6 +635,30 @@ export function Reports({
                     <option value="">Все программы</option>
                     {catalogs.programs.map(item => (
                       <option key={item.id} value={item.id}>{item.name}</option>
+                    ))}
+                  </select>
+                </label>
+                <label className="field">
+                  <span>ИТ-продукт</span>
+                  <select
+                    value={snapshotFilters.productId}
+                    onChange={e => setSnapshotFilters(prev => ({ ...prev, productId: e.target.value }))}
+                  >
+                    <option value="">Все продукты</option>
+                    {catalogs.products.map(item => (
+                      <option key={item.id} value={item.id}>{item.name}</option>
+                    ))}
+                  </select>
+                </label>
+                <label className="field">
+                  <span>Этап работы с вузом</span>
+                  <select
+                    value={snapshotFilters.stateId}
+                    onChange={e => setSnapshotFilters(prev => ({ ...prev, stateId: e.target.value }))}
+                  >
+                    <option value="">Все этапы</option>
+                    {workflow.states.map(item => (
+                      <option key={item.code} value={item.code}>{item.name}</option>
                     ))}
                   </select>
                 </label>
@@ -580,6 +716,18 @@ export function Reports({
                   </select>
                 </label>
                 <label className="field">
+                  <span>ИТ-направление</span>
+                  <select
+                    value={activityFilters.directionId}
+                    onChange={e => setActivityFilters(prev => ({ ...prev, directionId: e.target.value }))}
+                  >
+                    <option value="">Все направления</option>
+                    {catalogs.directions.map(item => (
+                      <option key={item.id} value={item.id}>{item.name}</option>
+                    ))}
+                  </select>
+                </label>
+                <label className="field">
                   <span>Программа</span>
                   <select
                     value={activityFilters.programId}
@@ -588,6 +736,30 @@ export function Reports({
                     <option value="">Все программы</option>
                     {catalogs.programs.map(item => (
                       <option key={item.id} value={item.id}>{item.name}</option>
+                    ))}
+                  </select>
+                </label>
+                <label className="field">
+                  <span>ИТ-продукт</span>
+                  <select
+                    value={activityFilters.productId}
+                    onChange={e => setActivityFilters(prev => ({ ...prev, productId: e.target.value }))}
+                  >
+                    <option value="">Все продукты</option>
+                    {catalogs.products.map(item => (
+                      <option key={item.id} value={item.id}>{item.name}</option>
+                    ))}
+                  </select>
+                </label>
+                <label className="field">
+                  <span>Этап работы с вузом</span>
+                  <select
+                    value={activityFilters.stateId}
+                    onChange={e => setActivityFilters(prev => ({ ...prev, stateId: e.target.value }))}
+                  >
+                    <option value="">Все этапы</option>
+                    {workflow.states.map(item => (
+                      <option key={item.code} value={item.code}>{item.name}</option>
                     ))}
                   </select>
                 </label>
@@ -645,6 +817,18 @@ export function Reports({
                   </select>
                 </label>
                 <label className="field">
+                  <span>ИТ-направление</span>
+                  <select
+                    value={createdFilters.directionId}
+                    onChange={e => setCreatedFilters(prev => ({ ...prev, directionId: e.target.value }))}
+                  >
+                    <option value="">Все направления</option>
+                    {catalogs.directions.map(item => (
+                      <option key={item.id} value={item.id}>{item.name}</option>
+                    ))}
+                  </select>
+                </label>
+                <label className="field">
                   <span>Программа</span>
                   <select
                     value={createdFilters.programId}
@@ -653,6 +837,30 @@ export function Reports({
                     <option value="">Все программы</option>
                     {catalogs.programs.map(item => (
                       <option key={item.id} value={item.id}>{item.name}</option>
+                    ))}
+                  </select>
+                </label>
+                <label className="field">
+                  <span>ИТ-продукт</span>
+                  <select
+                    value={createdFilters.productId}
+                    onChange={e => setCreatedFilters(prev => ({ ...prev, productId: e.target.value }))}
+                  >
+                    <option value="">Все продукты</option>
+                    {catalogs.products.map(item => (
+                      <option key={item.id} value={item.id}>{item.name}</option>
+                    ))}
+                  </select>
+                </label>
+                <label className="field">
+                  <span>Этап работы с вузом</span>
+                  <select
+                    value={createdFilters.stateId}
+                    onChange={e => setCreatedFilters(prev => ({ ...prev, stateId: e.target.value }))}
+                  >
+                    <option value="">Все этапы</option>
+                    {workflow.states.map(item => (
+                      <option key={item.code} value={item.code}>{item.name}</option>
                     ))}
                   </select>
                 </label>
@@ -707,6 +915,14 @@ export function Reports({
             </div>
 
             <div className="export-toolbar">
+              <Button
+                variant="secondary"
+                disabled={exporting}
+                onClick={handleExportFunnelPng}
+                title="Скачать график воронки в формате PNG"
+              >
+                <Icon name="download" size={16} />Скачать график (PNG)
+              </Button>
               <Button
                 variant="secondary"
                 disabled={exporting}

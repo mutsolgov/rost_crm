@@ -1,14 +1,17 @@
-import { useState } from 'react';
+import { useState, lazy, Suspense } from 'react';
 import { useAuth } from './auth';
 import { useResource, useRoute } from './hooks';
 import { Avatar, Brand, Button, ErrorAlert, Icon, Loading, roleNames } from './ui';
 import { CreateInteractionModal } from './forms';
 import { Overview, Interactions } from './views/WorkspaceViews';
-import { InteractionPage } from './views/InteractionPage';
-import { Reports } from './views/Reports';
-import { CatalogPage, HelpPage } from './views/ReferenceViews';
-import { IntegrationsView } from './views/IntegrationsView';
 import type { Catalogs, Workflow } from './types';
+
+const InteractionPage = lazy(() => import('./views/InteractionPage').then(m => ({ default: m.InteractionPage })));
+const Reports = lazy(() => import('./views/Reports').then(m => ({ default: m.Reports })));
+const IntegrationsView = lazy(() => import('./views/IntegrationsView').then(m => ({ default: m.IntegrationsView })));
+const CatalogPage = lazy(() => import('./views/ReferenceViews').then(m => ({ default: m.CatalogPage })));
+const HelpPage = lazy(() => import('./views/ReferenceViews').then(m => ({ default: m.HelpPage })));
+
 
 
 function LoginScreen() {
@@ -20,7 +23,7 @@ function LoginScreen() {
       <h1>От первого контакта<br/>к новым компетенциям.</h1>
       <p>Общий контекст для команды. Прозрачный путь для каждого партнёрства.</p>
       <div className="login-path"><span><i/>Контакт</span><Icon name="arrow"/><span><i/>Внедрение</span><Icon name="arrow"/><span><i/>Обучение</span></div>
-    </div><div className="login-story-footer">ИТ Школа · Партнёры <span>Первый рабочий срез</span></div></div>
+    </div><div className="login-story-footer">ИТ Школа · Партнёры · ПАО «Ростелеком»</div></div>
     <div className="login-panel"><div className="login-box">
       <span className="login-icon"><Icon name="shield" size={28}/></span>
       <h2>{config?.auth_mode === 'demo' ? 'Демонстрационный стенд' : 'Вход в рабочее пространство'}</h2>
@@ -87,18 +90,24 @@ function Workspace() {
       </nav>
       <div className="sidebar-bottom">
         <div className="sidebar-note"><span className="sidebar-note-icon"><Icon name="layers" size={19}/></span><strong>Один партнёр.<br/>Несколько возможностей.</strong><p>Управляйте каждым циклом сотрудничества отдельно.</p></div>
-        <a href="#/help" onClick={() => setMobileOpen(false)} className="slice-link"><span>Первый рабочий срез</span><Icon name="external" size={14}/></a>
       </div>
     </aside>
     <div className="main-shell">
       <header className="topbar">
-        <div className="topbar-left"><button className="icon-button mobile-menu" aria-label="Открыть меню" onClick={() => setMobileOpen(true)}><Icon name="menu"/></button><span className="breadcrumb-root">Партнёры</span><Icon name="chevron" size={13}/><strong>{selectedName}</strong></div>
+        <div className="topbar-left"><button className="icon-button mobile-menu" aria-label="Открыть меню" onClick={() => setMobileOpen(true)}><Icon name="menu"/></button><a
+          href="#/overview"
+          onClick={() => { setMobileOpen(false); navigate('overview'); }}
+          className="breadcrumb-root breadcrumb-link"
+          title="Перейти к обзору платформы"
+        >
+          Партнёры
+        </a><Icon name="chevron" size={13}/><strong>{selectedName}</strong></div>
         <div className="account"><span className="scope-indicator"><i/>Ваша область доступа</span><div className="account-divider"/><Avatar name={me.name}/><div className="account-text"><strong>{me.name}</strong><small>{roleNames[me.role] || me.role}</small></div><button className="icon-button logout-button" title="Выйти" aria-label="Выйти" onClick={auth.logout}><Icon name="logout" size={18}/></button></div>
       </header>
       {config?.auth_mode === 'demo' && <div className="demo-strip"><div><span className="demo-label">ДЕМО</span><span>Вымышленные данные · режим разработки</span></div><label><span>Пользователь</span><select aria-label="Сменить демонстрационного пользователя" value={auth.demoUserId} onChange={event => auth.selectDemoUser(event.target.value)}>{config.demo_users.map(user => <option key={user.id} value={user.id}>{user.name} · {roleNames[user.role] || user.role}</option>)}</select></label></div>}
       <main className="page-content" id="main-content">
         {(catalogs.error || workflow.error) ? <ErrorAlert error={catalogs.error || workflow.error} onRetry={changed}/> : null}
-        {!catalogs.data || !workflow.data ? ((!catalogs.error && !workflow.error) && <Loading label="Загружаем рабочее пространство…"/>) : <>
+        {!catalogs.data || !workflow.data ? ((!catalogs.error && !workflow.error) && <Loading label="Загружаем рабочее пространство…"/>) : <Suspense fallback={<Loading label="Загружаем раздел…" />}>
           {activeNav === 'overview' && <Overview api={api} revision={revision} me={me} catalogs={catalogs.data} onCreate={() => setCreateOpen(true)} canCreate={canCreate} openInteraction={openInteraction} navigate={navigate}/>}
           {activeNav === 'interactions' && (isAdmin ? (
             <div className="panel" style={{ padding: '32px 28px', maxWidth: '800px', margin: '20px auto' }}>
@@ -131,9 +140,12 @@ function Workspace() {
           {activeNav === 'catalogs' && <CatalogPage catalogs={catalogs.data} api={api} onChanged={changed}/>}
           {activeNav === 'help' && <HelpPage/>}
           {!navigation.some(item => item.code === activeNav) && activeNav !== 'integrations' && activeNav !== 'interactions' && <div className="panel"><h2>Страница не найдена</h2><Button onClick={() => navigate('overview')}>Перейти к обзору</Button></div>}
-        </>}
+        </Suspense>}
       </main>
-      <footer className="page-footer"><span>ИТ Школа · Партнёры</span><span>Первый рабочий срез · v0.1</span></footer>
+      <footer className="page-footer">
+        <span>ИТ Школа · Партнёры</span>
+        <span>© 2026 ПАО «Ростелеком»</span>
+      </footer>
     </div>
     {createOpen && catalogs.data && <CreateInteractionModal api={api} catalogs={catalogs.data} me={me} onClose={() => setCreateOpen(false)} onSaved={item => { setCreateOpen(false); changed(); openInteraction(item.id); }}/>}
   </div>;

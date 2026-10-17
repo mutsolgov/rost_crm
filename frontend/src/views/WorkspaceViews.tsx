@@ -212,38 +212,25 @@ export function Overview({ api, revision, me, catalogs, onCreate, canCreate, ope
             <Icon name="clock" size={20}/>
           </div>
           <div className="activity-feed">
-            <div className="activity-item">
-              <span className="activity-dot"/>
-              <div>
-                <span className="activity-type">Импорт каталогов</span>
-                <strong>Верификация справочников вузов и направлений</strong>
-                <small>Синхронизация данных завершена успешно</small>
+            {stats?.recent_system_events && stats.recent_system_events.length > 0 ? (
+              stats.recent_system_events.map((evt, idx) => (
+                <div className="activity-item" key={evt.id || idx}>
+                  <span className="activity-dot" />
+                  <div>
+                    <span className="activity-type">{evt.type || evt.event_type || 'Система'}</span>
+                    <strong>{evt.title}</strong>
+                    <small>
+                      {evt.description || evt.actor_name || ''}
+                      {evt.received_at ? ` · ${new Date(evt.received_at).toLocaleString('ru-RU')}` : ''}
+                    </small>
+                  </div>
+                </div>
+              ))
+            ) : (
+              <div style={{ padding: '16px', color: 'var(--rtk-color-muted, #64748B)', textAlign: 'center' }}>
+                События системного журнала отсутствуют
               </div>
-            </div>
-            <div className="activity-item">
-              <span className="activity-dot"/>
-              <div>
-                <span className="activity-type">Шлюз интеграций</span>
-                <strong>Очередь сверки заявок LMS Zion и сайта</strong>
-                <small>Буфер: {stats?.total_inbox_pending ?? 0} заявок ожидают обработки</small>
-              </div>
-            </div>
-            <div className="activity-item">
-              <span className="activity-dot"/>
-              <div>
-                <span className="activity-type">Безопасность 152-ФЗ</span>
-                <strong>Zero-Oracle изоляция коммерческих воронок</strong>
-                <small>Мандаты OrganizationAccess активны</small>
-              </div>
-            </div>
-            <div className="activity-item">
-              <span className="activity-dot"/>
-              <div>
-                <span className="activity-type">CAS-контроль</span>
-                <strong>Проверка ревизий и идемпотентности запросов</strong>
-                <small>Служба защиты от гонок и коллизий в норме</small>
-              </div>
-            </div>
+            )}
           </div>
           <div style={{ marginTop: '16px', borderTop: '1px solid var(--rtk-color-border-subtle, #F0EDF4)', paddingTop: '14px', display: 'flex', justifyContent: 'space-between', gap: '10px' }}>
             <Button variant="secondary" onClick={() => navigate('catalogs')}><Icon name="building" size={16}/>Импорт каталогов</Button>
@@ -293,20 +280,195 @@ export function Overview({ api, revision, me, catalogs, onCreate, canCreate, ope
   </>;
 }
 
+const RTK_INTERACTIONS_FILTERS_KEY = 'rtk_interactions_filters';
+
+interface InteractionFilters {
+  q: string;
+  organization_id: string;
+  direction_id: string;
+  program_id: string;
+  product_id: string;
+  owner_id: string;
+  state: string;
+}
+
+let memoryFiltersCache: InteractionFilters | null = null;
+
+function parseHashFilters(): Partial<InteractionFilters> {
+  if (typeof window === 'undefined') return {};
+  const hash = window.location.hash || '';
+  const qIndex = hash.indexOf('?');
+  if (qIndex === -1) return {};
+  const searchParams = new URLSearchParams(hash.slice(qIndex + 1));
+  const result: Partial<InteractionFilters> = {};
+  const keys: (keyof InteractionFilters)[] = ['q', 'organization_id', 'direction_id', 'program_id', 'product_id', 'owner_id', 'state'];
+  for (const k of keys) {
+    const val = searchParams.get(k);
+    if (val !== null) {
+      result[k] = val;
+    }
+  }
+  return result;
+}
+
+function getStoredFilters(fallbackState: string): InteractionFilters {
+  try {
+    const hashFilters = parseHashFilters();
+    if (Object.values(hashFilters).some(Boolean)) {
+      const fromHash: InteractionFilters = {
+        q: hashFilters.q ?? '',
+        organization_id: hashFilters.organization_id ?? '',
+        direction_id: hashFilters.direction_id ?? '',
+        program_id: hashFilters.program_id ?? '',
+        product_id: hashFilters.product_id ?? '',
+        owner_id: hashFilters.owner_id ?? '',
+        state: hashFilters.state ?? fallbackState ?? '',
+      };
+      memoryFiltersCache = fromHash;
+      return fromHash;
+    }
+    if (memoryFiltersCache) {
+      return {
+        q: typeof memoryFiltersCache.q === 'string' ? memoryFiltersCache.q : '',
+        organization_id: typeof memoryFiltersCache.organization_id === 'string' ? memoryFiltersCache.organization_id : '',
+        direction_id: typeof memoryFiltersCache.direction_id === 'string' ? memoryFiltersCache.direction_id : '',
+        program_id: typeof memoryFiltersCache.program_id === 'string' ? memoryFiltersCache.program_id : '',
+        product_id: typeof memoryFiltersCache.product_id === 'string' ? memoryFiltersCache.product_id : '',
+        owner_id: typeof memoryFiltersCache.owner_id === 'string' ? memoryFiltersCache.owner_id : '',
+        state: fallbackState || (typeof memoryFiltersCache.state === 'string' ? memoryFiltersCache.state : ''),
+      };
+    }
+    if (typeof window !== 'undefined' && window.history && window.history.state) {
+      let raw = window.history.state[RTK_INTERACTIONS_FILTERS_KEY];
+      if (typeof raw === 'string') {
+        try { raw = JSON.parse(raw); } catch { /* ignore parse error */ }
+      }
+      if (raw && typeof raw === 'object') {
+        const restored: InteractionFilters = {
+          q: typeof raw.q === 'string' ? raw.q : '',
+          organization_id: typeof raw.organization_id === 'string' ? raw.organization_id : '',
+          direction_id: typeof raw.direction_id === 'string' ? raw.direction_id : '',
+          program_id: typeof raw.program_id === 'string' ? raw.program_id : '',
+          product_id: typeof raw.product_id === 'string' ? raw.product_id : '',
+          owner_id: typeof raw.owner_id === 'string' ? raw.owner_id : '',
+          state: fallbackState || (typeof raw.state === 'string' ? raw.state : ''),
+        };
+        memoryFiltersCache = restored;
+        return restored;
+      }
+    }
+  } catch {
+    // ignore history state access errors
+  }
+  return { q: '', organization_id: '', direction_id: '', program_id: '', product_id: '', owner_id: '', state: fallbackState || '' };
+}
+
 export function Interactions({ api, catalogs, workflow, revision, initialState, onCreate, canCreate, openInteraction }: {
   api: ApiClient; catalogs: Catalogs; workflow: Workflow; revision: number; initialState: string;
   onCreate: () => void; canCreate: boolean; openInteraction: (id: string) => void;
 }) {
-  const [filters, setFilters] = useState({ q: '', organization_id: '', program_id: '', product_id: '', owner_id: '', state: initialState });
+  const [filters, setFilters] = useState<InteractionFilters>(() => getStoredFilters(initialState));
   const [page, setPage] = useState(1);
   const [retry, setRetry] = useState(0);
   const q = useDebounced(filters.q);
-  useEffect(() => { setFilters(previous => ({ ...previous, state: initialState })); setPage(1); }, [initialState]);
+
+  useEffect(() => {
+    if (initialState) {
+      setFilters(previous => (previous.state === initialState ? previous : { ...previous, state: initialState }));
+      setPage(1);
+    }
+  }, [initialState]);
+
+  useEffect(() => {
+    const onHashChange = () => {
+      const hash = window.location.hash || '';
+      if (!hash.startsWith('#/interactions') && !hash.startsWith('#interactions')) return;
+      const hashFilters = parseHashFilters();
+      const next: InteractionFilters = {
+        q: hashFilters.q ?? '',
+        organization_id: hashFilters.organization_id ?? '',
+        direction_id: hashFilters.direction_id ?? '',
+        program_id: hashFilters.program_id ?? '',
+        product_id: hashFilters.product_id ?? '',
+        owner_id: hashFilters.owner_id ?? '',
+        state: hashFilters.state ?? '',
+      };
+      setFilters(prev => {
+        const isDiff = (
+          prev.q !== next.q ||
+          prev.organization_id !== next.organization_id ||
+          prev.direction_id !== next.direction_id ||
+          prev.program_id !== next.program_id ||
+          prev.product_id !== next.product_id ||
+          prev.owner_id !== next.owner_id ||
+          prev.state !== next.state
+        );
+        if (isDiff) {
+          setPage(1);
+          return next;
+        }
+        return prev;
+      });
+    };
+    window.addEventListener('hashchange', onHashChange);
+    return () => window.removeEventListener('hashchange', onHashChange);
+  }, []);
+
+  useEffect(() => {
+    try {
+      const searchParams = new URLSearchParams();
+      if (filters.q) searchParams.set('q', filters.q);
+      if (filters.organization_id) searchParams.set('organization_id', filters.organization_id);
+      if (filters.direction_id) searchParams.set('direction_id', filters.direction_id);
+      if (filters.program_id) searchParams.set('program_id', filters.program_id);
+      if (filters.state) searchParams.set('state', filters.state);
+      if (filters.product_id) searchParams.set('product_id', filters.product_id);
+      if (filters.owner_id) searchParams.set('owner_id', filters.owner_id);
+
+      const qs = searchParams.toString();
+      const targetHash = qs ? `#/interactions?${qs}` : '#/interactions';
+      const hasActive = Object.values(filters).some(Boolean);
+
+      if (hasActive) {
+        memoryFiltersCache = filters;
+        if (typeof window !== 'undefined' && window.history?.replaceState) {
+          window.history.replaceState(
+            { ...(window.history.state || {}), [RTK_INTERACTIONS_FILTERS_KEY]: filters },
+            '',
+            targetHash
+          );
+        }
+      } else {
+        memoryFiltersCache = null;
+        if (typeof window !== 'undefined' && window.history?.replaceState) {
+          window.history.replaceState(
+            { ...(window.history.state || {}), [RTK_INTERACTIONS_FILTERS_KEY]: null },
+            '',
+            '#/interactions'
+          );
+        }
+      }
+    } catch {
+      // ignore history access errors
+    }
+  }, [filters]);
+
   const params = new URLSearchParams({ ...filters, q, page: String(page), page_size: '15' }).toString();
   const list = useResource<InteractionList>(() => api.get('/interactions?' + params), [api, params, revision, retry]);
   const update = (key: keyof typeof filters, value: string) => { setFilters(previous => ({ ...previous, [key]: value })); setPage(1); };
   const hasFilters = Object.values(filters).some(Boolean);
-  const reset = () => { setFilters({ q: '', organization_id: '', program_id: '', product_id: '', owner_id: '', state: '' }); setPage(1); };
+  const reset = () => {
+    try {
+      memoryFiltersCache = null;
+      if (typeof window !== 'undefined' && window.history?.replaceState) {
+        window.history.replaceState({ ...(window.history.state || {}), [RTK_INTERACTIONS_FILTERS_KEY]: null }, '', '#/interactions');
+      }
+    } catch {
+      // ignore history access errors
+    }
+    setFilters({ q: '', organization_id: '', direction_id: '', program_id: '', product_id: '', owner_id: '', state: '' });
+    setPage(1);
+  };
   const totalPages = Math.max(1, Math.ceil((list.data?.total || 0) / 15));
   return <>
     <PageHeader eyebrow="ПАРТНЁРСКАЯ РАБОТА" title="Взаимодействия" description="Каждая программа и каждый цикл сотрудничества — отдельная история."
@@ -316,6 +478,7 @@ export function Interactions({ api, catalogs, workflow, revision, initialState, 
       <div className="filter-grid">
         <label className="field search-field"><span>Поиск</span><div className="input-icon"><Icon name="search" size={18}/><input value={filters.q} onChange={event => update('q', event.target.value)} placeholder="Название или организация" type="search"/></div></label>
         <label className="field"><span>Организация</span><select value={filters.organization_id} onChange={event => update('organization_id', event.target.value)}><option value="">Все организации</option>{catalogs.organizations.map(item => <option value={item.id} key={item.id}>{item.name}</option>)}</select></label>
+        <label className="field"><span>ИТ-направление</span><select value={filters.direction_id} onChange={event => update('direction_id', event.target.value)}><option value="">Все направления</option>{catalogs.directions.map(item => <option value={item.id} key={item.id}>{item.name}</option>)}</select></label>
         <label className="field"><span>ИТ-программа</span><select value={filters.program_id} onChange={event => update('program_id', event.target.value)}><option value="">Все программы</option>{catalogs.programs.map(item => <option value={item.id} key={item.id}>{item.name}</option>)}</select></label>
         <label className="field"><span>Этап</span><select value={filters.state} onChange={event => update('state', event.target.value)}><option value="">Все этапы</option>{workflow.states.map(item => <option value={item.code} key={item.code}>{item.name}</option>)}</select></label>
         <label className="field"><span>ИТ-продукт</span><select value={filters.product_id} onChange={event => update('product_id', event.target.value)}><option value="">Все продукты</option>{catalogs.products.map(item => <option value={item.id} key={item.id}>{item.name}</option>)}</select></label>

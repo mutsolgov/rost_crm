@@ -1,11 +1,13 @@
-import { useState, useRef, useEffect } from 'react';
+import { useState, useRef, useEffect, lazy, Suspense } from 'react';
 import type { FormEvent } from 'react';
 import type { ApiClient } from '../api';
 import { ApiError, makeMutationKey, messageOf } from '../api';
 import { useResource } from '../hooks';
 import { Avatar, Button, ErrorAlert, Icon, Loading, Modal, PageHeader, StageBadge, eventNames, formatDate } from '../ui';
 import type { Attachment, Catalogs, CreateDeliveryPayload, DeliveryRecord, Interaction, InteractionDetail, InteractionUpdatePayload, Transition, User, Workflow } from '../types';
-import { WorkflowGraphView } from './WorkflowGraphView';
+
+const WorkflowGraphView = lazy(() => import('./WorkflowGraphView').then(m => ({ default: m.WorkflowGraphView })));
+
 
 const ALLOWED_EXTENSIONS = new Set([
   'png', 'jpeg', 'jpg', 'pdf', 'zip', 'gz', 'gzip', 'rar', 'doc', 'docx', 'xls', 'xlsx'
@@ -88,21 +90,18 @@ export function EditInteractionModal({
 
   const compatibleProducts = catalogs.products.filter(prod => {
     if (!form.program_id) return true;
-    if (catalogs.program_products && catalogs.program_products.length > 0) {
-      return catalogs.program_products.some(pp => pp.program_id === form.program_id && pp.product_id === prod.id);
-    }
-    if (form.program_id === 'program-devops') return prod.id === 'product-cloud';
-    if (form.program_id === 'program-qa') return prod.id === 'product-test';
-    return true;
+    return (catalogs.program_products || []).some(
+      pp => pp.program_id === form.program_id && pp.product_id === prod.id
+    );
   });
 
   const handleProgramChange = (newProgramId: string) => {
     setForm(prev => {
       let nextProductId = prev.product_id;
       if (newProgramId && nextProductId) {
-        const isStillCompatible = catalogs.program_products && catalogs.program_products.length > 0
-          ? catalogs.program_products.some(pp => pp.program_id === newProgramId && pp.product_id === nextProductId)
-          : (newProgramId === 'program-devops' ? nextProductId === 'product-cloud' : nextProductId === 'product-test');
+        const isStillCompatible = (catalogs.program_products || []).some(
+          pp => pp.program_id === newProgramId && pp.product_id === nextProductId
+        );
         if (!isStillCompatible) nextProductId = '';
       }
       let nextLicenseId = prev.license_id;
@@ -112,9 +111,9 @@ export function EditInteractionModal({
           if (nextProductId && lic.product_id !== nextProductId) {
             nextLicenseId = '';
           } else if (newProgramId) {
-            const isLicCompatible = catalogs.program_products && catalogs.program_products.length > 0
-              ? catalogs.program_products.some(pp => pp.program_id === newProgramId && pp.product_id === lic.product_id)
-              : (newProgramId === 'program-devops' ? lic.product_id === 'product-cloud' : lic.product_id === 'product-test');
+            const isLicCompatible = (catalogs.program_products || []).some(
+              pp => pp.program_id === newProgramId && pp.product_id === lic.product_id
+            );
             if (!isLicCompatible) nextLicenseId = '';
           }
         }
@@ -1332,7 +1331,9 @@ export function InteractionPage({ id, api, catalogs, workflow, me, revision, onC
     </section>
 
     {/* Интерактивный граф жизненного цикла карточки */}
-    <WorkflowGraphView currentState={item.state} />
+    <Suspense fallback={<Loading label="Загружаем граф процесса…" />}>
+      <WorkflowGraphView currentState={item.state} />
+    </Suspense>
 
     <section className="panel timeline-panel">
       <div className="panel-heading" style={{ flexWrap: 'wrap', gap: '16px', alignItems: 'center' }}>

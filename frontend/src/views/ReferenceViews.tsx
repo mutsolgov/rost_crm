@@ -604,6 +604,12 @@ export function HelpPage() {
     }
   }, [activeTab, role]);
 
+  useEffect(() => {
+    if (!isHelpTabAllowed('admin', role) && guideSection === 'SYSADMIN_GUIDE') {
+      setGuideSection('USER_GUIDE');
+    }
+  }, [guideSection, role]);
+
   function handleSelectGuide(section: GuideSection) {
     setGuideSection(section);
     if (section === 'USER_GUIDE') {
@@ -686,18 +692,20 @@ export function HelpPage() {
           </div>
         </button>
 
-        <button
-          role="tab"
-          aria-selected={guideSection === 'SYSADMIN_GUIDE'}
-          className={`guide-mode-btn ${guideSection === 'SYSADMIN_GUIDE' ? 'active' : ''}`}
-          onClick={() => handleSelectGuide('SYSADMIN_GUIDE')}
-        >
-          <Icon name="shield" size={20} />
-          <div>
-            <strong>Руководство системного администратора</strong>
-            <small>Развертывание, импорт каталогов, миграция процессов, интеграции LMS/Сайта, аудит 152-ФЗ</small>
-          </div>
-        </button>
+        {isHelpTabAllowed('admin', role) && (
+          <button
+            role="tab"
+            aria-selected={guideSection === 'SYSADMIN_GUIDE'}
+            className={`guide-mode-btn ${guideSection === 'SYSADMIN_GUIDE' ? 'active' : ''}`}
+            onClick={() => handleSelectGuide('SYSADMIN_GUIDE')}
+          >
+            <Icon name="shield" size={20} />
+            <div>
+              <strong>Руководство системного администратора</strong>
+              <small>Развертывание, импорт каталогов, миграция процессов, интеграции LMS/Сайта, аудит 152-ФЗ</small>
+            </div>
+          </button>
+        )}
       </div>
 
       {/* Role and Topic Tabs */}
@@ -946,7 +954,7 @@ export function HelpPage() {
 
           {/* Scenario Cards Grid */}
           <div className="scenario-grid">
-            <div className="scenario-card">
+            <div className="scenario-card scenario-card-full">
               <div className="scenario-card-header">
                 <span className="scenario-step-badge">1</span>
                 <h3>Создание и ведение карточки</h3>
@@ -960,6 +968,23 @@ export function HelpPage() {
                 <li>История изменений фиксируется в аудит-логе с инкрементом ревизии.</li>
               </ul>
               <DocScreenshotCard item={SCREENSHOTS_CATALOG['screen-04']} onOpenLightbox={setLightboxScreenshot} />
+            </div>
+
+            <div className="scenario-card scenario-card-full scenario-highlight warning">
+              <div className="scenario-card-header">
+                <span className="badge-warning">ВНИМАНИЕ (Дедлок D02)</span>
+                <h3>Предотвращение дедлока D02</h3>
+              </div>
+              <p>
+                <strong>Критическое правило:</strong> Карточка не может перейти на этап «Передача материалов и лицензии» (шаг 7), если в ней не выбрана пара ИТ-программы и ИТ-продукта!
+              </p>
+              <div className="action-hint-box">
+                <Icon name="spark" size={16} />
+                <span>
+                  <strong>Решение:</strong> Нажмите «Редактировать параметры» на карточке, выберите совместимую программу и продукт из каталога, затем сохраните изменения. Дедлок будет устранен.
+                </span>
+              </div>
+              <DocScreenshotCard item={SCREENSHOTS_CATALOG['screen-05']} onOpenLightbox={setLightboxScreenshot} />
             </div>
 
             <div className="scenario-card">
@@ -986,7 +1011,7 @@ export function HelpPage() {
               </div>
             </div>
 
-            <div className="scenario-card">
+            <div className="scenario-card scenario-card-full">
               <div className="scenario-card-header">
                 <span className="scenario-step-badge">3</span>
                 <h3>Регламент обязательных комментариев</h3>
@@ -1002,7 +1027,7 @@ export function HelpPage() {
               <DocScreenshotCard item={SCREENSHOTS_CATALOG['screen-06']} onOpenLightbox={setLightboxScreenshot} />
             </div>
 
-            <div className="scenario-card">
+            <div className="scenario-card scenario-card-full">
               <div className="scenario-card-header">
                 <span className="scenario-step-badge">4</span>
                 <h3>Вложения и документы (25 МБ, 10 форматов)</h3>
@@ -1017,23 +1042,6 @@ export function HelpPage() {
                 <li>Файлы изолированы на сервере, скачивание защищено проверкой прав доступа.</li>
               </ul>
               <DocScreenshotCard item={SCREENSHOTS_CATALOG['screen-07']} onOpenLightbox={setLightboxScreenshot} />
-            </div>
-
-            <div className="scenario-card scenario-highlight warning">
-              <div className="scenario-card-header">
-                <span className="badge-warning">ВНИМАНИЕ (Дедлок D02)</span>
-                <h3>Предотвращение дедлока D02</h3>
-              </div>
-              <p>
-                <strong>Критическое правило:</strong> Карточка не может перейти на этап «Передача материалов и лицензии» (шаг 7), если в ней не выбрана пара ИТ-программы и ИТ-продукта!
-              </p>
-              <div className="action-hint-box">
-                <Icon name="spark" size={16} />
-                <span>
-                  <strong>Решение:</strong> Нажмите «Редактировать параметры» на карточке, выберите совместимую программу и продукт из каталога, затем сохраните изменения. Дедлок будет устранен.
-                </span>
-              </div>
-              <DocScreenshotCard item={SCREENSHOTS_CATALOG['screen-05']} onOpenLightbox={setLightboxScreenshot} />
             </div>
 
             <div className="scenario-card scenario-highlight important">
@@ -1084,7 +1092,7 @@ export function HelpPage() {
               </ul>
             </div>
 
-            <div className="scenario-card">
+            <div className="scenario-card scenario-card-full">
               <div className="scenario-card-header">
                 <span className="scenario-step-badge">2</span>
                 <h3>Переназначение ответственного (Reassign)</h3>
@@ -1100,7 +1108,7 @@ export function HelpPage() {
               <DocScreenshotCard item={SCREENSHOTS_CATALOG['screen-08']} onOpenLightbox={setLightboxScreenshot} />
             </div>
 
-            <div className="scenario-card">
+            <div className="scenario-card scenario-card-full">
               <div className="scenario-card-header">
                 <span className="scenario-step-badge">3</span>
                 <h3>Аналитический движок 3 срезов (AC11, AC14, AC16)</h3>
@@ -1198,9 +1206,25 @@ export function HelpPage() {
               </ul>
             </div>
 
-            <div className="scenario-card">
+            <div className="scenario-card scenario-card-full">
               <div className="scenario-card-header">
                 <span className="scenario-step-badge">1</span>
+                <h3>Шлюз интеграций и Reconciliation Inbox (Телеметрия)</h3>
+              </div>
+              <p>
+                Прием и нормализация пакетов данных от внешних контрагентов:
+              </p>
+              <ul className="scenario-bullet-list">
+                <li>Коннекторы LMS Zion (<code>mock_lms</code>) и Сайта Laravel (<code>mock_website</code>).</li>
+                <li>Строгая дедупликация по ключу <code>(source, entity_type, external_id, source_revision)</code>.</li>
+                <li>Разрешение заявок вузов: привязка к существующему вузу, создание новой организации или отклонение.</li>
+              </ul>
+              <DocScreenshotCard item={SCREENSHOTS_CATALOG['screen-10']} onOpenLightbox={setLightboxScreenshot} />
+            </div>
+
+            <div className="scenario-card scenario-card-full">
+              <div className="scenario-card-header">
+                <span className="scenario-step-badge">2</span>
                 <h3>Двухфазный мастер импорта каталогов</h3>
               </div>
               <p>
@@ -1214,23 +1238,7 @@ export function HelpPage() {
               <DocScreenshotCard item={SCREENSHOTS_CATALOG['screen-11']} onOpenLightbox={setLightboxScreenshot} />
             </div>
 
-            <div className="scenario-card">
-              <div className="scenario-card-header">
-                <span className="scenario-step-badge">2</span>
-                <h3>Шлюз интеграций и Reconciliation Inbox</h3>
-              </div>
-              <p>
-                Прием и нормализация пакетов данных от внешних контрагентов:
-              </p>
-              <ul className="scenario-bullet-list">
-                <li>Коннекторы LMS Zion (<code>mock_lms</code>) и Сайта Laravel (<code>mock_website</code>).</li>
-                <li>Строгая дедупликация по ключу <code>(source, entity_type, external_id, source_revision)</code>.</li>
-                <li>Разрешение заявок вузов: привязка к существующему вузу, создание новой организации или отклонение.</li>
-              </ul>
-              <DocScreenshotCard item={SCREENSHOTS_CATALOG['screen-10']} onOpenLightbox={setLightboxScreenshot} />
-            </div>
-
-            <div className="scenario-card scenario-highlight warning">
+            <div className="scenario-card scenario-card-full scenario-highlight warning">
               <div className="scenario-card-header">
                 <span className="badge-warning">КРИТИЧЕСКАЯ ОПЕРАЦИЯ</span>
                 <h3>Мигратор версий процессов (B17 / R06)</h3>

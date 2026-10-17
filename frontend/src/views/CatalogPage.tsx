@@ -10,6 +10,8 @@ import type {
   ImportCommitResponse,
   WorkflowMigrationPreview,
   WorkflowMigrationResult,
+  AdminUser,
+  WorkflowVersionInfo,
 } from '../types';
 
 export interface StateDefinition {
@@ -769,16 +771,91 @@ export function WorkflowMigratorModal({
   onCompleted: () => void;
 }) {
   const [step, setStep] = useState<1 | 2 | 3>(1);
+  const [availableVersions, setAvailableVersions] = useState<WorkflowVersionInfo[]>([]);
   const [fromVersion, setFromVersion] = useState<number>(1);
   const [toVersion, setToVersion] = useState<number>(2);
+  const [fromStates, setFromStates] = useState<StateDefinition[]>(WORKFLOW_V1_STATES);
+  const [toStates, setToStates] = useState<StateDefinition[]>(WORKFLOW_V2_STATES);
   const [statusMapping, setStatusMapping] = useState<Record<string, string>>({ ...DEFAULT_MAPPING });
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<unknown>(null);
   const [previewData, setPreviewData] = useState<WorkflowMigrationPreview | null>(null);
   const [commitResult, setCommitResult] = useState<WorkflowMigrationResult | null>(null);
 
-  const fromStates = WORKFLOW_V1_STATES;
-  const toStates = WORKFLOW_V2_STATES;
+  useEffect(() => {
+    let mounted = true;
+    async function loadVersions() {
+      try {
+        const list = await api.getWorkflowVersions();
+        if (mounted && list && list.length > 0) {
+          setAvailableVersions(list);
+          if (list.length >= 2) {
+            setFromVersion(list[0].version);
+            setToVersion(list[1].version);
+          } else if (list.length === 1) {
+            setFromVersion(list[0].version);
+          }
+        }
+      } catch (err) {
+        console.error('Failed to load workflow versions:', err);
+      }
+    }
+    loadVersions();
+    return () => {
+      mounted = false;
+    };
+  }, [api]);
+
+  useEffect(() => {
+    let mounted = true;
+    async function loadStates() {
+      try {
+        const [fromWf, toWf] = await Promise.all([
+          api.getWorkflow(fromVersion),
+          api.getWorkflow(toVersion),
+        ]);
+        if (!mounted) return;
+        const rawSrc = Array.isArray(fromWf.states) ? fromWf.states : Object.values(fromWf.states || {});
+        const srcStates: StateDefinition[] = rawSrc.map((s: any) => ({
+          code: s.code,
+          name: s.name || s.code,
+          kind: s.kind || (['completed', 'cancelled'].includes(s.code) ? 'terminal' : 'working'),
+          step: s.step,
+          phase: s.phase || (['completed', 'cancelled'].includes(s.code) ? 'Финал' : 'Процесс'),
+        }));
+        const rawDst = Array.isArray(toWf.states) ? toWf.states : Object.values(toWf.states || {});
+        const dstStates: StateDefinition[] = rawDst.map((s: any) => ({
+          code: s.code,
+          name: s.name || s.code,
+          kind: s.kind || (['completed', 'cancelled'].includes(s.code) ? 'terminal' : 'working'),
+          step: s.step,
+          phase: s.phase || (['completed', 'cancelled'].includes(s.code) ? 'Финал' : 'Процесс'),
+        }));
+        setFromStates(srcStates);
+        setToStates(dstStates);
+
+        // Build dynamic default mapping
+        const newMapping: Record<string, string> = {};
+        for (const src of srcStates) {
+          if (dstStates.some(d => d.code === src.code)) {
+            newMapping[src.code] = src.code;
+          } else if (src.kind === 'terminal') {
+            newMapping[src.code] = dstStates.find(d => d.kind === 'terminal')?.code || 'cancelled';
+          } else {
+            newMapping[src.code] = dstStates.find(d => d.kind === 'working')?.code || dstStates[0]?.code || 'contact_search';
+          }
+        }
+        setStatusMapping(newMapping);
+      } catch (err) {
+        console.error('Failed to load workflow states for versions:', err);
+      }
+    }
+    loadStates();
+    return () => {
+      mounted = false;
+    };
+  }, [api, fromVersion, toVersion]);
+
   const toTerminalCodes = new Set(toStates.filter(s => s.kind === 'terminal').map(s => s.code));
 
   // Inline validation: Terminal status mapped to working status is strictly prohibited!
@@ -797,7 +874,17 @@ export function WorkflowMigratorModal({
   }
 
   function handleResetDefault() {
-    setStatusMapping({ ...DEFAULT_MAPPING });
+    const newMapping: Record<string, string> = {};
+    for (const src of fromStates) {
+      if (toStates.some(d => d.code === src.code)) {
+        newMapping[src.code] = src.code;
+      } else if (src.kind === 'terminal') {
+        newMapping[src.code] = toStates.find(d => d.kind === 'terminal')?.code || 'cancelled';
+      } else {
+        newMapping[src.code] = toStates.find(d => d.kind === 'working')?.code || toStates[0]?.code || 'contact_search';
+      }
+    }
+    setStatusMapping(newMapping);
     setError(null);
   }
 
@@ -881,8 +968,18 @@ export function WorkflowMigratorModal({
                   onChange={(e) => setFromVersion(Number(e.target.value))}
                   disabled={loading}
                 >
-                  <option value={1}>Версия 1 (Базовый граф — 15 этапов, 29 переходов)</option>
-                  <option value={2}>Версия 2 (Оптимизированный граф процессов)</option>
+                  {availableVersions.length > 0 ? (
+                    availableVersions.map((v) => (
+                      <option key={v.version} value={v.version}>
+                        Версия {v.version} ({v.name || `Граф процессов v${v.version}`})
+                      </option>
+                    ))
+                  ) : (
+                    <>
+                      <option value={1}>Версия 1 (Базовый граф — 15 этапов, 29 переходов)</option>
+                      <option value={2}>Версия 2 (Оптимизированный граф процессов)</option>
+                    </>
+                  )}
                 </select>
               </div>
               <div className="version-arrow">
@@ -895,8 +992,18 @@ export function WorkflowMigratorModal({
                   onChange={(e) => setToVersion(Number(e.target.value))}
                   disabled={loading}
                 >
-                  <option value={2}>Версия 2 (Оптимизированный граф процессов)</option>
-                  <option value={1}>Версия 1 (Базовый граф — 15 этапов)</option>
+                  {availableVersions.length > 0 ? (
+                    availableVersions.map((v) => (
+                      <option key={v.version} value={v.version}>
+                        Версия {v.version} ({v.name || `Граф процессов v${v.version}`})
+                      </option>
+                    ))
+                  ) : (
+                    <>
+                      <option value={2}>Версия 2 (Оптимизированный граф процессов)</option>
+                      <option value={1}>Версия 1 (Базовый граф — 15 этапов)</option>
+                    </>
+                  )}
                 </select>
               </div>
             </div>
@@ -1220,6 +1327,294 @@ export function AssignOrganizationManagerModal({
   );
 }
 
+export function UserManagementModal({
+  api,
+  organizations,
+  onClose,
+  onChanged,
+}: {
+  api: ApiClient;
+  organizations: Organization[];
+  onClose: () => void;
+  onChanged?: () => void;
+}) {
+  const [users, setUsers] = useState<AdminUser[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<unknown>(null);
+  const [successMsg, setSuccessMsg] = useState<string | null>(null);
+  const [expandedUserId, setExpandedUserId] = useState<string | null>(null);
+
+  // Grant inputs for expanded user
+  const [selectedOrgId, setSelectedOrgId] = useState<string>('');
+  const [canCreate, setCanCreate] = useState(false);
+  const [readAll, setReadAll] = useState(false);
+  const [grantLoading, setGrantLoading] = useState(false);
+
+  async function loadUsers() {
+    setLoading(true);
+    setError(null);
+    try {
+      const data = await api.getUsers();
+      setUsers(data);
+    } catch (err) {
+      setError(err);
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  useEffect(() => {
+    loadUsers();
+  }, []);
+
+  async function handleRoleChange(userId: string, newRole: string) {
+    setError(null);
+    setSuccessMsg(null);
+    try {
+      await api.patchUser(userId, { role: newRole as any });
+      setSuccessMsg('Роль пользователя успешно обновлена.');
+      await loadUsers();
+      if (onChanged) onChanged();
+    } catch (err) {
+      setError(err);
+    }
+  }
+
+  async function handleToggleActive(userId: string, newActive: boolean) {
+    setError(null);
+    setSuccessMsg(null);
+    try {
+      await api.patchUser(userId, { active: newActive });
+      setSuccessMsg('Статус активности пользователя успешно изменен.');
+      await loadUsers();
+      if (onChanged) onChanged();
+    } catch (err) {
+      setError(err);
+    }
+  }
+
+  async function handleGrantAccess(userId: string) {
+    if (!selectedOrgId) return;
+    setGrantLoading(true);
+    setError(null);
+    setSuccessMsg(null);
+    try {
+      await api.grantOrganizationAccess(userId, selectedOrgId, {
+        can_create: canCreate,
+        read_all: readAll,
+      });
+      setSuccessMsg('Мандат доступа к организации успешно выдан.');
+      setSelectedOrgId('');
+      setCanCreate(false);
+      setReadAll(false);
+      await loadUsers();
+      if (onChanged) onChanged();
+    } catch (err) {
+      setError(err);
+    } finally {
+      setGrantLoading(false);
+    }
+  }
+
+  async function handleRevokeAccess(userId: string, orgId: string) {
+    setError(null);
+    setSuccessMsg(null);
+    try {
+      await api.revokeOrganizationAccess(userId, orgId);
+      setSuccessMsg('Мандат доступа к организации отозван.');
+      await loadUsers();
+      if (onChanged) onChanged();
+    } catch (err) {
+      setError(err);
+    }
+  }
+
+  return (
+    <Modal
+      title="Управление пользователями и ролевым доступом (RBAC)"
+      subtitle="Администрирование учетных записей, ролей и мандатов OrganizationAccess (152-ФЗ)"
+      onClose={onClose}
+      busy={loading}
+      wide
+    >
+      <div className="modal-body" style={{ minHeight: '440px' }}>
+        <ErrorAlert error={error} />
+        {successMsg && (
+          <div style={{ marginBottom: '12px', padding: '8px 12px', background: '#ECFDF3', color: '#027A48', borderRadius: '6px', fontSize: '13px' }}>
+            ✓ {successMsg}
+          </div>
+        )}
+
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
+          <span style={{ fontSize: '13px', color: 'var(--rtk-color-muted)' }}>
+            Всего пользователей: <strong>{users.length}</strong>
+          </span>
+          <Button variant="ghost" onClick={loadUsers} disabled={loading} style={{ fontSize: '12px' }}>
+            <Icon name="refresh" size={14} />
+            Обновить список
+          </Button>
+        </div>
+
+        <div className="table-scroll" style={{ maxHeight: '420px', overflowY: 'auto' }}>
+          <table className="data-table">
+            <thead>
+              <tr>
+                <th>Пользователь</th>
+                <th>Роль</th>
+                <th>Статус</th>
+                <th>Мандаты организаций</th>
+              </tr>
+            </thead>
+            <tbody>
+              {users.map((u) => {
+                const isExpanded = expandedUserId === u.id;
+                const roleTone =
+                  u.role === 'administrator' || u.role === 'admin'
+                    ? 'tone-purple'
+                    : u.role === 'supervisor'
+                    ? 'tone-orange'
+                    : 'tone-blue';
+
+                return (
+                  <tr key={u.id} style={{ verticalAlign: 'top' }}>
+                    <td>
+                      <div>
+                        <strong>{u.name}</strong>
+                        <div style={{ fontSize: '11px', color: 'var(--rtk-color-muted)' }}>ID: {u.id}</div>
+                        {u.email && <div style={{ fontSize: '11px', color: 'var(--rtk-color-muted)' }}>{u.email}</div>}
+                        {u.phone && <div style={{ fontSize: '11px', color: 'var(--rtk-color-muted)' }}>{u.phone}</div>}
+                      </div>
+                    </td>
+                    <td>
+                      <select
+                        value={u.role}
+                        onChange={(e) => handleRoleChange(u.id, e.target.value)}
+                        disabled={loading}
+                        style={{ fontSize: '12px', padding: '4px 8px', borderRadius: '4px' }}
+                      >
+                        <option value="manager">Менеджер</option>
+                        <option value="supervisor">Руководитель</option>
+                        <option value="administrator">Администратор</option>
+                      </select>
+                      <div style={{ marginTop: '4px' }}>
+                        <span className={`stage-badge ${roleTone}`} style={{ fontSize: '10px' }}>
+                          <i />
+                          {u.role}
+                        </span>
+                      </div>
+                    </td>
+                    <td>
+                      <Button
+                        variant={u.active ? 'secondary' : 'primary'}
+                        onClick={() => handleToggleActive(u.id, !u.active)}
+                        disabled={loading}
+                        style={{ fontSize: '11px', padding: '4px 8px' }}
+                      >
+                        {u.active ? 'Активен' : 'Заблокирован'}
+                      </Button>
+                    </td>
+                    <td>
+                      <div style={{ marginBottom: '6px' }}>
+                        <Button
+                          variant="ghost"
+                          onClick={() => {
+                            setExpandedUserId(isExpanded ? null : u.id);
+                            setSelectedOrgId('');
+                          }}
+                          style={{ fontSize: '11px', padding: '2px 6px' }}
+                        >
+                          <Icon name="building" size={13} />
+                          Мандаты ({u.organization_grants?.length || 0}) {isExpanded ? '▲' : '▼'}
+                        </Button>
+                      </div>
+
+                      {isExpanded && (
+                        <div style={{ padding: '8px', background: 'var(--rtk-color-surface-subtle, #F8FAFC)', borderRadius: '6px', fontSize: '11px', marginTop: '6px' }}>
+                          <div style={{ fontWeight: 600, marginBottom: '6px' }}>Выданные права доступа:</div>
+                          {u.organization_grants && u.organization_grants.length > 0 ? (
+                            <ul style={{ listStyle: 'none', padding: 0, margin: '0 0 8px 0' }}>
+                              {u.organization_grants.map((g) => (
+                                <li key={g.organization_id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '4px 0', borderBottom: '1px solid #E2E8F0' }}>
+                                  <div>
+                                    <span>{g.organization_name || g.organization_id}</span>
+                                    <span style={{ marginLeft: '6px', fontSize: '10px', color: 'var(--rtk-color-muted)' }}>
+                                      {g.can_create ? '[Создание]' : ''} {g.read_all ? '[Полный доступ]' : '[Свои]'}
+                                    </span>
+                                  </div>
+                                  <Button
+                                    variant="ghost"
+                                    onClick={() => handleRevokeAccess(u.id, g.organization_id)}
+                                    style={{ color: '#D92D20', fontSize: '10px', padding: '2px 4px' }}
+                                  >
+                                    Отозвать
+                                  </Button>
+                                </li>
+                              ))}
+                            </ul>
+                          ) : (
+                            <div style={{ color: 'var(--rtk-color-muted)', marginBottom: '8px' }}>Нет назначенных мандатов</div>
+                          )}
+
+                          <div style={{ borderTop: '1px solid #CBD5E1', paddingTop: '6px' }}>
+                            <div style={{ fontWeight: 600, marginBottom: '4px' }}>Предоставить доступ:</div>
+                            <div style={{ display: 'flex', gap: '6px', alignItems: 'center', flexWrap: 'wrap' }}>
+                              <select
+                                value={selectedOrgId}
+                                onChange={(e) => setSelectedOrgId(e.target.value)}
+                                style={{ fontSize: '11px', padding: '3px 6px', maxWidth: '160px' }}
+                              >
+                                <option value="">-- Организация --</option>
+                                {organizations
+                                  .filter((org) => !(u.organization_grants || []).some((g) => g.organization_id === org.id))
+                                  .map((org) => (
+                                    <option key={org.id} value={org.id}>
+                                      {org.name}
+                                    </option>
+                                  ))}
+                              </select>
+                              <label style={{ display: 'flex', alignItems: 'center', gap: '3px', fontSize: '10px' }}>
+                                <input
+                                  type="checkbox"
+                                  checked={canCreate}
+                                  onChange={(e) => setCanCreate(e.target.checked)}
+                                />
+                                Создание
+                              </label>
+                              <label style={{ display: 'flex', alignItems: 'center', gap: '3px', fontSize: '10px' }}>
+                                <input
+                                  type="checkbox"
+                                  checked={readAll}
+                                  onChange={(e) => setReadAll(e.target.checked)}
+                                />
+                                Полный доступ
+                              </label>
+                              <Button
+                                variant="secondary"
+                                onClick={() => handleGrantAccess(u.id)}
+                                disabled={!selectedOrgId || grantLoading}
+                                style={{ fontSize: '10px', padding: '3px 6px' }}
+                              >
+                                {grantLoading ? '…' : '+ Выдать'}
+                              </Button>
+                            </div>
+                          </div>
+                        </div>
+                      )}
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      </div>
+      <div className="modal-actions">
+        <Button onClick={onClose}>Закрыть</Button>
+      </div>
+    </Modal>
+  );
+}
+
 export function CatalogPage({
   catalogs,
   api,
@@ -1232,6 +1627,7 @@ export function CatalogPage({
   const { me } = useAuth();
   const [importOpen, setImportOpen] = useState(false);
   const [migrationOpen, setMigrationOpen] = useState(false);
+  const [userMgmtOpen, setUserMgmtOpen] = useState(false);
   const [selectedOrgForManager, setSelectedOrgForManager] = useState<Organization | null>(null);
   const [localOrganizations, setLocalOrganizations] = useState<Organization[]>(catalogs.organizations);
 
@@ -1240,6 +1636,7 @@ export function CatalogPage({
   }, [catalogs.organizations]);
 
   const isPrivileged = !!(me && (me.role === 'supervisor' || me.role === 'administrator' || me.role === 'admin'));
+  const isAdmin = !!(me && (me.role === 'administrator' || me.role === 'admin' || me.permissions?.includes('users.manage')));
 
   function handleManagerSaved(orgId: string, newOwnerId: string | null) {
     setLocalOrganizations(prev => prev.map(o => o.id === orgId ? { ...o, owner_id: newOwnerId } : o));
@@ -1255,6 +1652,12 @@ export function CatalogPage({
           <p>Единые реестры организаций, программ, продуктов, договоров и ответственных.</p>
         </div>
         <div style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
+          {api && isAdmin && (
+            <Button variant="secondary" onClick={() => setUserMgmtOpen(true)}>
+              <Icon name="shield" size={17} />
+              Управление RBAC
+            </Button>
+          )}
           {api && isPrivileged && (
             <Button variant="secondary" onClick={() => setImportOpen(true)}>
               <Icon name="upload" size={17} />
@@ -1351,7 +1754,15 @@ export function CatalogPage({
         </section>
 
         <section className="panel reference-card" key="Ответственные">
-          <h2>Ответственные</h2>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
+            <h2 style={{ margin: 0 }}>Ответственные</h2>
+            {api && isAdmin && (
+              <Button variant="ghost" onClick={() => setUserMgmtOpen(true)} style={{ fontSize: '11px', padding: '3px 8px' }}>
+                <Icon name="shield" size={13} />
+                RBAC
+              </Button>
+            )}
+          </div>
           <ul>
             {catalogs.owners.filter(o => !o.role || ['manager', 'supervisor', 'administrator', 'admin'].includes(o.role)).length ? (
               catalogs.owners
@@ -1493,6 +1904,17 @@ export function CatalogPage({
           owners={catalogs.owners}
           onClose={() => setSelectedOrgForManager(null)}
           onSaved={handleManagerSaved}
+        />
+      )}
+
+      {userMgmtOpen && api && isAdmin && (
+        <UserManagementModal
+          api={api}
+          organizations={localOrganizations}
+          onClose={() => setUserMgmtOpen(false)}
+          onChanged={() => {
+            if (onChanged) onChanged();
+          }}
         />
       )}
     </>

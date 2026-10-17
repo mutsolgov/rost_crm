@@ -12,6 +12,7 @@ import type {
   Workflow,
   DeliveryRecord,
   CreateDeliveryPayload,
+  AdminUser,
 } from './types';
 
 export class ApiError extends Error {
@@ -83,6 +84,21 @@ export class ApiClient {
   async patch<T>(path: string, body: unknown, key?: string): Promise<T> {
     return (await this.raw(path, {
       method: 'PATCH', body: JSON.stringify(body),
+      headers: key ? { 'Idempotency-Key': key } : {},
+    })).json() as Promise<T>;
+  }
+
+  async put<T>(path: string, body: unknown, key?: string): Promise<T> {
+    return (await this.raw(path, {
+      method: 'PUT',
+      body: JSON.stringify(body),
+      headers: key ? { 'Idempotency-Key': key } : {},
+    })).json() as Promise<T>;
+  }
+
+  async delete<T>(path: string, key?: string): Promise<T> {
+    return (await this.raw(path, {
+      method: 'DELETE',
       headers: key ? { 'Idempotency-Key': key } : {},
     })).json() as Promise<T>;
   }
@@ -181,12 +197,13 @@ export class ApiClient {
     return this.syncIntegrationSource(source, key);
   }
 
-  async getIntegrationInbox(params?: { source?: string; status?: string; page?: number; page_size?: number }): Promise<IntegrationInboxResponse> {
+  async getIntegrationInbox(params?: { source?: string; status?: string; page?: number; page_size?: number; exclude_technical?: boolean }): Promise<IntegrationInboxResponse> {
     const query = new URLSearchParams();
     if (params?.source) query.set('source', params.source);
     if (params?.status) query.set('status', params.status);
     if (params?.page) query.set('page', String(params.page));
     if (params?.page_size) query.set('page_size', String(params.page_size));
+    if (params?.exclude_technical) query.set('exclude_technical', 'true');
     const qs = query.toString();
     return this.get<IntegrationInboxResponse>('/integrations/inbox' + (qs ? `?${qs}` : ''));
   }
@@ -270,6 +287,31 @@ export class ApiClient {
 
   async updateOrganization(organizationId: string, body: { owner_id: string | null }): Promise<any> {
     return this.patch<any>(`/organizations/${encodeURIComponent(organizationId)}`, body);
+  }
+
+  async getUsers(): Promise<AdminUser[]> {
+    return this.get<AdminUser[]>('/users');
+  }
+
+  async patchUser(userId: string, body: Partial<AdminUser>): Promise<AdminUser> {
+    return this.patch<AdminUser>(`/users/${encodeURIComponent(userId)}`, body);
+  }
+
+  async grantOrganizationAccess(
+    userId: string,
+    orgId: string,
+    body: { can_create?: boolean; read_all?: boolean },
+  ): Promise<any> {
+    return this.put<any>(
+      `/users/${encodeURIComponent(userId)}/organizations/${encodeURIComponent(orgId)}`,
+      body,
+    );
+  }
+
+  async revokeOrganizationAccess(userId: string, orgId: string): Promise<any> {
+    return this.delete<any>(
+      `/users/${encodeURIComponent(userId)}/organizations/${encodeURIComponent(orgId)}`,
+    );
   }
 
   async getWorkflowVersions(): Promise<WorkflowVersionInfo[]> {

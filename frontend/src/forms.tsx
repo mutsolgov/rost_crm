@@ -18,12 +18,9 @@ export function CreateInteractionModal({ api, catalogs, me, onClose, onSaved }: 
   const mutation = useMutationKey();
   const compatibleProducts = catalogs.products.filter(prod => {
     if (!form.program_id) return true;
-    if (catalogs.program_products && catalogs.program_products.length > 0) {
-      return catalogs.program_products.some(pp => pp.program_id === form.program_id && pp.product_id === prod.id);
-    }
-    if (form.program_id === 'program-devops') return prod.id === 'product-cloud';
-    if (form.program_id === 'program-qa') return prod.id === 'product-test';
-    return true;
+    return (catalogs.program_products || []).some(
+      pp => pp.program_id === form.program_id && pp.product_id === prod.id
+    );
   });
 
   const update = (field: keyof typeof form, value: string) => {
@@ -33,9 +30,9 @@ export function CreateInteractionModal({ api, catalogs, me, onClose, onSaved }: 
       setForm(previous => {
         let nextProductId = previous.product_id;
         if (value && nextProductId) {
-          const isStillCompatible = (catalogs.program_products && catalogs.program_products.length > 0)
-            ? catalogs.program_products.some(pp => pp.program_id === value && pp.product_id === nextProductId)
-            : (value === 'program-devops' ? nextProductId === 'product-cloud' : nextProductId === 'product-test');
+          const isStillCompatible = (catalogs.program_products || []).some(
+            pp => pp.program_id === value && pp.product_id === nextProductId
+          );
           if (!isStillCompatible) nextProductId = '';
         }
         return { ...previous, program_id: value, product_id: nextProductId };

@@ -58,6 +58,7 @@ export function IntegrationsView({
 
   const [syncingSource, setSyncingSource] = useState<string | null>(null);
   const [syncMessage, setSyncMessage] = useState<string | null>(null);
+  const [syncError, setSyncError] = useState<string | null>(null);
   const [resolveItem, setResolveItem] = useState<IntegrationInboxItem | null>(null);
   const [showLmsJsonModal, setShowLmsJsonModal] = useState(false);
   const [showLearnersModal, setShowLearnersModal] = useState(false);
@@ -93,9 +94,10 @@ export function IntegrationsView({
     setInboxLoading(true);
     setInboxError(null);
     try {
-      const params: { status?: string; page: number; page_size: number } = {
+      const params: { status?: string; page: number; page_size: number; exclude_technical?: boolean } = {
         page: currentPage,
         page_size: pageSize,
+        exclude_technical: true,
       };
       if (filter && filter !== 'all') {
         params.status = filter;
@@ -127,12 +129,17 @@ export function IntegrationsView({
   async function handleSync(source: string) {
     setSyncingSource(source);
     setSyncMessage(null);
+    setSyncError(null);
     try {
       const res = await api.syncIntegrationSource(source);
-      setSyncMessage(res.message);
+      if (res.status === 'error' || res.error_message) {
+        setSyncError(res.error_message || 'Ошибка синхронизации сервиса');
+      } else {
+        setSyncMessage(res.message || 'Синхронизация успешно завершена');
+      }
       reloadAll();
-    } catch (err) {
-      setStatusError(err);
+    } catch (err: any) {
+      setSyncError(err?.message || 'Не удалось выполнить синхронизацию');
     } finally {
       setSyncingSource(null);
     }
@@ -143,15 +150,21 @@ export function IntegrationsView({
     if (!searchQuery.trim()) return inbox.items;
     const q = searchQuery.toLowerCase().trim();
     return inbox.items.filter(item => {
-      const orgName = (item.payload.organization_name || '').toLowerCase();
-      const repName = (item.payload.representative_name || '').toLowerCase();
-      const progName = (item.payload.program_name || '').toLowerCase();
+      const orgName = (item.payload?.organization_name || '').toLowerCase();
+      const repName = (item.payload?.representative_name || '').toLowerCase();
+      const progName = (item.payload?.program_name || '').toLowerCase();
+      const courseName = String(item.payload?.course_name || '').toLowerCase();
+      const fullName = (item.payload?.full_name || '').toLowerCase();
+      const email = String(item.payload?.email || item.payload?.representative_email || '').toLowerCase();
       const extId = (item.external_id || '').toLowerCase();
       const matchedName = (item.matched_organization_name || '').toLowerCase();
       return (
         orgName.includes(q) ||
         repName.includes(q) ||
         progName.includes(q) ||
+        courseName.includes(q) ||
+        fullName.includes(q) ||
+        email.includes(q) ||
         extId.includes(q) ||
         matchedName.includes(q)
       );
@@ -161,10 +174,16 @@ export function IntegrationsView({
   const lmsAdapter = status?.adapters_by_source?.lms || status?.adapters?.find(a => a.source === 'lms');
   const websiteAdapter = status?.adapters_by_source?.website || status?.adapters?.find(a => a.source === 'website');
 
-  const pendingCount = status?.total_pending ?? 0;
-  const processedCount = status?.total_processed ?? 0;
-  const rejectedCount = status?.total_rejected ?? 0;
-  const totalCount = status?.total_inbox ?? 0;
+  const isLmsConnected = lmsAdapter?.status === 'ok' && lmsAdapter?.connected === true;
+  const isWebsiteConnected = websiteAdapter?.status === 'ok' && websiteAdapter?.connected === true;
+
+  const lmsLastSync = status?.last_synced_lms || status?.last_synced_at;
+  const websiteLastSync = status?.last_synced_website || status?.last_synced_at;
+
+  const pendingCount = status?.reconcile_pending ?? status?.total_pending ?? 0;
+  const processedCount = status?.reconcile_processed ?? status?.total_processed ?? 0;
+  const rejectedCount = status?.reconcile_rejected ?? status?.total_rejected ?? 0;
+  const totalCount = status?.reconcile_total ?? status?.total_inbox ?? 0;
 
   return (
     <div className="integrations-view">
@@ -209,6 +228,24 @@ export function IntegrationsView({
         </div>
       )}
 
+      {syncError && (
+        <div className="error-alert" role="alert">
+          <Icon name="alert" size={18} />
+          <div style={{ flex: 1 }}>
+            <strong>Ошибка синхронизации</strong>
+            <span>{syncError}</span>
+          </div>
+          <button
+            className="icon-button"
+            style={{ marginLeft: 'auto' }}
+            onClick={() => setSyncError(null)}
+            aria-label="Закрыть"
+          >
+            <Icon name="close" size={14} />
+          </button>
+        </div>
+      )}
+
       {statusError ? <ErrorAlert error={statusError} onRetry={loadStatus} /> : null}
 
       {/* SECTION 1: External System Status Cards */}
@@ -226,10 +263,20 @@ export function IntegrationsView({
                 <i />
                 {lmsAdapter?.mode === 'live' ? 'Боевой шлюз' : 'Эмуляция контракта'}
               </span>
-              <span className="status-indicator-active">
-                <i />
-                {lmsAdapter?.status === 'ok' ? 'Подключено' : 'Активен'}
-              </span>
+              {isLmsConnected ? (
+                <span className="status-indicator-active">
+                  <i />
+                  Подключено
+                </span>
+              ) : (
+                <span
+                  className="status-indicator-error"
+                  title={lmsAdapter?.error || 'Сервис не отвечает'}
+                >
+                  <i />
+                  Недоступен
+                </span>
+              )}
             </div>
           </div>
 
@@ -256,8 +303,8 @@ export function IntegrationsView({
             <div className="adapter-last-sync">
               <Icon name="clock" size={14} />
               <span>
-                {status?.last_synced_at
-                  ? `Синхронизировано: ${formatDate(status.last_synced_at)}`
+                {lmsLastSync
+                  ? `Синхронизировано: ${formatDate(lmsLastSync)}`
                   : 'Задержка ответа: ' + (lmsAdapter?.latency_ms ?? 14) + ' мс'}
               </span>
             </div>
@@ -305,29 +352,39 @@ export function IntegrationsView({
                 <i />
                 {websiteAdapter?.mode === 'live' ? 'Боевой шлюз' : 'Эмуляция контракта'}
               </span>
-              <span className="status-indicator-active">
-                <i />
-                {websiteAdapter?.status === 'ok' ? 'Подключено' : 'Активен'}
-              </span>
+              {isWebsiteConnected ? (
+                <span className="status-indicator-active">
+                  <i />
+                  Подключено
+                </span>
+              ) : (
+                <span
+                  className="status-indicator-error"
+                  title={websiteAdapter?.error || 'Сервис не отвечает'}
+                >
+                  <i />
+                  Недоступен
+                </span>
+              )}
             </div>
           </div>
 
           <div className="adapter-metrics-row">
             <div className="adapter-metric-item">
               <span>Всего заявок</span>
-              <strong>{totalCount}</strong>
+              <strong>{status?.total_applications ?? 0}</strong>
             </div>
             <div className="adapter-metric-item pending">
               <span>Ожидают сверки</span>
-              <strong>{pendingCount}</strong>
+              <strong>{status?.website_pending ?? 0}</strong>
             </div>
             <div className="adapter-metric-item">
               <span>Сопоставлено</span>
-              <strong>{processedCount}</strong>
+              <strong>{status?.website_processed ?? 0}</strong>
             </div>
             <div className="adapter-metric-item">
               <span>Отклонено</span>
-              <strong>{rejectedCount}</strong>
+              <strong>{status?.website_rejected ?? 0}</strong>
             </div>
           </div>
 
@@ -335,8 +392,8 @@ export function IntegrationsView({
             <div className="adapter-last-sync">
               <Icon name="clock" size={14} />
               <span>
-                {status?.last_synced_at
-                  ? `Синхронизировано: ${formatDate(status.last_synced_at)}`
+                {websiteLastSync
+                  ? `Синхронизировано: ${formatDate(websiteLastSync)}`
                   : 'Задержка ответа: ' + (websiteAdapter?.latency_ms ?? 18) + ' мс'}
               </span>
             </div>
@@ -750,7 +807,7 @@ export function IntegrationsView({
                     const repPos = p.representative_position || raw.position || (raw['Фамилия'] ? 'Слушатель LMS' : undefined);
                     const email = p.representative_email || raw.email || raw['Email'] || raw['почта'];
                     const phone = p.representative_phone || raw.phone || raw['Телефон'] || raw['тел'];
-                    const progName = p.program_name || raw.course || raw['Курс'] || 'Не указана';
+                    const progName = p.program_name || p.course_name || raw.course_name || raw.course || raw['Курс'] || 'Не указана';
 
                     return (
                       <tr key={item.id}>
@@ -773,6 +830,16 @@ export function IntegrationsView({
                               <span className="stage-badge tone-purple" style={{ fontSize: '10px' }}>
                                 <i />
                                 [Заказ LMS]
+                              </span>
+                            ) : item.entity_type === 'learning_metric' ? (
+                              <span className="stage-badge tone-blue" style={{ fontSize: '10px' }}>
+                                <i />
+                                [Метрика LMS]
+                              </span>
+                            ) : item.entity_type === 'sync_error' ? (
+                              <span className="stage-badge tone-orange" style={{ fontSize: '10px' }}>
+                                <i />
+                                [Ошибка шлюза]
                               </span>
                             ) : (
                               <span className="stage-badge tone-orange" style={{ fontSize: '10px' }}>
@@ -1013,7 +1080,7 @@ function ResolveModal({
 
   const isLearner = item.entity_type === 'learner';
   const [accountAtStage11, setAccountAtStage11] = useState(true);
-  const [selectedInteractionId, setSelectedInteractionId] = useState<string>('ix-6');
+  const [selectedInteractionId, setSelectedInteractionId] = useState<string>('');
   const [availableInteractions, setAvailableInteractions] = useState<{ id: string; title: string; state: string; state_name?: string }[]>([]);
   const [_interactionsLoading, setInteractionsLoading] = useState(false);
 
@@ -1035,7 +1102,7 @@ function ResolveModal({
           }
         }
       } catch {
-        // Fallback default ix-6
+        // Empty fallback if request fails
       } finally {
         if (active) setInteractionsLoading(false);
       }
@@ -1065,7 +1132,7 @@ function ResolveModal({
           body = {
             action: 'link_existing',
             organization_id: selectedOrgId,
-            interaction_id: accountAtStage11 ? (selectedInteractionId || 'ix-6') : (selectedInteractionId || undefined),
+            interaction_id: selectedInteractionId || undefined,
           };
         }
       } else if (action === 'reject') {
@@ -1280,7 +1347,7 @@ function ResolveModal({
                             type="text"
                             value={selectedInteractionId}
                             onChange={e => setSelectedInteractionId(e.target.value)}
-                            placeholder="ID взаимодействия, например ix-6"
+                            placeholder="ID взаимодействия"
                           />
                         )}
                         <small style={{ color: 'var(--rtk-color-muted)', fontSize: '11px', marginTop: '4px' }}>
