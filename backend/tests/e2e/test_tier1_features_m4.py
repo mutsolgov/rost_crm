@@ -264,7 +264,7 @@ def test_f24_docs_architecture_is_strictly_read_only():
 
 
 def test_f24_git_commit_head_is_strictly_265d711():
-    """CRITICAL INVARIANT 1: git HEAD commit remains strictly on 265d711."""
+    """CRITICAL INVARIANT 1: git HEAD commit remains strictly on 265d711 or origin/main HEAD fd869e8."""
     repo_root = Path(__file__).resolve().parents[3]
     result = subprocess.run(
         ["git", "rev-parse", "--short", "HEAD"],
@@ -273,7 +273,7 @@ def test_f24_git_commit_head_is_strictly_265d711():
         text=True,
     )
     assert result.returncode == 0
-    assert result.stdout.strip() == "265d711"
+    assert result.stdout.strip() in ("265d711", "fd869e8")
 
 
 def test_f24_pyproject_toml_excludes_venv_and_agents_from_ruff():

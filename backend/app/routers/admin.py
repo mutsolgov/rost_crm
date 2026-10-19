@@ -1,5 +1,5 @@
 from fastapi import APIRouter, Depends
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from ..auth import current_user
@@ -78,6 +78,26 @@ def patch_user(
     target = db.get(User, user_id)
     if not target:
         raise APIError("NOT_FOUND", "Пользователь не найден.", 404)
+
+    if target.id == user.id:
+        if body.active is False:
+            raise APIError("VALIDATION_ERROR", "Администратор не может заблокировать собственную учётную запись.", 422)
+        if body.role is not None and body.role not in ("administrator", "admin"):
+            raise APIError("VALIDATION_ERROR", "Администратор не может понизить собственную роль.", 422)
+
+    if target.role in ("administrator", "admin") and (
+        body.active is False
+        or (body.role is not None and body.role not in ("administrator", "admin"))
+    ):
+        other_active_admins = db.scalar(
+            select(func.count(User.id)).where(
+                User.role.in_(("administrator", "admin")),
+                User.active.is_(True),
+                User.id != target.id,
+            )
+        ) or 0
+        if other_active_admins == 0:
+            raise APIError("VALIDATION_ERROR", "Нельзя заблокировать или лишить прав единственного активного администратора системы.", 422)
 
     update_user_access(
         db,

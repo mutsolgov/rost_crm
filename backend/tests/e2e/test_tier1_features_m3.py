@@ -15,7 +15,7 @@ from sqlalchemy import select
 from app.models import AccessPolicyState, Interaction, OrganizationAccess, User
 from app.workflow import get_states, get_transitions
 
-from tests.e2e.helpers import admin_headers, create_e2e_interaction, manager_headers, route_exists, supervisor_headers
+from tests.e2e.helpers import admin_headers, auth_headers, create_e2e_interaction, manager_headers, route_exists, supervisor_headers
 
 
 # ============================================================================
@@ -97,6 +97,243 @@ def test_f15_admin_revoke_organization_access(client, app):
     cat_resp = client.get("/api/v1/catalogs", headers=manager_headers("manager-a"))
     org_ids = {o["id"] for o in cat_resp.json()["organizations"]}
     assert "org-1" not in org_ids
+
+
+def test_f15_self_lockout_guard_prevents_admin_deactivating_self(client):
+    """PATCH /api/v1/users/administrator with active=False returns 422 VALIDATION_ERROR."""
+    resp = client.patch(
+        "/api/v1/users/administrator",
+        json={"active": False},
+        headers=admin_headers(),
+    )
+    assert resp.status_code == 422, resp.text
+    err = resp.json().get("error", {})
+    assert err.get("code") == "VALIDATION_ERROR"
+    assert "Администратор не может заблокировать собственную учётную запись." in err.get("message", "")
+
+
+def test_f15_self_lockout_guard_prevents_admin_demoting_self(client):
+    """PATCH /api/v1/users/administrator with role=manager or supervisor returns 422 VALIDATION_ERROR."""
+    resp = client.patch(
+        "/api/v1/users/administrator",
+        json={"role": "manager"},
+        headers=admin_headers(),
+    )
+    assert resp.status_code == 422, resp.text
+    err = resp.json().get("error", {})
+    assert err.get("code") == "VALIDATION_ERROR"
+    assert "Администратор не может понизить собственную роль." in err.get("message", "")
+
+    resp_sup = client.patch(
+        "/api/v1/users/administrator",
+        json={"role": "supervisor"},
+        headers=admin_headers(),
+    )
+    assert resp_sup.status_code == 422, resp_sup.text
+    err_sup = resp_sup.json().get("error", {})
+    assert err_sup.get("code") == "VALIDATION_ERROR"
+    assert "Администратор не может понизить собственную роль." in err_sup.get("message", "")
+
+
+def test_f15_self_lockout_guard_prevents_simultaneous_deactivation_and_demotion(client):
+    """Admin cannot deactivate and demote themselves simultaneously."""
+    resp = client.patch(
+        "/api/v1/users/administrator",
+        json={"active": False, "role": "manager"},
+        headers=admin_headers(),
+    )
+    assert resp.status_code == 422, resp.text
+    err = resp.json().get("error", {})
+    assert err.get("code") == "VALIDATION_ERROR"
+    assert "Администратор не может заблокировать собственную учётную запись." in err.get("message", "")
+
+
+def test_f15_last_active_admin_protection_prevents_lockout_and_demotion(client, app):
+    """Sole active admin cannot be deactivated or demoted by another user with users.manage permission."""
+    with app.state.session_factory() as session:
+        priv_user = session.get(User, "privileged-manager")
+        if not priv_user:
+            priv_user = User(
+                id="privileged-manager",
+                keycloak_subject=str(uuid.uuid4()),
+                name="Привилегированный менеджер",
+                role="supervisor",
+                active=True,
+                permissions=["users.manage"],
+            )
+            session.add(priv_user)
+            session.commit()
+
+    try:
+        # Attempt deactivation of the sole active admin
+        resp_deact = client.patch(
+            "/api/v1/users/administrator",
+            json={"active": False},
+            headers=auth_headers("privileged-manager"),
+        )
+        assert resp_deact.status_code == 422, resp_deact.text
+        err_deact = resp_deact.json().get("error", {})
+        assert err_deact.get("code") == "VALIDATION_ERROR"
+        assert "Нельзя заблокировать или лишить прав единственного активного администратора системы." in err_deact.get("message", "")
+
+        # Attempt demotion of the sole active admin
+        resp_demote = client.patch(
+            "/api/v1/users/administrator",
+            json={"role": "supervisor"},
+            headers=auth_headers("privileged-manager"),
+        )
+        assert resp_demote.status_code == 422, resp_demote.text
+        err_demote = resp_demote.json().get("error", {})
+        assert err_demote.get("code") == "VALIDATION_ERROR"
+        assert "Нельзя заблокировать или лишить прав единственного активного администратора системы." in err_demote.get("message", "")
+    finally:
+        with app.state.session_factory() as session:
+            u = session.get(User, "privileged-manager")
+            if u:
+                session.delete(u)
+                session.commit()
+
+
+def test_f15_admin_deactivation_succeeds_when_another_active_admin_exists(client, app):
+    """Deactivation of an administrator succeeds with 200 when another active admin exists."""
+    with app.state.session_factory() as session:
+        admin_secondary = session.get(User, "admin-secondary")
+        if not admin_secondary:
+            admin_secondary = User(
+                id="admin-secondary",
+                keycloak_subject=str(uuid.uuid4()),
+                name="Второй Администратор",
+                role="administrator",
+                active=True,
+            )
+            session.add(admin_secondary)
+        else:
+            admin_secondary.active = True
+            admin_secondary.role = "administrator"
+        session.commit()
+
+    try:
+        # Primary administrator deactivates admin-secondary
+        resp = client.patch(
+            "/api/v1/users/admin-secondary",
+            json={"active": False},
+            headers=admin_headers(),
+        )
+        assert resp.status_code == 200, resp.text
+        assert resp.json().get("active") is False
+    finally:
+        # Cleanup: remove secondary admin so other tests are not impacted
+        with app.state.session_factory() as session:
+            u = session.get(User, "admin-secondary")
+            if u:
+                session.delete(u)
+                session.commit()
+
+
+def test_f15_admin_demotion_succeeds_when_another_active_admin_exists(client, app):
+    """Demotion of an administrator succeeds with 200 when another active admin exists."""
+    with app.state.session_factory() as session:
+        admin_secondary = session.get(User, "admin-secondary")
+        if not admin_secondary:
+            admin_secondary = User(
+                id="admin-secondary",
+                keycloak_subject=str(uuid.uuid4()),
+                name="Второй Администратор",
+                role="administrator",
+                active=True,
+            )
+            session.add(admin_secondary)
+        else:
+            admin_secondary.active = True
+            admin_secondary.role = "administrator"
+        session.commit()
+
+    try:
+        # Primary administrator demotes admin-secondary to supervisor
+        resp = client.patch(
+            "/api/v1/users/admin-secondary",
+            json={"role": "supervisor"},
+            headers=admin_headers(),
+        )
+        assert resp.status_code == 200, resp.text
+        assert resp.json().get("role") == "supervisor"
+    finally:
+        with app.state.session_factory() as session:
+            u = session.get(User, "admin-secondary")
+            if u:
+                session.delete(u)
+                session.commit()
+
+
+def test_f15_admin_self_update_profile_and_reasserting_role_succeeds(client):
+    """Admin updating their own name or reasserting role=administrator succeeds with 200."""
+    resp = client.patch(
+        "/api/v1/users/administrator",
+        json={"name": "Главный Администратор", "role": "administrator"},
+        headers=admin_headers(),
+    )
+    assert resp.status_code == 200, resp.text
+    data = resp.json()
+    assert data.get("name") == "Главный Администратор"
+    assert data.get("role") == "administrator"
+
+
+def test_f15_admin_self_update_contact_fields_without_role_or_active(client):
+    """Admin can update email and phone on their own account without touching role or active."""
+    resp = client.patch(
+        "/api/v1/users/administrator",
+        json={"phone": "+7-999-000-1122", "email": "admin-updated@rt.ru"},
+        headers=admin_headers(),
+    )
+    assert resp.status_code == 200, resp.text
+    data = resp.json()
+    assert data.get("phone") == "+7-999-000-1122"
+    assert data.get("email") == "admin-updated@rt.ru"
+    assert data.get("role") == "administrator"
+    assert data.get("active") is True
+
+
+def test_f15_admin_self_reassert_active_true_succeeds(client):
+    """Admin re-asserting active=True on their own account succeeds with 200."""
+    resp = client.patch(
+        "/api/v1/users/administrator",
+        json={"active": True},
+        headers=admin_headers(),
+    )
+    assert resp.status_code == 200, resp.text
+    assert resp.json().get("active") is True
+
+
+def test_f15_deactivation_of_regular_manager_succeeds(client, app):
+    """Deactivation of a non-admin manager succeeds without triggering admin lockout guard."""
+    with app.state.session_factory() as session:
+        test_mgr = session.get(User, "test-mgr-f15")
+        if not test_mgr:
+            test_mgr = User(
+                id="test-mgr-f15",
+                keycloak_subject=str(uuid.uuid4()),
+                name="Тестовый Менеджер",
+                role="manager",
+                active=True,
+            )
+            session.add(test_mgr)
+            session.commit()
+
+    try:
+        resp = client.patch(
+            "/api/v1/users/test-mgr-f15",
+            json={"active": False},
+            headers=admin_headers(),
+        )
+        assert resp.status_code == 200, resp.text
+        assert resp.json().get("active") is False
+    finally:
+        with app.state.session_factory() as session:
+            u = session.get(User, "test-mgr-f15")
+            if u:
+                session.delete(u)
+                session.commit()
+
 
 
 # ============================================================================

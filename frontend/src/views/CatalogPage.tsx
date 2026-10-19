@@ -1338,6 +1338,7 @@ export function UserManagementModal({
   onClose: () => void;
   onChanged?: () => void;
 }) {
+  const { me } = useAuth();
   const [users, setUsers] = useState<AdminUser[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<unknown>(null);
@@ -1468,6 +1469,9 @@ export function UserManagementModal({
             <tbody>
               {users.map((u) => {
                 const isExpanded = expandedUserId === u.id;
+                const isSelf = !!(me && u.id === me.id);
+                const activeAdminsCount = users.filter(usr => (usr.role === 'administrator' || usr.role === 'admin') && usr.active).length;
+                const isLastAdmin = (u.role === 'administrator' || u.role === 'admin') && u.active && activeAdminsCount <= 1;
                 const roleTone =
                   u.role === 'administrator' || u.role === 'admin'
                     ? 'tone-purple'
@@ -1489,7 +1493,8 @@ export function UserManagementModal({
                       <select
                         value={u.role}
                         onChange={(e) => handleRoleChange(u.id, e.target.value)}
-                        disabled={loading}
+                        disabled={loading || isSelf || isLastAdmin}
+                        title={isSelf ? "Нельзя изменить роль собственной учётной записи" : isLastAdmin ? "Нельзя понизить роль единственного администратора" : undefined}
                         style={{ fontSize: '12px', padding: '4px 8px', borderRadius: '4px' }}
                       >
                         <option value="manager">Менеджер</option>
@@ -1504,14 +1509,39 @@ export function UserManagementModal({
                       </div>
                     </td>
                     <td>
-                      <Button
-                        variant={u.active ? 'secondary' : 'primary'}
-                        onClick={() => handleToggleActive(u.id, !u.active)}
-                        disabled={loading}
-                        style={{ fontSize: '11px', padding: '4px 8px' }}
-                      >
-                        {u.active ? 'Активен' : 'Заблокирован'}
-                      </Button>
+                      {isSelf ? (
+                        <Button
+                          variant="secondary"
+                          disabled={true}
+                          title="Нельзя заблокировать собственную учётную запись"
+                          style={{ fontSize: '11px', padding: '4px 8px' }}
+                        >
+                          Активен (Вы)
+                        </Button>
+                      ) : isLastAdmin ? (
+                        <Button
+                          variant={u.active ? 'secondary' : 'primary'}
+                          disabled={loading || isLastAdmin}
+                          title="Нельзя заблокировать единственного активного администратора"
+                          style={{ fontSize: '11px', padding: '4px 8px' }}
+                        >
+                          {u.active ? 'Заблокировать' : 'Активировать'}
+                        </Button>
+                      ) : (
+                        <Button
+                          variant={u.active ? 'secondary' : 'primary'}
+                          disabled={loading}
+                          onClick={() => {
+                            if (u.active && !window.confirm(`Вы уверены, что хотите заблокировать пользователя ${u.name || u.id}?`)) {
+                              return;
+                            }
+                            handleToggleActive(u.id, !u.active);
+                          }}
+                          style={{ fontSize: '11px', padding: '4px 8px' }}
+                        >
+                          {u.active ? 'Заблокировать' : 'Активировать'}
+                        </Button>
+                      )}
                     </td>
                     <td>
                       <div style={{ marginBottom: '6px' }}>
