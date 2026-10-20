@@ -377,6 +377,7 @@ def _get_report_spec(report_type: str, report_data: dict, user: User, selected_c
     if selected_columns:
         extra_name_map = {
             "cycle_label": "Метка цикла",
+            "direction_name": "ИТ-направление",
             "owner_at_event_name": "Ответственный на момент перехода",
             "owner_at_event": "Ответственный на момент перехода",
             "actor_name": "Инициатор",
@@ -599,6 +600,7 @@ def generate_pdf_report(report_data: dict, report_type: str, user: User, selecte
     }
     field_weight_hints = {
         "event_id": 0.07,
+        "direction_name": 0.12,
         "interaction_id": 0.08,
         "id": 0.08,
         "organization_id": 0.08,

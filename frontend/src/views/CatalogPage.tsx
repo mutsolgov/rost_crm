@@ -3,6 +3,7 @@ import type { ApiClient } from '../api';
 import { makeMutationKey } from '../api';
 import { useAuth } from '../auth';
 import { Button, ErrorAlert, Icon, Modal } from '../ui';
+import { WorkflowGraphView } from './WorkflowGraphView';
 import type {
   Catalogs,
   Organization,
@@ -1658,6 +1659,7 @@ export function CatalogPage({
   const [importOpen, setImportOpen] = useState(false);
   const [migrationOpen, setMigrationOpen] = useState(false);
   const [userMgmtOpen, setUserMgmtOpen] = useState(false);
+  const [workflowDesignerOpen, setWorkflowDesignerOpen] = useState(false);
   const [selectedOrgForManager, setSelectedOrgForManager] = useState<Organization | null>(null);
   const [localOrganizations, setLocalOrganizations] = useState<Organization[]>(catalogs.organizations);
 
@@ -1698,6 +1700,12 @@ export function CatalogPage({
             <Button onClick={() => setMigrationOpen(true)}>
               <Icon name="refresh" size={17} />
               Миграция процессов
+            </Button>
+          )}
+          {api && (isAdmin || isPrivileged) && (
+            <Button variant="secondary" onClick={() => setWorkflowDesignerOpen(true)}>
+              <Icon name="layers" size={17} />
+              Конструктор процессов
             </Button>
           )}
         </div>
@@ -1946,6 +1954,19 @@ export function CatalogPage({
             if (onChanged) onChanged();
           }}
         />
+      )}
+
+      {workflowDesignerOpen && api && (
+        <Modal
+          title="Конструктор процессов и воронки взаимодействия"
+          subtitle="Визуальное проектирование этапов, переходов и публикация версий workflow"
+          onClose={() => setWorkflowDesignerOpen(false)}
+          wide
+        >
+          <div className="modal-body" style={{ minHeight: '620px', padding: '12px 0' }}>
+            <WorkflowGraphView api={api} />
+          </div>
+        </Modal>
       )}
     </>
   );

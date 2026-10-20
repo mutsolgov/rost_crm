@@ -32,6 +32,8 @@ USERS = [
     {"id": "manager-b", "keycloak_subject": "22222222-2222-4222-8222-222222222222", "name": "Михаил Волков", "role": "manager", "team_id": "north"},
     {"id": "supervisor", "keycloak_subject": "33333333-3333-4333-8333-333333333333", "name": "Елена Соколова", "role": "supervisor", "team_id": "north"},
     {"id": "administrator", "keycloak_subject": "44444444-4444-4444-8444-444444444444", "name": "Администратор Демонстрационный", "role": "administrator", "team_id": None, "permissions": ["workflow.global_migrate", "interactions.create", "interactions.assign", "interactions.write", "interactions.edit"]},
+    {"id": "supervisor-a", "keycloak_subject": "33333333-3333-4333-8333-333333333334", "name": "Иван Руководитель", "role": "supervisor", "team_id": "north"},
+    {"id": "admin", "keycloak_subject": "44444444-4444-4444-8444-444444444445", "name": "Администратор Платформы", "role": "administrator", "team_id": None, "permissions": ["workflow.global_migrate", "interactions.create", "interactions.assign", "interactions.write", "interactions.edit"]},
 ]
 
 
@@ -104,6 +106,9 @@ def seed_database(db: Session) -> None:
         ("supervisor", "org-1"): (True, True),
         ("supervisor", "org-2"): (True, True),
         ("supervisor", "org-3"): (True, True),
+        ("supervisor-a", "org-1"): (True, True),
+        ("supervisor-a", "org-2"): (True, True),
+        ("supervisor-a", "org-3"): (True, True),
     }
     for (user_id, organization_id), (can_create, read_all) in grants.items():
         grant = db.get(OrganizationAccess, (user_id, organization_id))

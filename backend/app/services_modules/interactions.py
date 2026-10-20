@@ -775,17 +775,34 @@ def dashboard(db, user):
 
         for row in event_rows:
             evt_id, evt_type, ix_title, actor_name, received_at, payload = row
+            p_dict = payload if isinstance(payload, dict) else {}
             if evt_type == "created":
                 title = f"Создано взаимодействие: {ix_title}"
             elif evt_type in ("transition", "state_changed"):
-                to_st = payload.get("to_state", "") if isinstance(payload, dict) else ""
-                title = f"Переход в статус «{to_st}»: {ix_title}"
+                to_st = p_dict.get("to_state", "")
+                to_st_name = STATES.get(to_st, {}).get("name", to_st) if to_st else ""
+                title = f"Переход на этап «{to_st_name}»: {ix_title}"
             elif evt_type in ("assignment", "owner_changed"):
                 title = f"Назначен ответственный: {ix_title}"
             elif evt_type in ("comment", "comment_added"):
                 title = f"Добавлен комментарий к: {ix_title}"
+            elif evt_type == "attributes_corrected":
+                title = f"Обновлены реквизиты карточки: {ix_title}"
+            elif evt_type == "attachment_uploaded":
+                fname = p_dict.get("file_name") or p_dict.get("filename", "")
+                title = f"Загружен файл «{fname}»: {ix_title}" if fname else f"Загружен файл: {ix_title}"
+            elif evt_type == "attachment_deleted":
+                fname = p_dict.get("file_name") or p_dict.get("filename", "")
+                title = f"Удалён файл «{fname}»: {ix_title}" if fname else f"Удалён файл: {ix_title}"
+            elif evt_type == "delivery_recorded":
+                dtitle = p_dict.get("title") or "Пакет ПО"
+                title = f"Выдача ПО ({dtitle}): {ix_title}"
+            elif evt_type == "workflow_migrated":
+                fv = p_dict.get("from_version") or "?"
+                tv = p_dict.get("to_version") or "?"
+                title = f"Миграция процесса v{fv}→v{tv}: {ix_title}"
             else:
-                title = f"{evt_type}: {ix_title}"
+                title = f"Системная операция: {ix_title}"
 
             ts_iso = iso(received_at)
             recent_system_events.append({

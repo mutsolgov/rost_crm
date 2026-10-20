@@ -29,6 +29,7 @@ Verifies:
 """
 import asyncio
 import json
+import os
 import re
 import sys
 import httpx
@@ -40,7 +41,7 @@ APP_URL = "http://localhost:3000/"
 USERS = {
     "manager": {
         "username": "manager-a",
-        "password": "dev_only_manager_a_change_me",
+        "password": os.getenv("DEMO_MANAGER_A_PASSWORD", "ManagerPass123!"),
         "expected_name": "Анна Смирнова",
         "expected_role_ui": "Менеджер",
         "expected_role_code": "manager",
@@ -51,7 +52,7 @@ USERS = {
     },
     "supervisor": {
         "username": "supervisor",
-        "password": "dev_only_supervisor_change_me",
+        "password": os.getenv("DEMO_SUPERVISOR_PASSWORD", "SupervisorPass123!"),
         "expected_name": "Елена Соколова",
         "expected_role_ui": "Руководитель",
         "expected_role_code": "supervisor",
@@ -62,7 +63,7 @@ USERS = {
     },
     "administrator": {
         "username": "administrator",
-        "password": "dev_only_administrator_change_me",
+        "password": os.getenv("DEMO_ADMINISTRATOR_PASSWORD", "AdminPass123!"),
         "expected_name": "Администратор Демонстрационный",
         "expected_role_ui": "Администратор",
         "expected_role_code": "administrator",

@@ -10,9 +10,11 @@ from sqlalchemy.orm import Session
 from ..errors import APIError
 from ..models import (
     BackgroundJob,
+    Direction,
     Interaction,
     InteractionEvent,
     Organization,
+    Product,
     Program,
     ReportRow,
     ReportRun,
@@ -25,6 +27,23 @@ from ..workflow import STATES
 from .common import _json_safe, aware, iso
 from .interactions import validate_filters
 from .rbac import check_authz_epoch, get_authz_epoch, require_permission, scope_clause
+
+
+def _resolve_direction_name(db: Session, program_id: str | None, cache: dict | None = None) -> str | None:
+    if not program_id:
+        return None
+    if cache is not None and program_id in cache:
+        return cache[program_id]
+    prog = db.get(Program, program_id)
+    dir_name = None
+    if prog and prog.direction_id:
+        dir_obj = db.get(Direction, prog.direction_id)
+        if dir_obj:
+            dir_name = dir_obj.name
+    if cache is not None:
+        cache[program_id] = dir_name
+    return dir_name
+
 
 
 def snapshot(db, user, body):
@@ -61,6 +80,7 @@ def snapshot(db, user, body):
             created.add(evt.interaction_id)
         if evt.payload.get("snapshot"):
             latest[evt.interaction_id] = evt.payload["snapshot"]
+    dir_cache: dict[str, str | None] = {}
     rows, org_ids, state_counts = [], set(), Counter()
     filters = (("organization_id", body.organization_ids), ("program_id", body.program_ids),
                ("product_id", body.product_ids), ("owner_id", body.owner_ids))
@@ -75,7 +95,9 @@ def snapshot(db, user, body):
         if getattr(body, "historical_owner_id", None) and hist_owner != body.historical_owner_id:
             continue
         row = {"interaction_id": interaction_id, "historical_owner_id": hist_owner, **{key: data.get(key) for key in (
-            "title", "organization_name", "program_name", "product_name", "state", "state_name", "owner_id", "owner_name", "cycle_label")}}
+            "title", "organization_name", "direction_name", "program_name", "product_name", "state", "state_name", "owner_id", "owner_name", "cycle_label")}}
+        if not row.get("direction_name") and data.get("program_id"):
+            row["direction_name"] = _resolve_direction_name(db, data.get("program_id"), dir_cache)
         rows.append(row)
         if data.get("organization_id"):
             org_ids.add(data["organization_id"])
@@ -158,6 +180,7 @@ def activity(db, user, body):
     filters = (("organization_id", body.organization_ids), ("program_id", body.program_ids),
                ("product_id", body.product_ids), ("owner_id", body.owner_ids))
 
+    dir_cache: dict[str, str | None] = {}
     selected_rows = []
     transitions.sort(key=lambda t: (aware(t.effective_at), t.sequence, t.id))
 
@@ -187,6 +210,21 @@ def activity(db, user, body):
         actor_user = db.get(User, trans.actor_id) if trans.actor_id else None
         actor_name = actor_user.name if actor_user else (trans.actor_id or "Система")
 
+        prog_id = snap.get("program_id") or (inter.program_id if inter else None)
+        prod_id = snap.get("product_id") or (inter.product_id if inter else None)
+
+        program_name = snap.get("program_name")
+        if not program_name and prog_id:
+            prog_obj = db.get(Program, prog_id)
+            program_name = prog_obj.name if prog_obj else None
+
+        product_name = snap.get("product_name")
+        if not product_name and prod_id:
+            prod_obj = db.get(Product, prod_id)
+            product_name = prod_obj.name if prod_obj else None
+
+        direction_name = snap.get("direction_name") or _resolve_direction_name(db, prog_id, dir_cache)
+
         selected_rows.append({
             "event_id": trans.id,
             "interaction_id": trans.interaction_id,
@@ -202,6 +240,9 @@ def activity(db, user, body):
             "owner_at_event_name": owner_name,
             "actor_name": actor_name,
             "effective_at": iso(trans.effective_at),
+            "direction_name": direction_name,
+            "program_name": program_name,
+            "product_name": product_name,
         })
 
     event_ids = [r["event_id"] for r in selected_rows]
@@ -266,6 +307,7 @@ def created_report(db, user, body):
         ).order_by(InteractionEvent.effective_at, InteractionEvent.sequence, InteractionEvent.id)
     )) if visible_ids else []
 
+    dir_cache: dict[str, str | None] = {}
     rows = []
     filters = (("organization_id", body.organization_ids), ("program_id", body.program_ids),
                ("product_id", body.product_ids), ("owner_id", body.owner_ids))
@@ -278,6 +320,16 @@ def created_report(db, user, body):
         st = snap.get("state") or (ev.payload or {}).get("to_state") or (ev.payload or {}).get("state")
         if getattr(body, "state_ids", None) and st not in body.state_ids:
             continue
+
+        prog_id = snap.get("program_id")
+        if not prog_id:
+            inter = db.get(Interaction, ev.interaction_id)
+            prog_id = inter.program_id if inter else None
+        direction_name = snap.get("direction_name") or _resolve_direction_name(db, prog_id, dir_cache)
+
+        state_code = snap.get("state") or st
+        state_name = snap.get("state_name") or (STATES.get(state_code, {}).get("name") if state_code else None)
+
         rows.append({
             "interaction_id": ev.interaction_id,
             "title": snap.get("title"),
@@ -285,10 +337,11 @@ def created_report(db, user, body):
             "organization_name": snap.get("organization_name"),
             "program_name": snap.get("program_name"),
             "product_name": snap.get("product_name"),
+            "direction_name": direction_name,
             "owner_id": snap.get("owner_id"),
             "owner_name": snap.get("owner_name"),
-            "state": snap.get("state"),
-            "state_name": snap.get("state_name"),
+            "state": state_code,
+            "state_name": state_name,
             "cycle_label": snap.get("cycle_label"),
             "created_at": iso(ev.effective_at),
         })

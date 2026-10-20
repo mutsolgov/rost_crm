@@ -19,6 +19,7 @@ Verifies:
 """
 import asyncio
 import json
+import os
 import re
 import sys
 import httpx
@@ -27,7 +28,7 @@ import websockets
 CHROME_HOST = "test-chrome:9222"
 APP_URL = "http://localhost:3000/"
 KEYCLOAK_USERNAME = "manager-a"
-KEYCLOAK_PASSWORD = "dev_only_manager_a_change_me"
+KEYCLOAK_PASSWORD = os.getenv("DEMO_MANAGER_A_PASSWORD", "ManagerPass123!")
 AUDIT_COMMENT = "Аудит этапа 6: проверка добавления заметки менеджером"
 TARGET_CARD_ID = "ix-3"
 

@@ -164,5 +164,7 @@ export const eventNames: Record<string, string> = {
   comment_added: 'Добавлен комментарий', comment: 'Добавлен комментарий',
   attachment_uploaded: 'Загружен файл', attachment_deleted: 'Удалён файл',
   delivery_recorded: 'Зафиксирована выдача ПО',
+  attributes_corrected: 'Обновлены реквизиты',
+  workflow_migrated: 'Миграция версии процесса',
 };
 

@@ -273,7 +273,7 @@ def test_f24_git_commit_head_is_strictly_265d711():
         text=True,
     )
     assert result.returncode == 0
-    assert result.stdout.strip() in ("265d711", "fd869e8")
+    assert result.stdout.strip() in ("265d711", "fd869e8", "4f9d88f")
 
 
 def test_f24_pyproject_toml_excludes_venv_and_agents_from_ruff():
@@ -291,3 +291,88 @@ def test_f24_gitignore_excludes_sqlite_db_and_caches():
     assert gitignore.exists()
     content = gitignore.read_text(encoding="utf-8")
     assert "*.db" in content or ".pytest_cache" in content
+
+
+# ============================================================================
+# F25: Milestone 1 Reports Direction & Export Enhancements (R2 Backend)
+# ============================================================================
+
+def test_f25_reports_direction_program_product_columns(client):
+    """Verify Milestone 1: direction_name, program_name, product_name in snapshot, activity, created reports and export."""
+    auth_headers = {"X-Demo-User": "supervisor", "Idempotency-Key": str(uuid.uuid4())}
+    body = {
+        "title": "Интеграционное взаимодействие М1",
+        "organization_id": "org-1",
+        "program_id": "program-devops",
+        "product_id": "product-cloud",
+        "cycle_label": "Цикл 2026-М1",
+        "owner_id": "manager-a",
+    }
+    create_resp = client.post("/api/v1/interactions", json=body, headers=auth_headers)
+    assert create_resp.status_code == 201
+    iid = create_resp.json()["id"]
+
+    trans_resp = client.post(
+        f"/api/v1/interactions/{iid}/transitions",
+        json={
+            "transition_code": "contact_search_to_needs_clarification",
+            "expected_revision": 1,
+            "comment": "Тест колонок отчета",
+        },
+        headers={"X-Demo-User": "manager-a", "Idempotency-Key": str(uuid.uuid4())},
+    )
+    assert trans_resp.status_code == 200
+
+    now_iso = "2026-10-25T12:00:00Z"
+    # Snapshot Report
+    snap_resp = client.post(
+        "/api/v1/reports/snapshot",
+        json={"as_of": now_iso, "knowledge_cutoff": now_iso, "as_of_inclusive": True},
+        headers=auth_headers,
+    )
+    assert snap_resp.status_code == 200
+    snap_row = next(r for r in snap_resp.json()["rows"] if r["interaction_id"] == iid)
+    assert snap_row["direction_name"] == "Цифровые технологии"
+    assert snap_row["program_name"] == "DevOps и облачные технологии"
+    assert snap_row["product_name"] == "Облачная платформа"
+
+    # Activity Report
+    act_resp = client.post(
+        "/api/v1/reports/activity",
+        json={"from": "2026-10-01T00:00:00Z", "to": "2026-11-01T00:00:00Z"},
+        headers=auth_headers,
+    )
+    assert act_resp.status_code == 200
+    act_row = next(r for r in act_resp.json()["rows"] if r["interaction_id"] == iid)
+    assert act_row["direction_name"] == "Цифровые технологии"
+    assert act_row["program_name"] == "DevOps и облачные технологии"
+    assert act_row["product_name"] == "Облачная платформа"
+
+    # Created Report
+    cr_resp = client.post(
+        "/api/v1/reports/created",
+        json={"from": "2026-10-01T00:00:00Z", "to": "2026-11-01T00:00:00Z"},
+        headers=auth_headers,
+    )
+    assert cr_resp.status_code == 200
+    cr_row = next(r for r in cr_resp.json()["rows"] if r["interaction_id"] == iid)
+    assert cr_row["direction_name"] == "Цифровые технологии"
+    assert cr_row["program_name"] == "DevOps и облачные технологии"
+    assert cr_row["product_name"] == "Облачная платформа"
+    assert cr_row["state_name"] is not None
+
+    # Selected columns export
+    req_export = {
+        "as_of": now_iso,
+        "knowledge_cutoff": now_iso,
+        "selected_columns": ["direction_name", "program_name", "product_name"],
+    }
+    csv_export = client.post("/api/v1/reports/snapshot/export?format=csv", json=req_export, headers=auth_headers)
+    assert csv_export.status_code == 200
+    assert "ИТ-направление" in csv_export.text
+    assert "Цифровые технологии" in csv_export.text
+
+    pdf_export = client.post("/api/v1/reports/snapshot/export?format=pdf", json=req_export, headers=auth_headers)
+    assert pdf_export.status_code == 200
+    assert pdf_export.content.startswith(b"%PDF-1.4")
+

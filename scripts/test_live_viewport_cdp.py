@@ -15,6 +15,7 @@ Validates:
 """
 import asyncio
 import json
+import os
 import re
 import sys
 import httpx
@@ -38,9 +39,9 @@ VIEWPORTS = [
 ]
 
 USERS = {
-    "manager": {"username": "manager-a", "password": "dev_only_manager_a_change_me"},
-    "supervisor": {"username": "supervisor", "password": "dev_only_supervisor_change_me"},
-    "admin": {"username": "administrator", "password": "dev_only_administrator_change_me"},
+    "manager": {"username": "manager-a", "password": os.getenv("DEMO_MANAGER_A_PASSWORD", "ManagerPass123!")},
+    "supervisor": {"username": "supervisor", "password": os.getenv("DEMO_SUPERVISOR_PASSWORD", "SupervisorPass123!")},
+    "admin": {"username": "administrator", "password": os.getenv("DEMO_ADMINISTRATOR_PASSWORD", "AdminPass123!")},
 }
 
 

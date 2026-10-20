@@ -11,6 +11,7 @@ Tests:
 """
 import asyncio
 import json
+import os
 import re
 import sys
 from pathlib import Path
@@ -22,7 +23,7 @@ APP_URL = "http://localhost:3000/"
 
 ADMIN_USER = {
     "username": "administrator",
-    "password": "dev_only_administrator_change_me",
+    "password": os.getenv("DEMO_ADMINISTRATOR_PASSWORD", "AdminPass123!"),
     "name": "Администратор Демонстрационный"
 }
 

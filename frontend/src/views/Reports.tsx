@@ -182,6 +182,7 @@ export interface ReportColumnDef {
 export const SNAPSHOT_COLUMNS: ReportColumnDef[] = [
   { key: 'title', label: 'Взаимодействие' },
   { key: 'organization_name', label: 'Организация' },
+  { key: 'direction_name', label: 'ИТ-направление' },
   { key: 'program_name', label: 'Программа' },
   { key: 'product_name', label: 'Продукт' },
   { key: 'state_name', label: 'Этап' },
@@ -193,6 +194,9 @@ export const ACTIVITY_COLUMNS: ReportColumnDef[] = [
   { key: 'effective_at', label: 'Время события' },
   { key: 'title', label: 'Взаимодействие' },
   { key: 'organization_name', label: 'Организация' },
+  { key: 'direction_name', label: 'ИТ-направление' },
+  { key: 'program_name', label: 'Программа' },
+  { key: 'product_name', label: 'Продукт' },
   { key: 'from_state_name', label: 'Исходный этап' },
   { key: 'to_state_name', label: 'Целевой этап' },
   { key: 'owner_at_event_name', label: 'Ответственный на момент перехода' },
@@ -203,8 +207,10 @@ export const CREATED_COLUMNS: ReportColumnDef[] = [
   { key: 'created_at', label: 'Дата создания' },
   { key: 'title', label: 'Взаимодействие' },
   { key: 'organization_name', label: 'Организация' },
+  { key: 'direction_name', label: 'ИТ-направление' },
   { key: 'program_name', label: 'Программа' },
   { key: 'product_name', label: 'Продукт' },
+  { key: 'state_name', label: 'Этап' },
   { key: 'owner_name', label: 'Ответственный' },
 ];
 
@@ -618,7 +624,17 @@ export function Reports({
                   <span>ИТ-направление</span>
                   <select
                     value={snapshotFilters.directionId}
-                    onChange={e => setSnapshotFilters(prev => ({ ...prev, directionId: e.target.value }))}
+                    onChange={e => {
+                      const nextDir = e.target.value;
+                      setSnapshotFilters(prev => {
+                        const progValid = !nextDir || catalogs.programs.some(p => p.id === prev.programId && p.direction_id === nextDir);
+                        return {
+                          ...prev,
+                          directionId: nextDir,
+                          programId: progValid ? prev.programId : '',
+                        };
+                      });
+                    }}
                   >
                     <option value="">Все направления</option>
                     {catalogs.directions.map(item => (
@@ -633,9 +649,11 @@ export function Reports({
                     onChange={e => setSnapshotFilters(prev => ({ ...prev, programId: e.target.value }))}
                   >
                     <option value="">Все программы</option>
-                    {catalogs.programs.map(item => (
-                      <option key={item.id} value={item.id}>{item.name}</option>
-                    ))}
+                    {catalogs.programs
+                      .filter(p => !snapshotFilters.directionId || p.direction_id === snapshotFilters.directionId)
+                      .map(item => (
+                        <option key={item.id} value={item.id}>{item.name}</option>
+                      ))}
                   </select>
                 </label>
                 <label className="field">
@@ -719,7 +737,17 @@ export function Reports({
                   <span>ИТ-направление</span>
                   <select
                     value={activityFilters.directionId}
-                    onChange={e => setActivityFilters(prev => ({ ...prev, directionId: e.target.value }))}
+                    onChange={e => {
+                      const nextDir = e.target.value;
+                      setActivityFilters(prev => {
+                        const progValid = !nextDir || catalogs.programs.some(p => p.id === prev.programId && p.direction_id === nextDir);
+                        return {
+                          ...prev,
+                          directionId: nextDir,
+                          programId: progValid ? prev.programId : '',
+                        };
+                      });
+                    }}
                   >
                     <option value="">Все направления</option>
                     {catalogs.directions.map(item => (
@@ -734,9 +762,11 @@ export function Reports({
                     onChange={e => setActivityFilters(prev => ({ ...prev, programId: e.target.value }))}
                   >
                     <option value="">Все программы</option>
-                    {catalogs.programs.map(item => (
-                      <option key={item.id} value={item.id}>{item.name}</option>
-                    ))}
+                    {catalogs.programs
+                      .filter(p => !activityFilters.directionId || p.direction_id === activityFilters.directionId)
+                      .map(item => (
+                        <option key={item.id} value={item.id}>{item.name}</option>
+                      ))}
                   </select>
                 </label>
                 <label className="field">
@@ -820,7 +850,17 @@ export function Reports({
                   <span>ИТ-направление</span>
                   <select
                     value={createdFilters.directionId}
-                    onChange={e => setCreatedFilters(prev => ({ ...prev, directionId: e.target.value }))}
+                    onChange={e => {
+                      const nextDir = e.target.value;
+                      setCreatedFilters(prev => {
+                        const progValid = !nextDir || catalogs.programs.some(p => p.id === prev.programId && p.direction_id === nextDir);
+                        return {
+                          ...prev,
+                          directionId: nextDir,
+                          programId: progValid ? prev.programId : '',
+                        };
+                      });
+                    }}
                   >
                     <option value="">Все направления</option>
                     {catalogs.directions.map(item => (
@@ -835,9 +875,11 @@ export function Reports({
                     onChange={e => setCreatedFilters(prev => ({ ...prev, programId: e.target.value }))}
                   >
                     <option value="">Все программы</option>
-                    {catalogs.programs.map(item => (
-                      <option key={item.id} value={item.id}>{item.name}</option>
-                    ))}
+                    {catalogs.programs
+                      .filter(p => !createdFilters.directionId || p.direction_id === createdFilters.directionId)
+                      .map(item => (
+                        <option key={item.id} value={item.id}>{item.name}</option>
+                      ))}
                   </select>
                 </label>
                 <label className="field">
@@ -1010,6 +1052,7 @@ export function Reports({
                     <tr>
                       {isSnapCol('title') && <th>Взаимодействие</th>}
                       {isSnapCol('organization_name') && <th>Организация</th>}
+                      {isSnapCol('direction_name') && <th>ИТ-направление</th>}
                       {isSnapCol('program_name') && <th>Программа</th>}
                       {isSnapCol('product_name') && <th>Продукт</th>}
                       {isSnapCol('state_name') && <th>Текущий этап</th>}
@@ -1022,6 +1065,7 @@ export function Reports({
                       <tr key={row.interaction_id}>
                         {isSnapCol('title') && <td><strong>{row.title}</strong></td>}
                         {isSnapCol('organization_name') && <td>{row.organization_name}</td>}
+                        {isSnapCol('direction_name') && <td>{row.direction_name || '—'}</td>}
                         {isSnapCol('program_name') && <td>{row.program_name || '—'}</td>}
                         {isSnapCol('product_name') && <td>{row.product_name || '—'}</td>}
                         {isSnapCol('state_name') && <td><StageBadge code={row.state} name={row.state_name} /></td>}
@@ -1048,6 +1092,9 @@ export function Reports({
                       {isActCol('effective_at') && <th>Время события</th>}
                       {isActCol('title') && <th>Взаимодействие</th>}
                       {isActCol('organization_name') && <th>Организация</th>}
+                      {isActCol('direction_name') && <th>ИТ-направление</th>}
+                      {isActCol('program_name') && <th>Программа</th>}
+                      {isActCol('product_name') && <th>Продукт</th>}
                       {isActCol('from_state_name') && <th>Исходный этап</th>}
                       {isActCol('to_state_name') && <th>Целевой этап</th>}
                       {isActCol('owner_at_event_name') && <th>Ответственный на момент перехода</th>}
@@ -1060,6 +1107,9 @@ export function Reports({
                         {isActCol('effective_at') && <td>{formatDate(row.effective_at)}</td>}
                         {isActCol('title') && <td><strong>{row.title || '—'}</strong></td>}
                         {isActCol('organization_name') && <td>{row.organization_name || '—'}</td>}
+                        {isActCol('direction_name') && <td>{row.direction_name || '—'}</td>}
+                        {isActCol('program_name') && <td>{row.program_name || '—'}</td>}
+                        {isActCol('product_name') && <td>{row.product_name || '—'}</td>}
                         {isActCol('from_state_name') && (
                           <td>
                             <StageBadge code={row.from_state} name={row.from_state_name || row.from_state} />
@@ -1093,8 +1143,10 @@ export function Reports({
                       {isCreatedCol('created_at') && <th>Дата создания</th>}
                       {isCreatedCol('title') && <th>Взаимодействие</th>}
                       {isCreatedCol('organization_name') && <th>Организация</th>}
+                      {isCreatedCol('direction_name') && <th>ИТ-направление</th>}
                       {isCreatedCol('program_name') && <th>Программа</th>}
                       {isCreatedCol('product_name') && <th>Продукт</th>}
+                      {isCreatedCol('state_name') && <th>Этап</th>}
                       {isCreatedCol('owner_name') && <th>Ответственный</th>}
                     </tr>
                   </thead>
@@ -1104,8 +1156,10 @@ export function Reports({
                         {isCreatedCol('created_at') && <td>{formatDate(row.created_at)}</td>}
                         {isCreatedCol('title') && <td><strong>{row.title}</strong></td>}
                         {isCreatedCol('organization_name') && <td>{row.organization_name}</td>}
+                        {isCreatedCol('direction_name') && <td>{row.direction_name || '—'}</td>}
                         {isCreatedCol('program_name') && <td>{row.program_name || '—'}</td>}
                         {isCreatedCol('product_name') && <td>{row.product_name || '—'}</td>}
+                        {isCreatedCol('state_name') && <td><StageBadge code={row.state} name={row.state_name || row.state} /></td>}
                         {isCreatedCol('owner_name') && <td>{row.owner_name}</td>}
                       </tr>
                     ))}

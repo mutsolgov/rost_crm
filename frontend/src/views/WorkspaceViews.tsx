@@ -17,6 +17,22 @@ export function InteractionTable({ items, openInteraction, compact = false }: { 
   </table></div>;
 }
 
+const EVENT_LABELS: Record<string, string> = {
+  created: 'Создание карточки',
+  initial_state: 'Инициализация',
+  transition: 'Смена этапа',
+  state_changed: 'Смена этапа',
+  comment_added: 'Комментарий',
+  comment: 'Комментарий',
+  assignment: 'Назначение куратора',
+  owner_changed: 'Смена ответственного',
+  attributes_corrected: 'Обновление реквизитов',
+  attachment_uploaded: 'Загрузка файла',
+  attachment_deleted: 'Удаление файла',
+  delivery_recorded: 'Выдача ПО и лицензий',
+  workflow_migrated: 'Миграция процесса',
+};
+
 export function Overview({ api, revision, me, catalogs, onCreate, canCreate, openInteraction, navigate }: {
   api: ApiClient; revision: number; me: User; catalogs?: Catalogs; onCreate: () => void; canCreate: boolean;
   openInteraction: (id: string) => void; navigate: (path: string) => void;
@@ -217,7 +233,7 @@ export function Overview({ api, revision, me, catalogs, onCreate, canCreate, ope
                 <div className="activity-item" key={evt.id || idx}>
                   <span className="activity-dot" />
                   <div>
-                    <span className="activity-type">{evt.type || evt.event_type || 'Система'}</span>
+                    <span className="activity-type">{EVENT_LABELS[evt.type || evt.event_type] || evt.type || evt.event_type || 'Система'}</span>
                     <strong>{evt.title}</strong>
                     <small>
                       {evt.description || evt.actor_name || ''}
@@ -455,7 +471,21 @@ export function Interactions({ api, catalogs, workflow, revision, initialState, 
 
   const params = new URLSearchParams({ ...filters, q, page: String(page), page_size: '15' }).toString();
   const list = useResource<InteractionList>(() => api.get('/interactions?' + params), [api, params, revision, retry]);
-  const update = (key: keyof typeof filters, value: string) => { setFilters(previous => ({ ...previous, [key]: value })); setPage(1); };
+  const update = (key: keyof typeof filters, value: string) => {
+    setFilters(previous => {
+      let nextProgramId = previous.program_id;
+      if (key === 'direction_id') {
+        if (value && nextProgramId) {
+          const prog = catalogs.programs.find(p => p.id === nextProgramId);
+          if (!prog || prog.direction_id !== value) {
+            nextProgramId = '';
+          }
+        }
+      }
+      return { ...previous, [key]: value, program_id: nextProgramId };
+    });
+    setPage(1);
+  };
   const hasFilters = Object.values(filters).some(Boolean);
   const reset = () => {
     try {
@@ -479,7 +509,7 @@ export function Interactions({ api, catalogs, workflow, revision, initialState, 
         <label className="field search-field"><span>Поиск</span><div className="input-icon"><Icon name="search" size={18}/><input value={filters.q} onChange={event => update('q', event.target.value)} placeholder="Название или организация" type="search"/></div></label>
         <label className="field"><span>Организация</span><select value={filters.organization_id} onChange={event => update('organization_id', event.target.value)}><option value="">Все организации</option>{catalogs.organizations.map(item => <option value={item.id} key={item.id}>{item.name}</option>)}</select></label>
         <label className="field"><span>ИТ-направление</span><select value={filters.direction_id} onChange={event => update('direction_id', event.target.value)}><option value="">Все направления</option>{catalogs.directions.map(item => <option value={item.id} key={item.id}>{item.name}</option>)}</select></label>
-        <label className="field"><span>ИТ-программа</span><select value={filters.program_id} onChange={event => update('program_id', event.target.value)}><option value="">Все программы</option>{catalogs.programs.map(item => <option value={item.id} key={item.id}>{item.name}</option>)}</select></label>
+        <label className="field"><span>ИТ-программа</span><select value={filters.program_id} onChange={event => update('program_id', event.target.value)}><option value="">Все программы</option>{catalogs.programs.filter(p => !filters.direction_id || p.direction_id === filters.direction_id).map(item => <option value={item.id} key={item.id}>{item.name}</option>)}</select></label>
         <label className="field"><span>Этап</span><select value={filters.state} onChange={event => update('state', event.target.value)}><option value="">Все этапы</option>{workflow.states.map(item => <option value={item.code} key={item.code}>{item.name}</option>)}</select></label>
         <label className="field"><span>ИТ-продукт</span><select value={filters.product_id} onChange={event => update('product_id', event.target.value)}><option value="">Все продукты</option>{catalogs.products.map(item => <option value={item.id} key={item.id}>{item.name}</option>)}</select></label>
         <label className="field"><span>Ответственный</span><select value={filters.owner_id} onChange={event => update('owner_id', event.target.value)}><option value="">Все ответственные</option>{catalogs.owners.map(item => <option value={item.id} key={item.id}>{item.name}</option>)}</select></label>

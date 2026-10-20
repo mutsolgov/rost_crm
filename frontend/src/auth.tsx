@@ -124,11 +124,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         ? (window.location.origin.endsWith('/') ? window.location.origin : `${window.location.origin}/`)
         : (window.location.href || '/');
       const logoutPromise = keycloak.current?.logout({ redirectUri });
-      try {
-        keycloak.current?.clearToken();
-      } catch {
-        // ignore if uninitialized
-      }
       void logoutPromise?.catch(problem => {
         setMe(null);
         setAuthenticated(false);

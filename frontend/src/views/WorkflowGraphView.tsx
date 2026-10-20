@@ -133,66 +133,6 @@ export function generateDefinitionFromStages(stages: EditableStage[], version: n
   };
 }
 
-function getDefaultDefinition(version: number, name: string) {
-  return {
-    schema_version: '1.0',
-    template_code: `rtk_custom_v${version}`,
-    version,
-    name,
-    initial_state: 'contact_search',
-    states: [
-      { code: 'contact_search', name: '1. Поиск контактов', kind: 'working', step: 1 },
-      { code: 'needs_clarification', name: '2. Уточнение потребности', kind: 'working', step: 2 },
-      { code: 'meeting', name: '3. Встреча с вузом', kind: 'working', step: 3 },
-      { code: 'document_signing', name: '4. Подписание документов', kind: 'working', step: 4 },
-      { code: 'completed', name: 'Завершено успешно', kind: 'terminal' },
-      { code: 'cancelled', name: 'Отменено', kind: 'terminal' },
-    ],
-    transitions: [
-      {
-        code: 'contact_to_needs',
-        from: 'contact_search',
-        to: 'needs_clarification',
-        kind: 'forward',
-        comment_required: false,
-        condition_refs: [],
-      },
-      {
-        code: 'needs_to_meeting',
-        from: 'needs_clarification',
-        to: 'meeting',
-        kind: 'forward',
-        comment_required: false,
-        condition_refs: [],
-      },
-      {
-        code: 'meeting_to_signing',
-        from: 'meeting',
-        to: 'document_signing',
-        kind: 'forward',
-        comment_required: false,
-        condition_refs: [],
-      },
-      {
-        code: 'signing_to_completed',
-        from: 'document_signing',
-        to: 'completed',
-        kind: 'forward',
-        comment_required: false,
-        condition_refs: [],
-      },
-      {
-        code: 'cancel_from_contact',
-        from: 'contact_search',
-        to: 'cancelled',
-        kind: 'cancel',
-        comment_required: true,
-        condition_refs: [],
-      },
-    ],
-  };
-}
-
 export interface WorkflowGraphViewProps {
   currentState?: string;
   onSelectState?: (stateCode: string) => void;
@@ -234,6 +174,22 @@ export function WorkflowGraphView({
   const [jsonError, setJsonError] = useState<string | null>(null);
   const [editorMode, setEditorMode] = useState<'visual' | 'json'>('visual');
   const [editableStages, setEditableStages] = useState<EditableStage[]>([]);
+  const [draggedStageIdx, setDraggedStageIdx] = useState<number | null>(null);
+  const [dragOverStageIdx, setDragOverStageIdx] = useState<number | null>(null);
+
+  function renumberWorkingStages(stages: EditableStage[]): EditableStage[] {
+    let stepNum = 0;
+    return stages.map((s) => {
+      if (s.kind !== 'working') return s;
+      stepNum += 1;
+      const cleanTitle = s.name.replace(/^\d+\.\s*/, '').trim();
+      return {
+        ...s,
+        step: stepNum,
+        name: `${stepNum}. ${cleanTitle || 'Этап процесса'}`,
+      };
+    });
+  }
 
   function updateStagesAndSyncJson(newStages: EditableStage[]) {
     setEditableStages(newStages);
@@ -250,7 +206,7 @@ export function WorkflowGraphView({
     newWorking[idx - 1] = newWorking[idx];
     newWorking[idx] = temp;
     const terminals = editableStages.filter(s => s.kind === 'terminal');
-    updateStagesAndSyncJson([...newWorking, ...terminals]);
+    updateStagesAndSyncJson(renumberWorkingStages([...newWorking, ...terminals]));
   }
 
   function handleMoveStageDown(idx: number) {
@@ -261,7 +217,27 @@ export function WorkflowGraphView({
     newWorking[idx + 1] = newWorking[idx];
     newWorking[idx] = temp;
     const terminals = editableStages.filter(s => s.kind === 'terminal');
-    updateStagesAndSyncJson([...newWorking, ...terminals]);
+    updateStagesAndSyncJson(renumberWorkingStages([...newWorking, ...terminals]));
+  }
+
+  function handleDropStage(fromIdx: number, toIdx: number) {
+    setDraggedStageIdx(null);
+    setDragOverStageIdx(null);
+    const working = editableStages.filter(s => s.kind === 'working');
+    if (
+      fromIdx === toIdx ||
+      fromIdx < 0 ||
+      toIdx < 0 ||
+      fromIdx >= working.length ||
+      toIdx >= working.length
+    ) {
+      return;
+    }
+    const newWorking = [...working];
+    const [moved] = newWorking.splice(fromIdx, 1);
+    newWorking.splice(toIdx, 0, moved);
+    const terminals = editableStages.filter(s => s.kind === 'terminal');
+    updateStagesAndSyncJson(renumberWorkingStages([...newWorking, ...terminals]));
   }
 
   function handleStageNameChange(code: string, newName: string) {
@@ -292,13 +268,13 @@ export function WorkflowGraphView({
       step: newIndex,
       is_optional: false,
     };
-    updateStagesAndSyncJson([...working, newStage, ...terminals]);
+    updateStagesAndSyncJson(renumberWorkingStages([...working, newStage, ...terminals]));
   }
 
   function handleDeleteStage(code: string) {
     if (code === 'contact_search' || code === 'completed' || code === 'cancelled') return;
     const updated = editableStages.filter(s => s.code !== code);
-    updateStagesAndSyncJson(updated);
+    updateStagesAndSyncJson(renumberWorkingStages(updated));
   }
 
   function handleSwitchMode(targetMode: 'visual' | 'json') {
@@ -306,14 +282,21 @@ export function WorkflowGraphView({
       try {
         const parsed = JSON.parse(createDefinitionJson);
         if (parsed && Array.isArray(parsed.states)) {
+          const skipFromSet = new Set(
+            Array.isArray(parsed.transitions)
+              ? parsed.transitions
+                  .filter((t: any) => typeof t.code === 'string' && t.code.startsWith('skip_'))
+                  .map((t: any) => t.code.replace(/^skip_/, ''))
+              : []
+          );
           const mapped: EditableStage[] = parsed.states.map((s: any) => ({
             code: s.code,
             name: s.name,
             kind: s.kind || (['completed', 'cancelled'].includes(s.code) ? 'terminal' : 'working'),
             step: s.step,
-            is_optional: false,
+            is_optional: skipFromSet.has(s.code) || s.code === 'document_revision',
           }));
-          setEditableStages(mapped);
+          setEditableStages(renumberWorkingStages(mapped));
         }
       } catch (err) {
         setJsonError('Не удалось синхронизировать визуальный конструктор: невалидный JSON.');
@@ -333,14 +316,25 @@ export function WorkflowGraphView({
     setCreateVersion(nextV);
     setCreateName(initialName);
     setCreateDescription(`Пользовательская версия процесса v${nextV}`);
-    const defaultDef = getDefaultDefinition(nextV, initialName);
-    const initialStages: EditableStage[] = defaultDef.states.map((s: any) => ({
-      code: s.code,
-      name: s.name,
-      kind: s.kind as 'working' | 'terminal',
-      step: s.step,
-      is_optional: false,
-    }));
+
+    const sourceStates =
+      workflowData?.states && workflowData.states.length > 0
+        ? workflowData.states
+        : WORKFLOW_STATES;
+
+    const rawStages: EditableStage[] = sourceStates.map((s: any) => {
+      const kind = (s.kind || (['completed', 'cancelled'].includes(s.code) ? 'terminal' : 'working')) as 'working' | 'terminal';
+      return {
+        code: s.code,
+        name: s.name,
+        kind,
+        step: s.step ?? s.source_step,
+        is_optional: s.code === 'document_revision',
+      };
+    });
+
+    const initialStages = renumberWorkingStages(rawStages);
+    const defaultDef = generateDefinitionFromStages(initialStages, nextV, initialName);
     setEditableStages(initialStages);
     setEditorMode('visual');
     setCreateDefinitionJson(JSON.stringify(defaultDef, null, 2));
@@ -467,31 +461,47 @@ export function WorkflowGraphView({
     }
   }
 
-  // Combine dynamic states from API with layout coordinates
-  const statesToRender: WorkflowStateMeta[] = (workflowData?.states || WORKFLOW_STATES).map((st, idx) => {
-    const existingMeta = WORKFLOW_STATES.find(s => s.code === st.code);
-    const sourceStep = ('source_step' in st ? st.source_step : undefined) ?? ('step' in st ? st.step : undefined);
-    if (existingMeta) {
+  // Combine dynamic states from API with snake-grid layout coordinates based on actual order
+  const rawStatesSource =
+    workflowData?.states && workflowData.states.length > 0 ? workflowData.states : WORKFLOW_STATES;
+  const rawWorkingStates = rawStatesSource.filter((st: any) => st.kind !== 'terminal');
+  const rawTerminalStates = rawStatesSource.filter((st: any) => st.kind === 'terminal');
+  const lastWorkingRow = Math.floor(Math.max(0, rawWorkingStates.length - 1) / 3);
+  const itemsInLastRow = rawWorkingStates.length - lastWorkingRow * 3;
+  const terminalRowIndex = itemsInLastRow <= 1 ? lastWorkingRow : lastWorkingRow + 1;
+
+  const statesToRender: WorkflowStateMeta[] = [
+    ...rawWorkingStates.map((st: any, wIdx: number) => {
+      const existingMeta = WORKFLOW_STATES.find(s => s.code === st.code);
+      const row = Math.floor(wIdx / 3);
+      const colInRow = wIdx % 3;
+      const actualCol = row % 2 === 0 ? colInRow : 2 - colInRow;
       return {
-        ...existingMeta,
-        name: st.name || existingMeta.name,
-        kind: (st.kind as 'working' | 'terminal') || existingMeta.kind,
-        step: sourceStep ?? existingMeta.step ?? (idx + 1),
+        code: st.code,
+        name: st.name || existingMeta?.name || st.code,
+        kind: 'working' as const,
+        step: wIdx + 1,
+        phase: existingMeta?.phase || `Фаза ${row + 1}`,
+        description: existingMeta?.description || `Этап «${st.name}» (${st.code})`,
+        x: 40 + actualCol * 220,
+        y: 70 + row * 100,
       };
-    }
-    const col = idx % 3;
-    const row = Math.floor(idx / 3);
-    return {
-      code: st.code,
-      name: st.name,
-      kind: (st.kind as 'working' | 'terminal') || 'working',
-      step: sourceStep ?? (idx + 1),
-      phase: st.kind === 'terminal' ? 'Финал' : `Фаза ${row + 1}`,
-      description: `Этап ${st.name} (${st.code})`,
-      x: 40 + col * 220,
-      y: 70 + row * 100,
-    };
-  });
+    }),
+    ...rawTerminalStates.map((st: any, tIdx: number) => {
+      const existingMeta = WORKFLOW_STATES.find(s => s.code === st.code);
+      const xPos = st.code === 'completed' ? 300 : st.code === 'cancelled' ? 500 : 300 + tIdx * 200;
+      return {
+        code: st.code,
+        name: st.name || existingMeta?.name || st.code,
+        kind: 'terminal' as const,
+        step: undefined,
+        phase: 'Финал',
+        description: existingMeta?.description || `Терминальный исход «${st.name}» (${st.code})`,
+        x: xPos,
+        y: 70 + terminalRowIndex * 100,
+      };
+    }),
+  ];
 
   const selectedState = statesToRender.find(s => s.code === (selectedCode || currentState));
   const activeState = statesToRender.find(s => s.code === currentState);
@@ -562,7 +572,7 @@ export function WorkflowGraphView({
               style={{ fontSize: '11px', padding: '5px 12px', height: 'auto' }}
               title="Создать новую версию процесса"
             >
-              <Icon name="plus" size={14} />+ Создать версию процесса
+              <Icon name="plus" size={14} />Создать версию процесса
             </Button>
           )}
 
@@ -802,7 +812,9 @@ export function WorkflowGraphView({
                   x={isCurrent ? 26 : 14}
                   y="24"
                   fill={textColor}
-                  fontSize="12"
+                  fontSize={state.name.length > 30 ? '10' : state.name.length > 24 ? '11' : '12'}
+                  textLength={state.name.length > 25 ? (isCurrent ? nodeWidth - 36 : nodeWidth - 24) : undefined}
+                  lengthAdjust={state.name.length > 25 ? 'spacingAndGlyphs' : undefined}
                   fontWeight={isCurrent ? '700' : '600'}
                   fontFamily="inherit"
                 >
@@ -938,22 +950,82 @@ export function WorkflowGraphView({
                       const isLast = wIdx === wArr.length - 1;
                       const isProtected = stage.code === 'contact_search';
 
+                      const isDragging = draggedStageIdx === wIdx;
+                      const isDragOver = dragOverStageIdx === wIdx && draggedStageIdx !== wIdx;
+
                       return (
                         <div
                           key={stage.code}
                           className="stage-editor-card"
+                          draggable
+                          onDragStart={(e) => {
+                            const tag = (e.target as HTMLElement)?.tagName;
+                            if (tag === 'INPUT' || tag === 'BUTTON') {
+                              e.preventDefault();
+                              return;
+                            }
+                            setDraggedStageIdx(wIdx);
+                            e.dataTransfer.effectAllowed = 'move';
+                            e.dataTransfer.setData('text/plain', String(wIdx));
+                          }}
+                          onDragOver={(e) => {
+                            e.preventDefault();
+                            e.dataTransfer.dropEffect = 'move';
+                            if (dragOverStageIdx !== wIdx) {
+                              setDragOverStageIdx(wIdx);
+                            }
+                          }}
+                          onDragLeave={() => {
+                            if (dragOverStageIdx === wIdx) {
+                              setDragOverStageIdx(null);
+                            }
+                          }}
+                          onDrop={(e) => {
+                            e.preventDefault();
+                            const fromIdx =
+                              draggedStageIdx !== null
+                                ? draggedStageIdx
+                                : Number(e.dataTransfer.getData('text/plain'));
+                            if (!Number.isNaN(fromIdx)) {
+                              handleDropStage(fromIdx, wIdx);
+                            }
+                          }}
+                          onDragEnd={() => {
+                            setDraggedStageIdx(null);
+                            setDragOverStageIdx(null);
+                          }}
                           style={{
                             display: 'flex',
                             flexDirection: 'column',
                             gap: '6px',
                             padding: '10px 12px',
-                            background: 'var(--rtk-color-surface-subtle, #F8FAFC)',
-                            border: '1px solid var(--rtk-color-border-subtle, #E2E8F0)',
+                            background: isDragOver
+                              ? 'var(--rtk-color-primary-subtle, #F4EBFF)'
+                              : 'var(--rtk-color-surface-subtle, #F8FAFC)',
+                            border: isDragOver
+                              ? '1.5px dashed var(--rtk-color-primary, #7700FF)'
+                              : '1px solid var(--rtk-color-border-subtle, #E2E8F0)',
                             borderRadius: '8px',
+                            opacity: isDragging ? 0.55 : 1,
+                            cursor: 'grab',
+                            transition: 'background 0.15s ease, border-color 0.15s ease',
                           }}
                         >
                           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                             <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                              <span
+                                title="Перетащите мышкой для изменения порядка этапа"
+                                style={{
+                                  cursor: 'grab',
+                                  color: 'var(--rtk-color-muted, #667085)',
+                                  fontSize: '14px',
+                                  lineHeight: 1,
+                                  userSelect: 'none',
+                                  padding: '0 2px',
+                                }}
+                              >
+                                ⋮⋮
+                              </span>
                               <span
                                 style={{
                                   display: 'inline-flex',

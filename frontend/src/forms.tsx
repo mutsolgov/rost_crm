@@ -9,13 +9,16 @@ export function CreateInteractionModal({ api, catalogs, me, onClose, onSaved }: 
   api: ApiClient; catalogs: Catalogs; me: User; onClose: () => void; onSaved: (interaction: Interaction) => void;
 }) {
   const [form, setForm] = useState({
-    title: '', organization_id: '', program_id: '', product_id: '',
+    title: '', organization_id: '', direction_id: '', program_id: '', product_id: '',
     cycle_label: '', owner_id: me.role === 'manager' ? me.id : '',
     contact_id: '', comment: '',
   });
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<unknown>(null);
   const mutation = useMutationKey();
+  const filteredPrograms = catalogs.programs.filter(
+    p => !form.direction_id || p.direction_id === form.direction_id
+  );
   const compatibleProducts = catalogs.products.filter(prod => {
     if (!form.program_id) return true;
     return (catalogs.program_products || []).some(
@@ -26,6 +29,19 @@ export function CreateInteractionModal({ api, catalogs, me, onClose, onSaved }: 
   const update = (field: keyof typeof form, value: string) => {
     if (field === 'organization_id') {
       setForm(previous => ({ ...previous, organization_id: value, contact_id: '' }));
+    } else if (field === 'direction_id') {
+      setForm(previous => {
+        let nextProgramId = previous.program_id;
+        let nextProductId = previous.product_id;
+        if (value && nextProgramId) {
+          const prog = catalogs.programs.find(p => p.id === nextProgramId);
+          if (!prog || prog.direction_id !== value) {
+            nextProgramId = '';
+            nextProductId = '';
+          }
+        }
+        return { ...previous, direction_id: value, program_id: nextProgramId, product_id: nextProductId };
+      });
     } else if (field === 'program_id') {
       setForm(previous => {
         let nextProductId = previous.product_id;
@@ -45,8 +61,9 @@ export function CreateInteractionModal({ api, catalogs, me, onClose, onSaved }: 
 
   async function submit(event: FormEvent) {
     event.preventDefault(); setError(null); setSaving(true);
+    const { direction_id, ...restForm } = form;
     const body = {
-      ...form,
+      ...restForm,
       title: form.title.trim(),
       cycle_label: form.cycle_label.trim(),
       program_id: form.program_id || null,
@@ -66,7 +83,8 @@ export function CreateInteractionModal({ api, catalogs, me, onClose, onSaved }: 
         <label className="field"><span>Название взаимодействия <b>*</b></span><input autoFocus value={form.title} onChange={event => update('title', event.target.value)} placeholder="Например: внедрение облачной платформы" required maxLength={250}/></label>
         <div className="form-grid">
           <label className="field span-2"><span>Образовательная организация <b>*</b></span><select value={form.organization_id} onChange={event => update('organization_id', event.target.value)} required><option value="">Выберите организацию</option>{catalogs.organizations.map(item => <option value={item.id} key={item.id}>{item.name}</option>)}</select></label>
-          <label className="field"><span>ИТ-программа</span><select value={form.program_id} onChange={event => update('program_id', event.target.value)}><option value="">Пока не определена</option>{catalogs.programs.map(item => <option value={item.id} key={item.id}>{item.name}</option>)}</select></label>
+          <label className="field"><span>ИТ-направление</span><select value={form.direction_id} onChange={event => update('direction_id', event.target.value)}><option value="">Все направления</option>{catalogs.directions.map(item => <option value={item.id} key={item.id}>{item.name}</option>)}</select></label>
+          <label className="field"><span>ИТ-программа</span><select value={form.program_id} onChange={event => update('program_id', event.target.value)}><option value="">Пока не определена</option>{filteredPrograms.map(item => <option value={item.id} key={item.id}>{item.name}</option>)}</select></label>
           <label className="field"><span>ИТ-продукт</span><select value={form.product_id} onChange={event => update('product_id', event.target.value)}><option value="">Пока не определён</option>{compatibleProducts.map(item => <option value={item.id} key={item.id}>{item.name} ({item.vendor})</option>)}</select></label>
           <label className="field"><span>Цикл сотрудничества <b>*</b></span><input value={form.cycle_label} onChange={event => update('cycle_label', event.target.value)} placeholder="Например: осень 2026" required maxLength={120}/></label>
           <label className="field"><span>Ответственный <b>*</b></span><select value={form.owner_id} onChange={event => update('owner_id', event.target.value)} required><option value="">Выберите менеджера</option>{catalogs.owners.map(item => <option value={item.id} key={item.id}>{item.name}</option>)}</select></label>

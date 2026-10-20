@@ -72,8 +72,10 @@ export function EditInteractionModal({
   onSaved: (updated: Interaction) => void;
 }) {
   const isLateState = LATE_SUBJECT_STATES.has(item.state);
+  const initialDirectionId = catalogs.programs.find(p => p.id === item.program_id)?.direction_id || '';
   const [form, setForm] = useState({
     title: item.title,
+    direction_id: initialDirectionId,
     program_id: item.program_id || '',
     product_id: item.product_id || '',
     cycle_label: item.cycle_label,
@@ -88,6 +90,10 @@ export function EditInteractionModal({
   const orgContracts = (catalogs.contracts || []).filter(c => c.organization_id === item.organization_id);
   const orgLicenses = (catalogs.licenses || []).filter(l => l.organization_id === item.organization_id && (!form.product_id || l.product_id === form.product_id));
 
+  const filteredPrograms = catalogs.programs.filter(
+    p => !form.direction_id || p.direction_id === form.direction_id
+  );
+
   const compatibleProducts = catalogs.products.filter(prod => {
     if (!form.program_id) return true;
     return (catalogs.program_products || []).some(
@@ -95,30 +101,29 @@ export function EditInteractionModal({
     );
   });
 
+  const handleDirectionChange = (newDirectionId: string) => {
+    setForm(prev => {
+      const currentProg = catalogs.programs.find(p => p.id === prev.program_id);
+      const shouldReset = Boolean(newDirectionId && currentProg && currentProg.direction_id !== newDirectionId);
+      return {
+        ...prev,
+        direction_id: newDirectionId,
+        ...(shouldReset ? { program_id: '', product_id: '', license_id: '' } : {})
+      };
+    });
+  };
+
   const handleProgramChange = (newProgramId: string) => {
     setForm(prev => {
-      let nextProductId = prev.product_id;
-      if (newProgramId && nextProductId) {
-        const isStillCompatible = (catalogs.program_products || []).some(
-          pp => pp.program_id === newProgramId && pp.product_id === nextProductId
-        );
-        if (!isStillCompatible) nextProductId = '';
-      }
-      let nextLicenseId = prev.license_id;
-      if (nextLicenseId) {
-        const lic = (catalogs.licenses || []).find(l => l.id === nextLicenseId);
-        if (lic) {
-          if (nextProductId && lic.product_id !== nextProductId) {
-            nextLicenseId = '';
-          } else if (newProgramId) {
-            const isLicCompatible = (catalogs.program_products || []).some(
-              pp => pp.program_id === newProgramId && pp.product_id === lic.product_id
-            );
-            if (!isLicCompatible) nextLicenseId = '';
-          }
-        }
-      }
-      return { ...prev, program_id: newProgramId, product_id: nextProductId, license_id: nextLicenseId };
+      const prog = catalogs.programs.find(p => p.id === newProgramId);
+      const nextDirId = (newProgramId && prog) ? prog.direction_id : prev.direction_id;
+      return {
+        ...prev,
+        direction_id: nextDirId,
+        program_id: newProgramId,
+        product_id: '',
+        license_id: '',
+      };
     });
   };
 
@@ -192,10 +197,17 @@ export function EditInteractionModal({
           </label>
           <div className="form-grid">
             <label className="field">
+              <span>ИТ-направление</span>
+              <select value={form.direction_id} onChange={e => handleDirectionChange(e.target.value)}>
+                <option value="">Все направления</option>
+                {(catalogs.directions || []).map(d => <option key={d.id} value={d.id}>{d.name}</option>)}
+              </select>
+            </label>
+            <label className="field">
               <span>ИТ-программа {isLateState && <b>*</b>}</span>
               <select value={form.program_id} onChange={e => handleProgramChange(e.target.value)} required={isLateState}>
                 <option value="">{isLateState ? 'Выберите программу' : 'Пока не определена'}</option>
-                {catalogs.programs.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
+                {filteredPrograms.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
               </select>
             </label>
             <label className="field">
@@ -209,7 +221,7 @@ export function EditInteractionModal({
               <span>Цикл сотрудничества <b>*</b></span>
               <input value={form.cycle_label} onChange={e => setForm(f => ({ ...f, cycle_label: e.target.value }))} required maxLength={100}/>
             </label>
-            <label className="field">
+            <label className="field span-2">
               <span>Контактное лицо вуза</span>
               <select value={form.contact_id} onChange={e => setForm(f => ({ ...f, contact_id: e.target.value }))}>
                 <option value="">Не указано</option>
@@ -794,13 +806,14 @@ export function InteractionPage({ id, api, catalogs, workflow, me, revision, onC
   async function handleOpenPreview(att: Attachment) {
     setError(null);
     try {
-      const { blobUrl, cleanup } = await api.previewAttachmentBlob(
-        `/interactions/${encodeURIComponent(id)}/attachments/${encodeURIComponent(att.id)}/download?disposition=inline`
-      );
-      setPreviewModalTarget({ attachment: att, previewUrl: blobUrl, cleanup });
+      await handleOpenPreviewInTab(att);
     } catch (err) {
+      // Fallback для совместимости и блокировщиков всплывающих окон:
       try {
-        await handleOpenPreviewInTab(att);
+        const { blobUrl, cleanup } = await api.previewAttachmentBlob(
+          `/interactions/${encodeURIComponent(id)}/attachments/${encodeURIComponent(att.id)}/download?disposition=inline`
+        );
+        setPreviewModalTarget({ attachment: att, previewUrl: blobUrl, cleanup });
       } catch {
         setError(err);
       }
@@ -819,8 +832,7 @@ export function InteractionPage({ id, api, catalogs, workflow, me, revision, onC
     setError(null);
     const targetWindow = window.open('about:blank', '_blank');
     if (!targetWindow || targetWindow.closed) {
-      setError(new Error('Браузер заблокировал открытие новой вкладки. Разрешите всплывающие окна или используйте «Скачать».'));
-      return;
+      throw new Error('Браузер заблокировал открытие новой вкладки. Разрешите всплывающие окна или используйте «Скачать».');
     }
     try {
       targetWindow.document.title = 'Загрузка: ' + att.file_name;
@@ -884,7 +896,7 @@ export function InteractionPage({ id, api, catalogs, workflow, me, revision, onC
       } catch {
         // Safe fallback if window is already detached
       }
-      setError(err);
+      throw err;
     }
   }
 
@@ -1202,6 +1214,7 @@ export function InteractionPage({ id, api, catalogs, workflow, me, revision, onC
             const ext = att.file_name.split('.').pop()?.toLowerCase() || '';
             const isPreviewable = ['pdf', 'png', 'jpg', 'jpeg'].includes(ext);
             const canDelete = att.uploaded_by === me.id || ['supervisor', 'administrator', 'admin'].includes(me.role);
+            const uploaderName = att.uploaded_by_name || catalogs.owners?.find(o => o.id === att.uploaded_by)?.name || att.uploaded_by;
 
             return (
               <div key={att.id} className="file-item">
@@ -1210,7 +1223,7 @@ export function InteractionPage({ id, api, catalogs, workflow, me, revision, onC
                   <div className="file-meta">
                     <strong>{att.file_name}</strong>
                     <small>
-                      {formatFileSize(att.file_size)} · Загрузил {att.uploaded_by_name || att.uploaded_by} · {formatDate(att.created_at)}
+                      {formatFileSize(att.file_size)} · Загрузил {uploaderName} · {formatDate(att.created_at)}
                     </small>
                   </div>
                 </div>

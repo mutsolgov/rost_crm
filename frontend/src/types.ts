@@ -238,6 +238,7 @@ export interface Snapshot {
   as_of_inclusive: boolean; generated_at: string;
   rows: {
     interaction_id: string; title: string; organization_name: string;
+    direction_name?: string | null;
     program_name: string | null; product_name: string | null;
     state: string; state_name: string; owner_id: string; owner_name: string;
     cycle_label?: string;
@@ -264,6 +265,9 @@ export interface ActivityRow {
   interaction_id: string;
   title?: string;
   organization_name?: string;
+  direction_name?: string | null;
+  program_name?: string | null;
+  product_name?: string | null;
   from_state: string;
   from_state_name?: string | null;
   to_state: string;
@@ -303,6 +307,7 @@ export interface CreatedRow {
   interaction_id: string;
   title: string;
   organization_name: string;
+  direction_name?: string | null;
   program_name: string | null;
   product_name: string | null;
   state: string;

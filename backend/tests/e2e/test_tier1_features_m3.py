@@ -151,6 +151,12 @@ def test_f15_self_lockout_guard_prevents_simultaneous_deactivation_and_demotion(
 def test_f15_last_active_admin_protection_prevents_lockout_and_demotion(client, app):
     """Sole active admin cannot be deactivated or demoted by another user with users.manage permission."""
     with app.state.session_factory() as session:
+        other_admins = session.execute(
+            select(User).where(User.role.in_(("administrator", "admin")), User.active.is_(True), User.id != "administrator")
+        ).scalars().all()
+        for a in other_admins:
+            a.active = False
+
         priv_user = session.get(User, "privileged-manager")
         if not priv_user:
             priv_user = User(
@@ -162,7 +168,7 @@ def test_f15_last_active_admin_protection_prevents_lockout_and_demotion(client, 
                 permissions=["users.manage"],
             )
             session.add(priv_user)
-            session.commit()
+        session.commit()
 
     try:
         # Attempt deactivation of the sole active admin
@@ -188,10 +194,14 @@ def test_f15_last_active_admin_protection_prevents_lockout_and_demotion(client, 
         assert "Нельзя заблокировать или лишить прав единственного активного администратора системы." in err_demote.get("message", "")
     finally:
         with app.state.session_factory() as session:
+            for a in other_admins:
+                admin_obj = session.get(User, a.id)
+                if admin_obj:
+                    admin_obj.active = True
             u = session.get(User, "privileged-manager")
             if u:
                 session.delete(u)
-                session.commit()
+            session.commit()
 
 
 def test_f15_admin_deactivation_succeeds_when_another_active_admin_exists(client, app):
